@@ -38,14 +38,15 @@ async function render(openId) {
   const selected = openId ? Number(openId) : null;
   view.innerHTML = `
     <section class="hero">
-      <h1>Hoi ${esc(me.name)}! 👋</h1>
+      <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Robin Foundation</div>
+      <h1>Hoi ${esc(me.name)}!</h1>
       <p>Hier zie je de mensen die jou hebben geholpen. Stuur ze een berichtje om te vertellen hoe het met je gaat!</p>
     </section>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
-        <h3 style="margin:6px 10px 8px">Mijn helpers (${people.length})</h3>
+        <h3>Mijn helpers · ${people.length}</h3>
         ${people.map((p) => `<button data-id="${p.id}" class="${p.id === selected ? 'active' : ''}">
-          <div class="avatar">${p.anonymous ? '🕶️' : esc(p.name.slice(0, 1).toUpperCase())}</div>
+          ${p.anonymous ? `<span class="avatar sm">${RF.icon('eye-off', 'icon-sm')}</span>` : RF.avatar(p.name, 'sm')}
           <div style="min-width:0"><div class="who">${esc(p.name)}</div>
           <div class="last">${esc(p.last_message || `Hielp met: ${p.categories}`)}</div></div>
           ${p.unread ? `<span class="pill">${p.unread}</span>` : ''}</button>`).join('')
@@ -65,8 +66,8 @@ async function render(openId) {
   await RF.chatBox($('#box'), {
     otherName: p.name,
     notice: me.chat_moderated
-      ? '🛡️ Een begeleider van Robin Foundation leest berichten eerst even mee. Deel nooit je adres, telefoonnummer of social media.'
-      : '🛡️ Deel geen adres, telefoonnummer of social media. Zulke berichten worden eerst gecontroleerd.',
+      ? 'Een begeleider van Robin Foundation leest berichten eerst even mee. Deel nooit je adres, telefoonnummer of social media.'
+      : 'Deel geen adres, telefoonnummer of social media. Zulke berichten worden eerst gecontroleerd.',
     load: () => api(`/api/recipient/supporters/${p.id}`),
     setLanguage: async (language) => { await api('/api/recipient/language', { method: 'PUT', body: { language } }); me.language = language; },
     send: (body) => api(`/api/recipient/supporters/${p.id}`, { method: 'POST', body: { body } }),

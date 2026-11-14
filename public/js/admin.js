@@ -21,16 +21,62 @@ function showLogin() {
   location.replace(`/login?rol=medewerker&terug=${encodeURIComponent(location.pathname + location.hash)}`);
 }
 
+// Navigatie: één bron voor sidebar, command palette en paginatitels.
+const NAV = [
+  { items: [{ route: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' }] },
+  { group: 'Fondsenwerving', items: [
+    { route: 'donateurs', label: 'Donateurs', icon: 'users' },
+    { route: 'donaties', label: 'Donaties', icon: 'banknote' },
+    { route: 'campagnes', label: 'Campagnes', icon: 'megaphone' },
+    { route: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
+  ] },
+  { group: 'Besteding', items: [
+    { route: 'cellen', label: 'Cellen', icon: 'piggy-bank', count: 'cells' },
+    { route: 'bestedingen', label: 'Bestedingen', icon: 'hand-coins' },
+    { route: 'ontvangers', label: 'Ontvangers', icon: 'heart-handshake' },
+    { route: 'chat', label: 'Chatmoderatie', icon: 'messages-square', count: 'chat', attn: true },
+  ] },
+  { group: 'Werk', items: [
+    { route: 'taken', label: 'Taken', icon: 'list-checks', count: 'tasks' },
+    { route: 'rapportages', label: 'Rapportages', icon: 'chart-column' },
+    { route: 'emails', label: 'E-mail log', icon: 'mail' },
+    { route: 'instellingen', label: 'Instellingen', icon: 'settings' },
+  ] },
+];
+const NAV_ITEMS = NAV.flatMap((g) => g.items);
+
+function renderNav() {
+  $('#nav').innerHTML = NAV.map((g) => `${g.group ? `<div class="nav-group">${esc(g.group)}</div>` : ''}
+    ${g.items.map((it) => `<a href="#/${it.route}" data-route="${it.route}">${RF.icon(it.icon)}<span>${esc(it.label)}</span>
+      ${it.count ? `<span class="count ${it.attn ? 'attn' : ''}" id="nav-${it.count}"></span>` : ''}</a>`).join('')}`).join('');
+}
+
 async function showApp() {
   RF.markLoggedIn();
   $('#app').classList.remove('hidden');
-  $('#me').innerHTML = `<div><b>${esc(state.user.name)}</b></div><div class="muted">${esc(state.user.email)}</div>
-    <div><span class="badge badge-admin">${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></div>
-    <button class="btn btn-ghost btn-sm" id="logout">Uitloggen</button>`;
-  $('#logout').onclick = async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace('/login?rol=medewerker'); };
+  renderNav();
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  $('#cmdk-kbd').textContent = isMac ? '⌘K' : 'Ctrl K';
+  $('#cmdk-icon').innerHTML = RF.icon('search');
+  $('#menu-toggle').innerHTML = RF.icon('menu', 'icon-lg');
+  $('#m-search').innerHTML = RF.icon('search', 'icon-lg');
+  $('#me').innerHTML = `${RF.avatar(state.user.name, 'sm')}<span class="who"><b>${esc(state.user.name)}</b><span>${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></span>${RF.icon('chevron-down', 'icon-sm')}`;
+  $('#me').onclick = (e) => RF.menu(e.currentTarget, [
+    { heading: state.user.email },
+    { label: 'Publiek leaderboard', icon: 'globe', href: '/leaderboard', external: true },
+    { label: 'Donateursportaal', icon: 'heart', href: '/portal', external: true },
+    { label: 'Ontvangersportaal', icon: 'heart-handshake', href: '/ontvanger', external: true },
+    '-',
+    { label: 'Uitloggen', icon: 'log-out', onClick: async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace('/login?rol=medewerker'); } },
+  ], { align: 'start' });
   const setMenu = (open) => { $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open); };
   $('#menu-toggle').onclick = () => setMenu(!$('#sidebar').classList.contains('open'));
   $('#nav-backdrop').onclick = () => setMenu(false);
+  $('#open-cmdk').onclick = openCommandPalette;
+  $('#m-search').onclick = openCommandPalette;
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); }
+  });
   await loadLookups();
   window.addEventListener('hashchange', route);
   route();
@@ -77,25 +123,101 @@ const ROUTES = {
 async function route() {
   const [name, param] = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/');
   const fn = ROUTES[name] || renderDashboard;
-  document.querySelectorAll('#nav a[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  document.querySelectorAll('#nav a[data-route]').forEach((a) => {
+    const on = a.dataset.route === (ROUTES[name] ? name : 'dashboard');
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  const item = NAV_ITEMS.find((i) => i.route === name);
+  document.title = `${item ? item.label : 'Dashboard'} · Robin Foundation CRM`;
   $('#sidebar').classList.remove('open');
   $('#nav-backdrop').classList.remove('open');
-  view().innerHTML = '<p class="muted">Laden…</p>';
+  view().innerHTML = RF.skeleton();
   try {
     await fn(param);
   } catch (err) {
     if (err.status === 401) return showLogin();
-    view().innerHTML = `<div class="card"><p class="form-error" style="margin:0">${esc(err.message)}</p></div>`;
+    view().innerHTML = `<div class="card">${RF.emptyState({ icon: 'circle-alert', title: 'Er ging iets mis', text: esc(err.message),
+      action: '<button class="btn btn-ghost btn-sm" onclick="route()">Opnieuw proberen</button>' })}</div>`;
   }
   window.scrollTo(0, 0);
 }
 
 const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
 
+// ------------------------------------------------------------------ command palette (⌘K)
+function openCommandPalette() {
+  if (document.querySelector('.cmdk-backdrop')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'cmdk-backdrop';
+  wrap.innerHTML = `<div class="cmdk" role="dialog" aria-modal="true" aria-label="Zoeken">
+    <div class="cmdk-input">${RF.icon('search')}<input type="text" placeholder="Zoek een donateur, of typ een pagina of actie…" aria-label="Zoeken" autocomplete="off"><kbd>esc</kbd></div>
+    <div class="cmdk-list" role="listbox"></div>
+    <div class="cmdk-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> navigeren</span><span><kbd>↵</kbd> openen</span><span><kbd>esc</kbd> sluiten</span></div></div>`;
+  document.body.appendChild(wrap);
+  const input = wrap.querySelector('input');
+  const list = wrap.querySelector('.cmdk-list');
+  const actions = [
+    { label: 'Nieuwe donateur', icon: 'user-plus', run: () => donorForm({}, (d) => go(`#/donateurs/${d.id}`)) },
+    { label: 'Donatie registreren', icon: 'plus', run: () => donationForm({}, () => route()) },
+    { label: 'Geld besteden', icon: 'hand-coins', run: () => spendForm({}, (r) => go(`#/bestedingen/${r.id}`)) },
+    { label: 'Nieuwe taak', icon: 'list-checks', run: () => taskForm({}, () => route()) },
+  ];
+  let items = [];
+  let active = 0;
+  let donors = [];
+  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+  const draw = () => {
+    const q = input.value.trim().toLowerCase();
+    const pages = NAV_ITEMS.filter((p) => !q || p.label.toLowerCase().includes(q))
+      .map((p) => ({ group: 'Pagina’s', label: p.label, icon: p.icon, run: () => go(`#/${p.route}`) }));
+    const acts = actions.filter((a) => !q || a.label.toLowerCase().includes(q)).map((a) => ({ group: 'Acties', ...a }));
+    const people = donors.map((d) => ({ group: 'Donateurs', label: d.full_name, sub: d.email || d.city || '', avatar: d.full_name, run: () => go(`#/donateurs/${d.id}`) }));
+    items = [...people, ...acts, ...pages];
+    active = Math.min(active, Math.max(0, items.length - 1));
+    let last = '';
+    list.innerHTML = items.length ? items.map((it, i) => {
+      const head = it.group !== last ? `<div class="cmdk-group">${esc(it.group)}</div>` : '';
+      last = it.group;
+      return `${head}<div class="cmdk-item ${i === active ? 'active' : ''}" role="option" data-i="${i}" aria-selected="${i === active}">
+        ${it.avatar ? RF.avatar(it.avatar, 'sm') : RF.icon(it.icon)}<span>${esc(it.label)}</span>${it.sub ? `<span class="hint-right">${esc(it.sub)}</span>` : ''}</div>`;
+    }).join('') : `<div class="cmdk-empty">Niets gevonden voor “${esc(input.value)}”</div>`;
+    const el = list.querySelector('.cmdk-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  };
+  const search = RF.debounce(async () => {
+    const q = input.value.trim();
+    donors = q.length >= 2 ? (await api(`/api/admin/donors?q=${encodeURIComponent(q)}`).catch(() => [])).slice(0, 6) : [];
+    draw();
+  }, 150);
+  const runActive = () => { const it = items[active]; if (it) { close(); it.run(); } };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % Math.max(1, items.length); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % Math.max(1, items.length); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); runActive(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  input.addEventListener('input', () => { active = 0; draw(); search(); });
+  list.addEventListener('mousemove', (e) => { const el = e.target.closest('[data-i]'); if (el && Number(el.dataset.i) !== active) { active = Number(el.dataset.i); draw(); } });
+  list.addEventListener('click', (e) => { const el = e.target.closest('[data-i]'); if (el) { active = Number(el.dataset.i); runActive(); } });
+  wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
+  draw();
+  input.focus();
+}
+
+// Paginakop: titel, ondertitel, acties
+const pageHead = (title, { sub = '', actions = '', crumbs = '' } = {}) => `<div class="page-head"><div>
+  ${crumbs ? `<div class="crumbs">${crumbs}</div>` : ''}<h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
+  ${actions ? `<div class="toolbar">${actions}</div>` : ''}</div>`;
+const btn = (id, text, { icon: ic, kind = 'ghost', size = '' } = {}) =>
+  `<button class="btn btn-${kind} ${size ? `btn-${size}` : ''}" id="${id}">${ic ? RF.icon(ic) : ''}${text ? `<span>${text}</span>` : ''}</button>`;
+const searchInput = (id, placeholder, value = '') => `<span class="input-icon">${RF.icon('search')}<input type="search" id="${id}" placeholder="${esc(placeholder)}" value="${esc(value)}"></span>`;
+
 // ------------------------------------------------------------------ helpers
 const opt = (value, text, selected) => `<option value="${esc(value)}" ${String(selected) === String(value) ? 'selected' : ''}>${esc(text)}</option>`;
 const catOptions = (sel, withAll = false) => (withAll ? opt('', 'Alle bestemmingen', sel) : '') +
-  state.categories.map((c) => opt(c.key, `${c.icon} ${c.name}`, sel)).join('');
+  state.categories.map((c) => opt(c.key, c.name, sel)).join('');
 const labelOptions = (group, sel, withAll) => (withAll ? opt('', withAll, sel) : '') +
   Object.entries(RF.LABELS[group]).map(([k, v]) => opt(k, v, sel)).join('');
 const userOptions = (sel) => opt('', '— niemand —', sel) + state.users.filter((u) => u.active).map((u) => opt(u.id, u.name, sel)).join('');
@@ -107,12 +229,12 @@ const tags = (s) => String(s || '').split(',').map((t) => t.trim()).filter(Boole
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
 const donorLink = (id, name) => `<a href="#/donateurs/${id}">${esc(name)}</a>`;
 
-function table(columns, rows, { empty = 'Geen gegevens', onRow } = {}) {
-  const head = columns.map((c) => `<th class="${c.num ? 'num' : ''}">${esc(c.label)}</th>`).join('');
+function table(columns, rows, { empty = 'Geen gegevens', emptyIcon = 'inbox', onRow } = {}) {
+  const head = columns.map((c) => `<th class="${c.num ? 'num' : ''}" ${c.width ? `style="width:${c.width}"` : ''}>${esc(c.label)}</th>`).join('');
   const body = rows.length
     ? rows.map((r, i) => `<tr data-i="${i}" class="${onRow ? 'clickable' : ''}">${columns.map((c) =>
       `<td class="${c.num ? 'num' : ''}" data-label="${esc(c.label)}">${c.render ? c.render(r) : esc(r[c.key])}</td>`).join('')}</tr>`).join('')
-    : `<tr><td colspan="${columns.length}" class="empty">${esc(empty)}</td></tr>`;
+    : `<tr><td colspan="${columns.length}" class="empty" style="padding:0!important">${RF.emptyState({ icon: emptyIcon, title: empty })}</td></tr>`;
   return `<div class="table-wrap cards"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function bindRows(root, rows, onRow) {
@@ -122,6 +244,10 @@ function bindRows(root, rows, onRow) {
 }
 
 // ======================================================================= DASHBOARD
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond'; };
+const firstName = (n) => String(n || '').split(' ')[0];
+const ago = (days) => (days <= 0 ? 'vandaag' : days === 1 ? '1 dag' : `${days} dagen`);
+
 async function renderDashboard() {
   const d = await api('/api/admin/dashboard');
   const t = d.totals;
@@ -133,141 +259,184 @@ async function renderDashboard() {
   }
   const byMonth = Object.fromEntries(d.monthly.map((r) => [r.month, r.cents]));
   const spentByMonth = Object.fromEntries(d.monthlySpent.map((r) => [r.month, r.cents]));
+  const thisM = byMonth[months[11]] || 0;
+  const lastM = byMonth[months[10]] || 0;
+  const delta = lastM ? Math.round(((thisM - lastM) / lastM) * 100) : null;
+  const spentShare = t.raised_cents ? Math.round((t.spent_cents / t.raised_cents) * 100) : 0;
+  const todayLabel = now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
 
   view().innerHTML = `
-    <div class="page-head"><h1>Dashboard</h1>
-      <div class="toolbar"><button class="btn btn-ghost" id="q-donation">+ Donatie</button><button class="btn btn-primary" id="q-spend">Geld besteden</button></div></div>
-    <div class="grid grid-4">
-      <div class="card kpi accent"><div class="label">Totaal opgehaald</div><div class="value">${euro0(t.raised_cents)}</div><div class="sub">${euro0(t.raised_ytd_cents)} dit jaar</div></div>
-      <div class="card kpi wait"><div class="label">In cellen (wachtend)</div><div class="value">${euro0(t.waiting_cents)}</div><div class="sub">${t.open_cells} open cellen</div></div>
-      <div class="card kpi ok"><div class="label">Besteed</div><div class="value">${euro0(t.spent_cents)}</div><div class="sub">${t.expenditures_without_message} bestedingen wachten op bericht</div></div>
-      <div class="card kpi"><div class="label">Donateurs</div><div class="value">${num(t.donors)}</div><div class="sub">${t.active_donors} actief · ${t.recurring_donors} terugkerend · +${t.new_donors_30d} (30d)</div></div>
+    ${pageHead(`${greeting()}, ${esc(firstName(state.user.name))}`, {
+      sub: `${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)} · zo staat Robin Foundation ervoor`,
+      actions: btn('q-donation', 'Donatie', { icon: 'plus' }) + btn('q-spend', 'Geld besteden', { icon: 'hand-coins', kind: 'primary' }),
+    })}
+    <div class="kpis">
+      <div class="kpi"><div class="label">${RF.icon('banknote')}Totaal opgehaald</div><div class="value">${euro0(t.raised_cents)}</div>
+        <div class="sub">${euro0(t.raised_ytd_cents)} dit jaar</div></div>
+      <div class="kpi"><div class="label">${RF.icon('piggy-bank')}In cellen</div><div class="value">${euro0(t.waiting_cents)}</div>
+        <div class="sub">${num(t.open_cells)} open cellen wachten op besteding</div></div>
+      <div class="kpi"><div class="label">${RF.icon('hand-coins')}Besteed</div><div class="value">${euro0(t.spent_cents)}</div>
+        <div class="sub">${spentShare}% van alle giften</div></div>
+      <div class="kpi"><div class="label">${RF.icon('users')}Donateurs</div><div class="value">${num(t.donors)}</div>
+        <div class="sub">${t.active_donors} actief · ${t.recurring_donors} terugkerend</div></div>
     </div>
-    <h2 style="margin:22px 0 10px">Saldo per bestemming</h2>
-    <div class="grid grid-4">${d.categories.map(catTile).join('')}</div>
-    <div class="grid grid-2" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h3>Inkomsten vs. bestedingen (12 mnd)</h3></div>
+
+    <div class="grid grid-2-1" style="margin-top:16px">
+      <div class="card">
+        <div class="card-head"><div><h2>Inkomsten en bestedingen</h2>
+          <div class="small muted">Laatste 12 maanden · deze maand ${euro0(thisM)}${delta != null ? ` <span style="font-weight:500;color:var(--${delta >= 0 ? 'ok' : 'bad'})">${delta >= 0 ? '↑' : '↓'} ${Math.abs(delta)}% t.o.v. vorige maand</span>` : ''}</div></div>
+          <div class="legend"><span><i style="background:var(--accent)"></i>Ontvangen</span><span><i style="background:var(--accent-muted)"></i>Besteed</span></div></div>
         ${RF.barChart(months.map((m) => RF.monthName(m.slice(5))), [
-          { label: 'Ontvangen', values: months.map((m) => byMonth[m] || 0), color: 'var(--robin)' },
-          { label: 'Besteed', values: months.map((m) => spentByMonth[m] || 0), color: 'var(--spent)' },
-        ])}</div>
-      <div class="card"><div class="card-head"><h3>Langst wachtende cellen</h3><a href="#/cellen">Alle cellen →</a></div>
-        ${table([
-          { label: 'Donateur', render: (r) => donorLink(r.donor_id, r.donor_name) },
-          { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}` },
-          { label: 'Saldo', num: true, render: (r) => euro(r.remaining_cents) },
-          { label: 'Wacht', num: true, render: (r) => `${r.age_days} d` },
-        ], d.oldestCells, { empty: 'Alle cellen zijn besteed 🎉' })}</div>
+          { label: 'Ontvangen', values: months.map((m) => byMonth[m] || 0), color: 'var(--accent)' },
+          { label: 'Besteed', values: months.map((m) => spentByMonth[m] || 0), color: 'var(--accent-muted)' },
+        ], { legend: false })}
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Aandacht nodig</h2></div>
+        <div class="list">
+          ${attentionRow('#/cellen', 'piggy-bank', `${num(t.open_cells)} open cellen`, `${euro0(t.waiting_cents)} wacht op besteding`)}
+          ${attentionRow('#/bestedingen', 'mail-open', `${t.expenditures_without_message} ${t.expenditures_without_message === 1 ? 'besteding' : 'bestedingen'} zonder bericht`, 'Koppel een brief, foto of filmpje', t.expenditures_without_message)}
+          ${attentionRow('#/chat', 'messages-square', `${t.pending_chats} ${t.pending_chats === 1 ? 'chatbericht' : 'chatberichten'}`, 'Wachten op controle', t.pending_chats)}
+          ${attentionRow('#/taken', 'list-checks', `${t.open_tasks} open ${t.open_tasks === 1 ? 'taak' : 'taken'}`, t.overdue_tasks ? `${t.overdue_tasks} te laat` : 'Niets te laat', t.overdue_tasks)}
+          ${attentionRow('#/donaties', 'clock', `${euro0(t.pending_cents)} in afwachting`, 'Donaties die nog niet binnen zijn', t.pending_cents)}
+        </div>
+      </div>
     </div>
-    <div class="grid grid-2" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h3>Recente donaties</h3><a href="#/donaties">Alles →</a></div>
-        ${table([
-          { label: 'Datum', render: (r) => date(r.received_at) },
-          { label: 'Donateur', render: (r) => donorLink(r.donor_id, r.donor_name) },
-          { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}` },
-          { label: 'Bedrag', num: true, render: (r) => euro(r.amount_cents) },
-        ], d.recent)}</div>
-      <div class="card"><div class="card-head"><h3>Openstaande taken ${t.overdue_tasks ? `<span class="badge badge-hoog">${t.overdue_tasks} te laat</span>` : ''}</h3><a href="#/taken">Alles →</a></div>
-        ${table([
-          { label: 'Taak', render: (r) => `${esc(r.title)}${r.donor_name ? `<div class="small muted">${donorLink(r.donor_id, r.donor_name)}</div>` : ''}` },
-          { label: 'Deadline', render: (r) => `<span class="${r.due_date && r.due_date < today() ? 'badge badge-hoog' : ''}">${date(r.due_date) || '—'}</span>` },
-          { label: 'Prioriteit', render: (r) => `<span class="badge badge-${esc(r.priority)}">${esc(r.priority)}</span>` },
-        ], d.tasks, { empty: 'Geen open taken' })}</div>
+
+    <div class="card flush" style="margin-top:16px">
+      <div class="card-head"><h2>Saldo per bestemming</h2><a href="#/cellen">Alle cellen ${RF.icon('arrow-right', 'icon-sm')}</a></div>
+      ${table([
+        { label: 'Bestemming', render: (c) => `<span class="cat-name">${RF.catIcon(c)}<span><b style="font-weight:500">${esc(c.name)}</b><span class="sub">${c.unit_cost_cents ? `${euro(c.unit_cost_cents)} per ${esc(c.unit_label)}` : 'Vrij bedrag'}</span></span></span>` },
+        { label: 'Verdeling', width: '28%', render: (c) => `<div style="min-width:120px">${RF.splitBar(c.spent_cents, c.waiting_cents)}</div>` },
+        { label: 'Impact', render: (c) => `<span class="muted">${c.unit_cost_cents ? `${num(c.units_spent)} ${esc(c.unit_label_plural)}` : `${euro0(c.spent_cents)} noodhulp`}</span>` },
+        { label: 'Besteed', num: true, render: (c) => euro0(c.spent_cents) },
+        { label: 'In cel', num: true, render: (c) => `<b style="font-weight:600">${euro0(c.waiting_cents)}</b>` },
+      ], d.categories)}
+    </div>
+
+    <div class="grid grid-3" style="margin-top:16px">
+      <div class="card"><div class="card-head"><h2>Recente donaties</h2><a href="#/donaties">Alles</a></div>
+        <div class="list">${d.recent.slice(0, 6).map((r) => `<a class="list-row" href="#/donateurs/${r.donor_id}">${RF.catIcon(r, 'sm')}
+          <div class="grow"><div class="title">${esc(r.donor_name)}</div><div class="meta">${esc(r.category_name)} · ${date(r.received_at)}</div></div>
+          <div class="end">${euro(r.amount_cents)}</div></a>`).join('') || RF.emptyState({ icon: 'banknote', title: 'Nog geen donaties' })}</div></div>
+      <div class="card"><div class="card-head"><h2>Langst wachtende cellen</h2><a href="#/cellen">Alles</a></div>
+        <div class="list">${d.oldestCells.map((r) => `<a class="list-row" href="#/donateurs/${r.donor_id}">${RF.catIcon(r, 'sm')}
+          <div class="grow"><div class="title">${esc(r.donor_name)}</div><div class="meta">${esc(r.category_name)} · wacht ${ago(r.age_days)}</div></div>
+          <div class="end">${euro(r.remaining_cents)}</div></a>`).join('') || RF.emptyState({ icon: 'check-check', title: 'Alles is besteed' })}</div></div>
+      <div class="card"><div class="card-head"><h2>Open taken</h2><a href="#/taken">Alles</a></div>
+        <div class="list">${d.tasks.slice(0, 6).map((r) => `<a class="list-row" href="${r.donor_id ? `#/donateurs/${r.donor_id}` : '#/taken'}">
+          <span style="color:${r.due_date && r.due_date < today() ? 'var(--bad)' : 'var(--text-4)'}">${RF.icon('circle')}</span>
+          <div class="grow"><div class="title">${esc(r.title)}</div><div class="meta">${r.donor_name ? `${esc(r.donor_name)} · ` : ''}${r.due_date ? date(r.due_date) : 'Geen deadline'}</div></div>
+          ${r.priority === 'hoog' ? '<span class="badge badge-hoog">Hoog</span>' : ''}</a>`).join('') || RF.emptyState({ icon: 'check-check', title: 'Geen open taken' })}</div></div>
     </div>`;
   $('#q-donation').onclick = () => donationForm({}, () => renderDashboard());
   $('#q-spend').onclick = () => spendForm({}, () => renderDashboard());
 }
 
+function attentionRow(href, ic, title, meta, highlight = true) {
+  return `<a class="list-row" href="${href}"><span class="cat-ico sm" style="--c:${highlight ? 'var(--accent)' : 'var(--text-4)'}">${RF.icon(ic)}</span>
+    <div class="grow"><div class="title">${title}</div><div class="meta">${meta}</div></div><span class="muted">${RF.icon('chevron-right', 'icon-sm')}</span></a>`;
+}
+
 function catTile(c) {
   const units = c.unit_cost_cents ? `${num(c.units_spent)} ${c.unit_label_plural} gefinancierd` : `${euro0(c.spent_cents)} noodhulp verleend`;
-  const capacity = c.unit_cost_cents ? ` · ruimte voor ${num(Math.floor(c.waiting_cents / c.unit_cost_cents))} ${c.unit_label_plural}` : '';
-  return `<div class="card cat-tile" style="--c:${esc(c.color)}">
-    <div class="top"><div class="cat-icon">${esc(c.icon)}</div><div><div class="name">${esc(c.name)}</div>
+  return `<div class="card cat-tile"><div class="top">${RF.catIcon(c, 'lg')}<div><div class="name">${esc(c.name)}</div>
       <div class="small muted">${c.unit_cost_cents ? `${euro(c.unit_cost_cents)} per ${esc(c.unit_label)}` : 'Vrij bedrag'}</div></div></div>
     ${RF.splitBar(c.spent_cents, c.waiting_cents)}
-    <div class="nums"><span>🟢 Besteed ${euro0(c.spent_cents)}</span><span>🟠 In cel ${euro0(c.waiting_cents)}</span></div>
-    <div class="small muted">${units}${capacity}</div>
-  </div>`;
+    <div class="nums"><span>Besteed ${euro0(c.spent_cents)}</span><span>In cel ${euro0(c.waiting_cents)}</span></div>
+    <div class="small muted">${units}</div></div>`;
 }
 
 // ======================================================================= DONATEURS
 async function renderDonors() {
   const params = new URLSearchParams(sessionStorage.getItem('donorFilters') || '');
   view().innerHTML = `
-    <div class="page-head"><h1>Donateurs</h1>
-      <div class="toolbar">
-        <a class="btn btn-ghost" href="/api/admin/donors/export">⬇ CSV export</a>
-        <button class="btn btn-primary" id="new-donor">+ Nieuwe donateur</button></div></div>
-    <div class="card">
-      <div class="toolbar" style="margin-bottom:12px">
-        <input type="search" id="f-q" placeholder="Zoek op naam, e-mail, plaats, telefoon…" value="${esc(params.get('q') || '')}">
+    ${pageHead('Donateurs', { sub: 'Iedereen die geeft of wil geven', actions:
+      `<a class="btn btn-ghost" href="/api/admin/donors/export">${RF.icon('download')}<span>Exporteren</span></a>` + btn('new-donor', 'Nieuwe donateur', { icon: 'plus', kind: 'primary' }) })}
+    <div class="card flush">
+      <div class="filters">
+        ${searchInput('f-q', 'Zoek op naam, e-mail, plaats of telefoon', params.get('q') || '')}
         <select id="f-status">${labelOptions('donor', params.get('status') || '', 'Alle statussen')}</select>
         <select id="f-type">${labelOptions('type', params.get('type') || '', 'Alle typen')}</select>
-        <input type="search" id="f-tag" placeholder="Tag" value="${esc(params.get('tag') || '')}" style="min-width:120px">
-        <select id="f-sort">${opt('name', 'Sorteer: naam', params.get('sort'))}${opt('total', 'Sorteer: totaal gedoneerd', params.get('sort'))}${opt('recent', 'Sorteer: laatste donatie', params.get('sort'))}${opt('created', 'Sorteer: nieuwste', params.get('sort'))}</select>
+        <input type="search" id="f-tag" placeholder="Tag" value="${esc(params.get('tag') || '')}" style="min-width:110px">
+        <select id="f-sort" style="margin-left:auto">${opt('name', 'Naam A–Z', params.get('sort'))}${opt('total', 'Hoogste totaal', params.get('sort'))}${opt('recent', 'Laatste gift', params.get('sort'))}${opt('created', 'Nieuwste', params.get('sort'))}</select>
       </div>
-      <div id="donor-table"></div>
+      <div id="donor-table">${RF.skeleton('rows')}</div>
     </div>`;
   const load = async () => {
     const p = new URLSearchParams({ q: $('#f-q').value, status: $('#f-status').value, type: $('#f-type').value, tag: $('#f-tag').value, sort: $('#f-sort').value });
     sessionStorage.setItem('donorFilters', p.toString());
     const rows = await api(`/api/admin/donors?${p}`);
-    $('#donor-table').innerHTML = `<p class="small muted">${rows.length} donateurs</p>` + table([
-      { label: 'Naam', render: (r) => `<div style="display:flex;gap:10px;align-items:center"><div class="avatar" style="width:34px;height:34px;font-size:.8rem">${esc(initials(r.full_name))}</div>
-          <div><a href="#/donateurs/${r.id}"><b>${esc(r.full_name)}</b></a>${r.anonymous ? ' <span title="Anoniem op leaderboard">🕶️</span>' : ''}${r.has_portal ? ' <span title="Heeft portaal-account">🔑</span>' : ''}
-          <div class="small muted">${esc(r.email || '')}</div></div></div>` },
-      { label: 'Type', render: (r) => esc(label('type', r.donor_type)) },
-      { label: 'Plaats', key: 'city' },
+    const total = rows.reduce((a, r) => a + r.total_cents, 0);
+    $('#donor-table').innerHTML = table([
+      { label: 'Naam', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}<div class="grow"><a href="#/donateurs/${r.id}">${esc(r.full_name)}</a>
+          <span class="sub">${esc(r.email || label('type', r.donor_type))}</span></div></div>` },
       { label: 'Status', render: (r) => badge('donor', r.status) },
-      { label: 'Tags', render: (r) => tags(r.tags) },
-      { label: 'Laatste gift', render: (r) => date(r.last_donation) || '—' },
-      { label: 'In cel', num: true, render: (r) => euro(r.waiting_cents) },
-      { label: 'Totaal', num: true, render: (r) => `<b>${euro(r.total_cents)}</b>${r.recurring ? ' 🔁' : ''}` },
-    ], rows, { empty: 'Geen donateurs gevonden', onRow: true });
+      { label: 'Plaats', render: (r) => `<span class="muted">${esc(r.city) || '—'}</span>` },
+      { label: 'Tags', render: (r) => tags(r.tags) || '<span class="muted">—</span>' },
+      { label: 'Kenmerken', render: (r) => [
+        r.recurring ? `<span class="tag" title="Terugkerende gever">${RF.icon('repeat', 'icon-sm')}&nbsp;Terugkerend</span>` : '',
+        r.has_portal ? `<span class="tag" title="Heeft een portaal-account">${RF.icon('key-round', 'icon-sm')}&nbsp;Portaal</span>` : '',
+        r.anonymous ? `<span class="tag" title="Anoniem op het leaderboard">${RF.icon('eye-off', 'icon-sm')}&nbsp;Anoniem</span>` : '',
+      ].join('') || '<span class="muted">—</span>' },
+      { label: 'Laatste gift', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
+      { label: 'In cel', num: true, render: (r) => `<span class="muted">${euro(r.waiting_cents)}</span>` },
+      { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
+    ], rows, { empty: 'Geen donateurs gevonden', emptyIcon: 'users', onRow: true }) +
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'donateur' : 'donateurs'}</span><span>Samen ${euro(total)} gedoneerd</span></div>`;
     bindRows($('#donor-table'), rows, (r) => go(`#/donateurs/${r.id}`));
   };
   const deb = RF.debounce(load);
-  ['#f-q', '#f-tag'].forEach((s) => $(s).addEventListener('input', deb));
-  ['#f-status', '#f-type', '#f-sort'].forEach((s) => $(s).addEventListener('change', load));
+  ['#f-q', '#f-tag'].forEach((x) => $(x).addEventListener('input', deb));
+  ['#f-status', '#f-type', '#f-sort'].forEach((x) => $(x).addEventListener('change', load));
   $('#new-donor').onclick = () => donorForm({}, (d) => go(`#/donateurs/${d.id}`));
   await load();
 }
 
+const section = (title, body) => `<section class="form-section"><h3>${title}</h3>${body}</section>`;
+
 function donorForm(d, done) {
   const isNew = !d.id;
+  const f = (name, labelText, value, attrs = '') => `<div class="field"><label for="df-${name}">${labelText}</label><input type="text" id="df-${name}" name="${name}" value="${esc(value || '')}" ${attrs}></div>`;
   modal({
-    title: isNew ? 'Nieuwe donateur' : 'Donateur bewerken', wide: true,
+    title: isNew ? 'Nieuwe donateur' : 'Donateur bewerken', wide: true, submitLabel: isNew ? 'Donateur toevoegen' : 'Opslaan',
     body: `
-      <div class="field-row">
-        <div class="field"><label>Type</label><select name="donor_type">${labelOptions('type', d.donor_type || 'particulier')}</select></div>
-        <div class="field"><label>Status</label><select name="status">${labelOptions('donor', d.status || 'actief')}</select></div>
-        <div class="field"><label>Bron</label><input type="text" name="source" value="${esc(d.source || '')}" placeholder="website, evenement…"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Voornaam</label><input type="text" name="first_name" value="${esc(d.first_name || '')}"></div>
-        <div class="field"><label>Achternaam</label><input type="text" name="last_name" value="${esc(d.last_name || '')}"></div>
-        <div class="field"><label>Organisatie</label><input type="text" name="company_name" value="${esc(d.company_name || '')}"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>E-mail</label><input type="email" name="email" value="${esc(d.email || '')}"></div>
-        <div class="field"><label>Telefoon</label><input type="text" name="phone" value="${esc(d.phone || '')}"></div>
-        <div class="field"><label>Voorkeurskanaal</label><select name="preferred_channel">${opt('email', 'E-mail', d.preferred_channel)}${opt('post', 'Post', d.preferred_channel)}${opt('telefoon', 'Telefoon', d.preferred_channel)}${opt('whatsapp', 'WhatsApp', d.preferred_channel)}</select></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Adres</label><input type="text" name="street" value="${esc(d.street || '')}"></div>
-        <div class="field"><label>Postcode</label><input type="text" name="postal_code" value="${esc(d.postal_code || '')}"></div>
-        <div class="field"><label>Plaats</label><input type="text" name="city" value="${esc(d.city || '')}"></div>
-        <div class="field"><label>Land</label><input type="text" name="country" value="${esc(d.country || 'Nederland')}"></div>
-      </div>
-      <div class="field"><label>Taal (chat)</label><select name="language">${langOptions(d.language || 'nl')}</select></div>
-      <div class="field"><label>Tags (komma-gescheiden)</label><input type="text" name="tags" value="${esc(d.tags || '')}" placeholder="maandgever, major donor"></div>
-      <div class="field-row">
-        <div class="field"><label class="check"><input type="checkbox" name="anonymous" ${d.anonymous ?? 1 ? 'checked' : ''}> Anoniem op het leaderboard</label>
-          <div class="hint">Standaard aan (privacy). Zet alleen uit met toestemming van de donateur.</div></div>
-        <div class="field"><label>Weergavenaam leaderboard</label><input type="text" name="display_name" value="${esc(d.display_name || '')}" placeholder="bv. Familie Jansen"></div>
-        <div class="field"><label class="check"><input type="checkbox" name="newsletter" ${d.newsletter ?? 1 ? 'checked' : ''}> Ontvangt nieuwsbrief</label></div>
-      </div>
-      <div class="field"><label>Notities</label><textarea name="notes">${esc(d.notes || '')}</textarea></div>`,
+      ${section('Persoon', `
+        <div class="field-row">
+          ${f('first_name', 'Voornaam', d.first_name, 'autocomplete="off"')}
+          ${f('last_name', 'Achternaam', d.last_name, 'autocomplete="off"')}
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Type</label><select name="donor_type">${labelOptions('type', d.donor_type || 'particulier')}</select></div>
+          ${f('company_name', 'Organisatie <span class="muted">(optioneel)</span>', d.company_name)}
+        </div>`)}
+      ${section('Contact', `
+        <div class="field-row">
+          <div class="field"><label for="df-email">E-mail</label><input type="email" id="df-email" name="email" value="${esc(d.email || '')}"></div>
+          ${f('phone', 'Telefoon', d.phone, 'inputmode="tel"')}
+        </div>
+        <div class="field-row">
+          ${f('street', 'Adres', d.street)}
+          <div class="field-row" style="grid-template-columns:1fr 1.4fr">${f('postal_code', 'Postcode', d.postal_code)}${f('city', 'Plaats', d.city)}</div>
+        </div>
+        <div class="field-row">
+          ${f('country', 'Land', d.country || 'Nederland')}
+          <div class="field"><label>Voorkeurskanaal</label><select name="preferred_channel">${opt('email', 'E-mail', d.preferred_channel)}${opt('post', 'Post', d.preferred_channel)}${opt('telefoon', 'Telefoon', d.preferred_channel)}${opt('whatsapp', 'WhatsApp', d.preferred_channel)}</select></div>
+        </div>`)}
+      ${section('Relatie', `
+        <div class="field-row">
+          <div class="field"><label>Status</label><select name="status">${labelOptions('donor', d.status || 'actief')}</select></div>
+          ${f('source', 'Bron', d.source, 'placeholder="website, evenement…"')}
+        </div>
+        ${f('tags', 'Tags <span class="muted">(komma-gescheiden)</span>', d.tags, 'placeholder="maandgever, major donor"')}
+        <div class="field"><label>Notities</label><textarea name="notes" placeholder="Afspraken, wensen, achtergrond…">${esc(d.notes || '')}</textarea></div>`)}
+      ${section('Privacy en voorkeuren', `
+        <label class="check"><input type="checkbox" name="anonymous" ${d.anonymous ?? 1 ? 'checked' : ''}><span>Anoniem op het leaderboard<span class="hint" style="display:block;margin-top:2px">Standaard aan. Zet alleen uit met toestemming van de donateur.</span></span></label>
+        <div class="field-row">
+          ${f('display_name', 'Weergavenaam op leaderboard', d.display_name, 'placeholder="bv. Familie Jansen"')}
+          <div class="field"><label>Taal (chat)</label><select name="language">${langOptions(d.language || 'nl')}</select></div>
+        </div>
+        <label class="check" style="margin-bottom:0"><input type="checkbox" name="newsletter" ${d.newsletter ?? 1 ? 'checked' : ''}><span>Ontvangt de nieuwsbrief</span></label>`)}`,
     onSubmit: async (data) => {
       const saved = await api(isNew ? '/api/admin/donors' : `/api/admin/donors/${d.id}`, { method: isNew ? 'POST' : 'PUT', body: data });
       toast('Donateur opgeslagen');
@@ -282,89 +451,95 @@ async function renderDonor(donorId) {
   const totals = data.impact.reduce((a, r) => ({ donated: a.donated + r.donated_cents, waiting: a.waiting + r.waiting_cents, spent: a.spent + r.spent_cents }), { donated: 0, waiting: 0, spent: 0 });
   const year = new Date().getFullYear();
 
+  const messages = new Set(data.journey.flatMap((j) => j.messages.map((m) => m.id))).size;
+  const addr = [d.street, `${d.postal_code || ''} ${d.city || ''}`.trim(), d.country].filter(Boolean).join(', ');
+  const prop = (ic, k, v) => `<dt>${RF.icon(ic)}${k}</dt><dd>${v || '<span class="muted">—</span>'}</dd>`;
+  const openTasks = data.tasks.filter((t) => t.status !== 'afgerond').length;
   view().innerHTML = `
-    <div class="page-head">
-      <div class="profile-head"><div class="avatar">${esc(initials(d.full_name))}</div>
+    <div class="crumbs"><a href="#/donateurs">Donateurs</a>${RF.icon('chevron-right', 'icon-sm')}<span>${esc(d.full_name)}</span></div>
+    <div class="page-head" style="align-items:center">
+      <div class="profile-head">${RF.avatar(d.full_name, 'lg')}
         <div><h1>${esc(d.full_name)}</h1>
-          <div class="muted">${badge('donor', d.status)} ${esc(label('type', d.donor_type))} · klant sinds ${date(d.created_at)}
-          ${data.rank ? ` · <b>#${data.rank}</b> op leaderboard` : ''} ${d.anonymous ? '· 🕶️ anoniem' : `· publiek als “${esc(d.public_name)}”`}</div>
-          <div>${tags(d.tags)}</div></div></div>
+          <div class="profile-meta">${badge('donor', d.status)}<span>${esc(label('type', d.donor_type))}</span>
+            <span class="dot-sep">Sinds ${date(d.created_at)}</span>
+            ${data.rank ? `<span class="dot-sep">#${data.rank} op leaderboard</span>` : ''}
+            <span class="dot-sep" style="display:inline-flex;align-items:center;gap:5px">${d.anonymous ? `${RF.icon('eye-off', 'icon-sm')} Anoniem` : `${RF.icon('globe', 'icon-sm')} Publiek als “${esc(d.public_name)}”`}</span>
+            ${tags(d.tags)}</div></div></div>
       <div class="toolbar">
-        <a class="btn btn-ghost" href="#/donateurs">← Terug</a>
-        <button class="btn btn-ghost" id="edit">Bewerken</button>
-        <button class="btn btn-ghost" id="portal">${d.has_portal ? '🔑 Nieuw wachtwoord' : '🔑 Portaaltoegang geven'}</button>
-        <button class="btn btn-ghost" id="annual">📄 Jaaroverzicht</button>
-        ${isAdmin() ? '<button class="btn btn-ghost" id="as-donor">👁️ Inloggen als donateur</button>' : ''}
-        <button class="btn btn-ghost" id="spend-donor">⚡ Geld besteden</button>
-        <button class="btn btn-primary" id="add-donation">+ Donatie</button>
+        ${btn('edit', 'Bewerken', { icon: 'pencil' })}
+        ${btn('spend-donor', 'Geld besteden', { icon: 'hand-coins' })}
+        ${btn('add-donation', 'Donatie', { icon: 'plus', kind: 'primary' })}
+        <button class="btn btn-ghost" id="more" aria-label="Meer acties" aria-haspopup="menu" style="padding:0 8px">${RF.icon('ellipsis')}</button>
       </div>
     </div>
-    <div class="grid grid-4">
-      <div class="card kpi accent"><div class="label">Totaal gedoneerd</div><div class="value">${euro(totals.donated)}</div></div>
-      <div class="card kpi wait"><div class="label">Nog in cellen</div><div class="value">${euro(totals.waiting)}</div></div>
-      <div class="card kpi ok"><div class="label">Besteed</div><div class="value">${euro(totals.spent)}</div></div>
-      <div class="card kpi"><div class="label">Berichten ontvangen</div><div class="value">${new Set(data.journey.flatMap((j) => j.messages.map((m) => m.id))).size}</div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">Totaal gedoneerd</div><div class="value">${euro(totals.donated)}</div><div class="sub">${data.donations.length} ${data.donations.length === 1 ? 'gift' : 'giften'}</div></div>
+      <div class="kpi"><div class="label">Besteed</div><div class="value">${euro(totals.spent)}</div><div class="sub">${totals.donated ? Math.round((totals.spent / totals.donated) * 100) : 0}% van het totaal</div></div>
+      <div class="kpi"><div class="label">Nog in cellen</div><div class="value">${euro(totals.waiting)}</div><div class="sub">Wacht op besteding</div></div>
+      <div class="kpi"><div class="label">Berichten ontvangen</div><div class="value">${messages}</div><div class="sub">Brieven, foto's en filmpjes</div></div>
     </div>
     <div class="grid grid-1-2" style="margin-top:16px">
       <div class="stack">
-        <div class="card"><h3>Contactgegevens</h3>
-          <dl class="dl">
-            <dt>E-mail</dt><dd>${d.email ? `<a href="mailto:${esc(d.email)}">${esc(d.email)}</a>` : '—'}</dd>
-            <dt>Telefoon</dt><dd>${esc(d.phone) || '—'}</dd>
-            <dt>Adres</dt><dd>${esc([d.street, `${d.postal_code} ${d.city}`.trim(), d.country].filter(Boolean).join(', ')) || '—'}</dd>
-            <dt>Organisatie</dt><dd>${esc(d.company_name) || '—'}</dd>
-            <dt>Voorkeur</dt><dd>${esc(d.preferred_channel)}</dd>
-            <dt>Nieuwsbrief</dt><dd>${d.newsletter ? 'Ja' : 'Nee'}</dd>
-            <dt>Bron</dt><dd>${esc(d.source) || '—'}</dd>
-            <dt>Portaal</dt><dd>${d.has_portal ? `Actief${d.last_login_at ? ` · laatst ingelogd ${dateTime(d.last_login_at)}` : ''}` : 'Geen account'}</dd>
+        <div class="card"><div class="card-head"><h2>Gegevens</h2></div>
+          <dl class="props">
+            ${prop('at-sign', 'E-mail', d.email ? `<a href="mailto:${esc(d.email)}">${esc(d.email)}</a>` : '')}
+            ${prop('phone', 'Telefoon', d.phone ? `<a href="tel:${esc(d.phone)}">${esc(d.phone)}</a>` : '')}
+            ${prop('map-pin', 'Adres', esc(addr))}
+            ${prop('building-2', 'Organisatie', esc(d.company_name))}
+            ${prop('message-circle', 'Voorkeur', esc(d.preferred_channel))}
+            ${prop('languages', 'Taal', esc((state.languages || {})[d.language] || d.language))}
+            ${prop('mail', 'Nieuwsbrief', d.newsletter ? 'Ja' : 'Nee')}
+            ${prop('sparkles', 'Bron', esc(d.source))}
+            ${prop('key-round', 'Portaal', d.has_portal ? `Actief${d.last_login_at ? `<span class="sub muted">Laatst ingelogd ${dateTime(d.last_login_at)}</span>` : ''}` : 'Geen account')}
           </dl>
-          ${d.notes ? `<h3 style="margin-top:14px">Notities</h3><p style="white-space:pre-line">${esc(d.notes)}</p>` : ''}
+          ${d.notes ? `<hr><div class="small muted" style="margin-bottom:4px">Notities</div><p style="white-space:pre-line;margin:0">${esc(d.notes)}</p>` : ''}
         </div>
-        <div class="card"><h3>Impact per bestemming</h3>
-          ${data.impact.map((r) => `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between"><span>${r.icon} ${esc(r.name)}</span><b>${euro(r.donated_cents)}</b></div>
+        <div class="card"><div class="card-head"><h2>Impact per bestemming</h2></div>
+          ${data.impact.filter((r) => r.donated_cents).map((r) => `<div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${RF.catLabel(r, r.name)}<b class="num" style="font-weight:600">${euro(r.donated_cents)}</b></div>
             ${RF.splitBar(r.spent_cents, r.waiting_cents)}
-            <div class="small muted">${r.units_funded ? `≈ ${esc(RF.unitsText(r, r.units_funded))} gefinancierd · ` : ''}${euro(r.waiting_cents)} wachtend</div></div>`).join('')}
+            <div class="small muted" style="margin-top:6px">${r.units_funded ? `${esc(RF.unitsText(r, r.units_funded))} gefinancierd · ` : ''}${euro(r.waiting_cents)} in cel</div></div>`).join('')
+            || '<p class="muted small" style="margin:0">Nog geen donaties.</p>'}
         </div>
-        <div class="card"><div class="card-head"><h3>Taken</h3><button class="btn btn-ghost btn-sm" id="add-task">+ Taak</button></div>
-          ${data.tasks.length ? data.tasks.map((t) => `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
+        <div class="card"><div class="card-head"><h2>Taken${openTasks ? ` <span class="tab-count" style="font-size:12px;color:var(--text-3)">${openTasks}</span>` : ''}</h2>${btn('add-task', '', { icon: 'plus', size: 'sm' })}</div>
+          ${data.tasks.length ? data.tasks.map((t) => `<label class="check" style="margin-bottom:10px">
             <input type="checkbox" data-task="${t.id}" ${t.status === 'afgerond' ? 'checked' : ''}>
-            <div><div style="${t.status === 'afgerond' ? 'text-decoration:line-through;color:var(--ink-3)' : ''}">${esc(t.title)}</div>
-            <div class="small muted">${t.due_date ? `Deadline ${date(t.due_date)} · ` : ''}${esc(t.assigned_name || '')}</div></div></div>`).join('') : '<p class="muted small">Geen taken</p>'}
+            <span><span style="${t.status === 'afgerond' ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${esc(t.title)}</span>
+            <span class="small muted" style="display:block">${t.due_date ? `${date(t.due_date)} · ` : ''}${esc(t.assigned_name || '')}</span></span></label>`).join('')
+            : '<p class="muted small" style="margin:0">Geen taken.</p>'}
         </div>
-        ${isAdmin() ? `<div class="card"><h3>Privacy (AVG)</h3><p class="small muted">Anonimiseren verwijdert persoonsgegevens maar behoudt de financiële historie.</p>
-          <button class="btn btn-danger btn-sm" id="anonymize">Anonimiseren</button>
-          <button class="btn btn-danger btn-sm" id="delete">Verwijderen</button></div>` : ''}
       </div>
       <div class="card">
-        <div class="tabs" id="tabs">
-          <button data-tab="journey" class="active">Waar ging het geld heen?</button>
-          <button data-tab="donations">Donaties & cellen (${data.donations.length})</button>
-          <button data-tab="interactions">Contactmomenten (${data.interactions.length})</button>
-          <button data-tab="emails">E-mails (${data.emails.length})</button>
+        <div class="tabs" id="tabs" role="tablist">
+          <button data-tab="journey" class="active" role="tab">Geldstroom</button>
+          <button data-tab="donations" role="tab">Donaties <span class="tab-count">${data.donations.length}</span></button>
+          <button data-tab="interactions" role="tab">Contactmomenten <span class="tab-count">${data.interactions.length}</span></button>
+          <button data-tab="emails" role="tab">E-mails <span class="tab-count">${data.emails.length}</span></button>
         </div>
         <div id="tab-journey">${journeyHtml(data.journey)}</div>
         <div id="tab-donations" class="hidden">
           ${table([
-            { label: 'Datum', render: (r) => date(r.received_at) },
-            { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}${r.campaign_name ? `<div class="small muted">📣 ${esc(r.campaign_name)}</div>` : ''}` },
-            { label: 'Frequentie', render: (r) => esc(label('frequency', r.frequency)) },
+            { label: 'Datum', render: (r) => `<span class="muted">${date(r.received_at)}</span>` },
+            { label: 'Bestemming', render: (r) => `${RF.catLabel(r)}${r.campaign_name ? `<span class="sub">${esc(r.campaign_name)}</span>` : ''}` },
             { label: 'Status', render: (r) => badge('donation', r.status) },
-            { label: 'Cel', render: (r) => (r.cell_id ? `${badge('cell', r.cell_status)} <span class="small muted">${euro(r.remaining_cents)} over</span>` : '—') },
-            { label: 'Bedrag', num: true, render: (r) => `<b>${euro(r.amount_cents)}</b>` },
-            { label: '', render: (r) => `<button class="btn btn-ghost btn-sm" data-edit-donation="${r.id}">Bewerk</button>` },
-          ], data.donations, { empty: 'Nog geen donaties' })}
+            { label: 'Cel', render: (r) => (r.cell_id ? `${badge('cell', r.cell_status)}<span class="sub">${euro(r.remaining_cents)} over</span>` : '<span class="muted">—</span>') },
+            { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b><span class="sub">${esc(label('frequency', r.frequency))}</span>` },
+            { label: '', render: (r) => `<button class="icon-btn" data-edit-donation="${r.id}" aria-label="Donatie bewerken" title="Bewerken">${RF.icon('pencil')}</button>` },
+          ], data.donations, { empty: 'Nog geen donaties', emptyIcon: 'banknote' })}
         </div>
         <div id="tab-interactions" class="hidden">
-          <button class="btn btn-ghost btn-sm" id="add-interaction" style="margin-bottom:12px">+ Contactmoment vastleggen</button>
+          <div style="margin-bottom:14px">${btn('add-interaction', 'Contactmoment vastleggen', { icon: 'plus', size: 'sm' })}</div>
           ${data.interactions.length ? `<ul class="timeline">${data.interactions.map((i) => `<li>
-            <div class="when">${dateTime(i.occurred_at)} · ${esc(label('interaction', i.type))} · ${esc(i.user_name || '')}
-              <button class="icon-btn" data-del-interaction="${i.id}" title="Verwijderen">🗑</button></div>
-            <b>${esc(i.subject)}</b><div style="white-space:pre-line">${esc(i.body)}</div></li>`).join('')}</ul>` : '<p class="muted">Nog geen contactmomenten.</p>'}
+            <div class="when" style="display:flex;align-items:center;gap:6px">${RF.icon(RF.INTERACTION_ICONS[i.type] || 'file-text', 'icon-sm')} ${esc(label('interaction', i.type))} · ${dateTime(i.occurred_at)}${i.user_name ? ` · ${esc(i.user_name)}` : ''}
+              <button class="icon-btn" data-del-interaction="${i.id}" title="Verwijderen" aria-label="Verwijderen" style="margin-left:auto;width:24px;height:24px">${RF.icon('trash-2', 'icon-sm')}</button></div>
+            <div style="font-weight:500">${esc(i.subject)}</div><div style="white-space:pre-line;color:var(--text-2)">${esc(i.body)}</div></li>`).join('')}</ul>`
+            : RF.emptyState({ icon: 'phone', title: 'Nog geen contactmomenten', text: 'Leg telefoontjes, afspraken en notities vast.' })}
         </div>
         <div id="tab-emails" class="hidden">
-          ${data.emails.length ? data.emails.map((m) => `<details style="border-bottom:1px solid var(--line);padding:8px 0">
-            <summary><b>${esc(m.subject)}</b> <span class="small muted">· ${dateTime(m.created_at)} · ${esc(m.kind)}</span></summary>
-            <p style="white-space:pre-line;margin-top:8px" class="small">${esc(m.body)}</p></details>`).join('') : '<p class="muted">Geen e-mails verstuurd.</p>'}
+          ${data.emails.length ? data.emails.map((m) => `<details style="border-top:1px solid var(--border);padding:10px 0">
+            <summary><span style="color:var(--text);font-weight:500">${esc(m.subject)}</span><span class="small muted" style="margin-left:auto;white-space:nowrap">${dateTime(m.created_at)}</span></summary>
+            <p style="white-space:pre-line;margin:10px 0 0;color:var(--text-2)" class="small">${esc(m.body)}</p></details>`).join('')
+            : RF.emptyState({ icon: 'mail', title: 'Nog geen e-mails verstuurd' })}
         </div>
       </div>
     </div>`;
@@ -379,7 +554,6 @@ async function renderDonor(donorId) {
   const reload = () => renderDonor(donorId);
   $('#edit').onclick = () => donorForm(d, reload);
   $('#add-donation').onclick = () => donationForm({ donor_id: d.id }, reload);
-  if (isAdmin()) $('#as-donor').onclick = () => loginAs(`/api/admin/donors/${d.id}/impersonate`);
   $('#spend-donor').onclick = () => {
     const withMoney = data.impact.find((r) => r.waiting_cents > 0);
     if (!withMoney) { toast('Deze donateur heeft geen geld meer in de cellen', 'error'); return; }
@@ -387,8 +561,8 @@ async function renderDonor(donorId) {
   };
   $('#add-task').onclick = () => taskForm({ donor_id: d.id }, reload);
   $('#add-interaction').onclick = () => interactionForm(d.id, reload);
-  $('#annual').onclick = () => annualModal(`/api/admin/donors/${d.id}/annual`, year);
-  $('#portal').onclick = () => modal({
+  const annual = () => annualModal(`/api/admin/donors/${d.id}/annual`, year);
+  const portalAccess = () => modal({
     title: 'Toegang donateursportaal',
     body: `<p>Stel een wachtwoord in voor <b>${esc(d.email || 'deze donateur (geen e-mail!)')}</b>. Laat leeg voor een willekeurig wachtwoord.
       De donateur ontvangt een e-mail (zie E-mail log).</p><div class="field"><label>Wachtwoord (min. 8 tekens)</label><input type="text" name="password" minlength="8"></div>`,
@@ -410,29 +584,36 @@ async function renderDonor(donorId) {
     await api(`/api/admin/interactions/${b.dataset.delInteraction}`, { method: 'DELETE', body: {} });
     reload();
   }));
-  if (isAdmin()) {
-    $('#anonymize').onclick = async () => {
+  const anonymize = async () => {
       if (!(await confirmDialog('Alle persoonsgegevens van deze donateur worden onherroepelijk verwijderd. Donaties blijven (anoniem) bewaard.', 'Anonimiseren'))) return;
       await api(`/api/admin/donors/${d.id}/anonymize`, { method: 'POST', body: {} });
       toast('Donateur geanonimiseerd'); reload();
     };
-    $('#delete').onclick = async () => {
+  const removeDonor = async () => {
       if (!(await confirmDialog('Donateur en alle donaties definitief verwijderen?', 'Verwijderen'))) return;
       try { await api(`/api/admin/donors/${d.id}`, { method: 'DELETE', body: {} }); toast('Verwijderd'); go('#/donateurs'); }
       catch (e) { toast(e.message, 'error'); }
     };
-  }
+  $('#more').onclick = (e) => RF.menu(e.currentTarget, [
+    { label: d.has_portal ? 'Nieuw portaalwachtwoord' : 'Portaaltoegang geven', icon: 'key-round', onClick: portalAccess },
+    { label: 'Jaaroverzicht', icon: 'file-text', onClick: annual },
+    ...(isAdmin() ? [{ label: 'Inloggen als donateur', icon: 'eye', onClick: () => loginAs(`/api/admin/donors/${d.id}/impersonate`) },
+      '-', { heading: 'Privacy (AVG)' },
+      { label: 'Anonimiseren', icon: 'user', onClick: anonymize, danger: true },
+      { label: 'Verwijderen', icon: 'trash-2', onClick: removeDonor, danger: true }] : []),
+  ]);
 }
 
 function journeyHtml(journey) {
-  if (!journey.length) return '<p class="muted">Er is nog geen geld van deze donateur besteed. Het staat veilig in de cellen.</p>';
+  if (!journey.length) return RF.emptyState({ icon: 'piggy-bank', title: 'Nog niets besteed', text: 'Het geld van deze donateur staat veilig in de cellen tot het wordt uitgegeven.' });
   return `<ul class="timeline">${journey.map((j) => `<li>
-    <div class="when">${date(j.spent_at)} · gedoneerd op ${date(j.donated_at)} (cel #${j.cell_id})</div>
-    <div><b>${euro(j.amount_cents)}</b> → ${j.icon} ${esc(j.category_name)}${j.recipient_name ? ` voor <b>${esc(j.recipient_name)}</b>` : ''}
-      <a class="small" href="#/bestedingen/${j.expenditure_id}">besteding #${j.expenditure_id}</a></div>
-    <div class="small muted">${esc(j.description)} ${j.units ? `(${Math.round(j.share * 100)}% van ${esc(RF.unitsText(j, j.units))})` : ''}</div>
-    ${j.messages.length ? j.messages.map((m) => `<div class="small">${esc(label('message', m.type))}: <b>${esc(m.title)}</b> ${m.read_at ? '<span class="badge badge-besteed">gelezen</span>' : '<span class="badge badge-wachtend">ongelezen</span>'}</div>`).join('')
-      : '<div class="small"><span class="badge badge-wachtend">Wacht op bericht van ontvanger</span></div>'}
+    <div class="when">${date(j.spent_at)} · gedoneerd ${date(j.donated_at)} · cel #${j.cell_id}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b class="num" style="font-weight:600">${euro(j.amount_cents)}</b>
+      <span class="muted">${RF.icon('arrow-right', 'icon-sm')}</span>${RF.catLabel(j)}${j.recipient_name ? `<span class="muted">voor</span><b style="font-weight:500">${esc(j.recipient_name)}</b>` : ''}
+      <a class="small" href="#/bestedingen/${j.expenditure_id}" style="margin-left:auto">Besteding #${j.expenditure_id}</a></div>
+    <div class="small muted" style="margin-top:2px">${esc(j.description)}${j.units ? ` · ${Math.round(j.share * 100)}% van ${esc(RF.unitsText(j, j.units))}` : ''}</div>
+    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${j.messages.length ? j.messages.map((m) => `<span class="tag">${RF.icon(RF.MESSAGE_ICONS[m.type] || 'mail', 'icon-sm')}&nbsp;${esc(m.title)}&nbsp;·&nbsp;${m.read_at ? 'gelezen' : 'ongelezen'}</span>`).join('')
+      : '<span class="badge badge-wachtend">Wacht op bericht van ontvanger</span>'}</div>
   </li>`).join('')}</ul>`;
 }
 
@@ -455,7 +636,7 @@ async function annualModal(url, year) {
     const a = await api(`${url}?year=${y}`);
     const years = []; for (let i = new Date().getFullYear(); i >= new Date().getFullYear() - 5; i--) years.push(i);
     return `<div class="no-print toolbar" style="margin-bottom:12px"><select id="annual-year">${years.map((v) => opt(v, v, a.year)).join('')}</select>
-        <button type="button" class="btn btn-ghost" onclick="window.print()">🖨 Afdrukken / PDF</button></div>
+        <button type="button" class="btn btn-ghost" onclick="window.print()">${RF.icon('printer')}<span>Afdrukken / PDF</span></button></div>
       <div id="annual-doc">
       <h2>Giftenoverzicht ${esc(a.year)}</h2>
       <p><b>${esc(a.organisation.name)}</b> · ${esc(a.organisation.anbi)} · RSIN ${esc(a.organisation.rsin)}</p>
@@ -513,7 +694,7 @@ function donationForm(d, done) {
           if (!b) return;
           form.elements.donor_id.value = b.dataset.pick;
           search.value = b.dataset.name;
-          $('#donor-results', form).innerHTML = `<span class="badge badge-besteed">✓ ${esc(b.dataset.name)}</span>`;
+          $('#donor-results', form).innerHTML = `<span class="badge badge-goedgekeurd">${esc(b.dataset.name)}</span>`;
         });
       }
       const del = $('#del-donation', form);
@@ -536,39 +717,38 @@ function donationForm(d, done) {
 
 async function renderDonations() {
   view().innerHTML = `
-    <div class="page-head"><h1>Donaties</h1>
-      <div class="toolbar"><button class="btn btn-ghost" id="export">⬇ CSV export</button><button class="btn btn-primary" id="new">+ Donatie registreren</button></div></div>
-    <div class="card">
-      <div class="toolbar" style="margin-bottom:12px">
-        <input type="search" id="f-q" placeholder="Zoek donateur of referentie…">
+    ${pageHead('Donaties', { sub: 'Alle giften, met de status van hun cel', actions: btn('export', 'Exporteren', { icon: 'download' }) + btn('new', 'Donatie registreren', { icon: 'plus', kind: 'primary' }) })}
+    <div class="card flush">
+      <div class="filters">
+        ${searchInput('f-q', 'Zoek donateur of referentie')}
         <select id="f-cat">${catOptions('', true)}</select>
         <select id="f-status">${labelOptions('donation', '', 'Alle statussen')}</select>
         <select id="f-method">${labelOptions('method', '', 'Alle betaalwijzen')}</select>
         <select id="f-freq">${labelOptions('frequency', '', 'Alle frequenties')}</select>
         <select id="f-camp">${opt('', 'Alle campagnes', '')}${state.campaigns.map((c) => opt(c.id, c.name)).join('')}</select>
-        <input type="date" id="f-from" title="Vanaf"> <input type="date" id="f-to" title="Tot en met">
+        <input type="date" id="f-from" title="Vanaf" aria-label="Vanaf"><input type="date" id="f-to" title="Tot en met" aria-label="Tot en met">
       </div>
-      <div id="tbl"></div>
+      <div id="tbl">${RF.skeleton('rows')}</div>
     </div>`;
   const qs = () => new URLSearchParams({ q: $('#f-q').value, category: $('#f-cat').value, status: $('#f-status').value, method: $('#f-method').value,
     frequency: $('#f-freq').value, campaign: $('#f-camp').value, from: $('#f-from').value, to: $('#f-to').value });
   const load = async () => {
     const rows = await api(`/api/admin/donations?${qs()}`);
-    const sum = rows.filter((r) => r.status === 'ontvangen').reduce((s, r) => s + r.amount_cents, 0);
-    $('#tbl').innerHTML = `<p class="small muted">${rows.length} donaties · ontvangen totaal <b>${euro(sum)}</b></p>` + table([
-      { label: 'Datum', render: (r) => date(r.received_at) },
-      { label: 'Donateur', render: (r) => donorLink(r.donor_id, r.donor_name) },
-      { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}${r.campaign_name ? `<div class="small muted">📣 ${esc(r.campaign_name)}</div>` : ''}` },
-      { label: 'Betaalwijze', render: (r) => esc(label('method', r.method)) },
-      { label: 'Freq.', render: (r) => (r.frequency === 'eenmalig' ? 'Eenmalig' : badge('frequency', r.frequency)) },
+    const sum = rows.filter((r) => r.status === 'ontvangen').reduce((x, r) => x + r.amount_cents, 0);
+    $('#tbl').innerHTML = table([
+      { label: 'Datum', render: (r) => `<span class="muted">${date(r.received_at)}</span>` },
+      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.donor_name, 'sm')}${donorLink(r.donor_id, r.donor_name)}</div>` },
+      { label: 'Bestemming', render: (r) => `${RF.catLabel(r)}${r.campaign_name ? `<span class="sub">${esc(r.campaign_name)}</span>` : ''}` },
+      { label: 'Betaling', render: (r) => `${esc(label('method', r.method))}<span class="sub">${esc(label('frequency', r.frequency))}</span>` },
       { label: 'Status', render: (r) => badge('donation', r.status) },
-      { label: 'Cel', render: (r) => (r.cell_id ? `${badge('cell', r.cell_status)}` : '—') },
-      { label: 'Bedrag', num: true, render: (r) => `<b>${euro(r.amount_cents)}</b>` },
-    ], rows, { empty: 'Geen donaties gevonden', onRow: true });
+      { label: 'Cel', render: (r) => (r.cell_id ? badge('cell', r.cell_status) : '<span class="muted">—</span>') },
+      { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b>` },
+    ], rows, { empty: 'Geen donaties gevonden', emptyIcon: 'banknote', onRow: true }) +
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'donatie' : 'donaties'}</span><span>Ontvangen: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
     bindRows($('#tbl'), rows, (r) => donationForm(r, load));
   };
   $('#f-q').addEventListener('input', RF.debounce(load));
-  view().querySelectorAll('.toolbar select, .toolbar input[type=date]').forEach((el) => el.addEventListener('change', load));
+  view().querySelectorAll('.filters select, .filters input[type=date]').forEach((el) => el.addEventListener('change', load));
   $('#new').onclick = () => donationForm({}, load);
   $('#export').onclick = () => { location.href = `/api/admin/donations?${qs()}&format=csv`; };
   await load();
@@ -577,54 +757,56 @@ async function renderDonations() {
 // ======================================================================= CELLEN
 async function renderCells() {
   view().innerHTML = `
-    <div class="page-head"><h1>Cellen</h1>
-      <div class="toolbar"><button class="btn btn-primary" id="trigger" disabled>⚡ Geselecteerde cellen besteden</button></div></div>
-    <p class="muted" style="max-width:780px">Elke ontvangen donatie wordt in een eigen <b>cel</b> bewaard tot het geld daadwerkelijk wordt uitgegeven.
-      Selecteer cellen van dezelfde bestemming en trigger een besteding: de donateurs krijgen automatisch bericht, en zodra je
-      een brief, foto of filmpje van de ontvanger koppelt komt dat in hun portaal.</p>
-    <div class="grid grid-4" id="cat-summary" style="margin-bottom:16px"></div>
-    <div class="card">
-      <div class="toolbar" style="margin-bottom:12px">
-        <select id="f-cat">${catOptions('', true)}</select>
-        <select id="f-status">${opt('open', 'Open (saldo > 0)', 'open')}${opt('', 'Alle', '')}${labelOptions('cell', '')}</select>
-        <span class="small muted" id="sel-info"></span>
+    ${pageHead('Cellen', { sub: 'Elke donatie staat in een eigen cel tot het geld echt wordt uitgegeven',
+      actions: `<span class="small muted" id="sel-info"></span>${btn('trigger', 'Selectie besteden', { icon: 'hand-coins', kind: 'primary' })}` })}
+    <div class="kpis" id="cat-summary"></div>
+    <div class="card flush" style="margin-top:16px">
+      <div class="filters">
+        <div class="seg" id="f-cat-seg" role="tablist" aria-label="Bestemming"></div>
+        <select id="f-status" style="margin-left:auto">${opt('open', 'Open (saldo over)', 'open')}${opt('', 'Alle cellen', '')}${labelOptions('cell', '')}</select>
+        <input type="hidden" id="f-cat" value="">
       </div>
-      <div id="tbl"></div>
+      <div id="tbl">${RF.skeleton('rows')}</div>
     </div>`;
+  $('#trigger').disabled = true;
   const selected = new Map();
-  $('#cat-summary').innerHTML = state.categories.map((c) => `<div class="card kpi" style="border-top:3px solid ${esc(c.color)}">
-    <div class="label">${esc(c.icon)} ${esc(c.name)}</div><div class="value">${euro0(c.waiting_cents)}</div>
-    <div class="sub">${c.open_cells} open cellen${c.unit_cost_cents ? ` · ${num(Math.floor(c.waiting_cents / c.unit_cost_cents))} ${esc(c.unit_label_plural)}` : ''}</div></div>`).join('');
+  $('#cat-summary').innerHTML = state.categories.map((c) => `<div class="kpi">
+    <div class="label">${RF.catIcon(c, 'sm')}${esc(c.name)}</div><div class="value">${euro0(c.waiting_cents)}</div>
+    <div class="sub">${c.open_cells} open${c.unit_cost_cents ? ` · ruimte voor ${num(Math.floor(c.waiting_cents / c.unit_cost_cents))} ${esc(c.unit_label_plural)}` : ''}</div></div>`).join('');
+  const seg = $('#f-cat-seg');
+  seg.innerHTML = [`<button class="active" data-k="">Alle</button>`, ...state.categories.map((c) => `<button data-k="${esc(c.key)}">${esc(c.name.split(' ')[0])}</button>`)].join('');
+  seg.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    $('#f-cat').value = b.dataset.k; load();
+  };
 
   const updateSel = () => {
     const cells = [...selected.values()];
-    const sum = cells.reduce((s, c) => s + c.remaining_cents, 0);
+    const sum = cells.reduce((x, c) => x + c.remaining_cents, 0);
     const cats = new Set(cells.map((c) => c.category_key));
-    $('#sel-info').innerHTML = cells.length ? `${cells.length} geselecteerd · ${euro(sum)}${cats.size > 1 ? ' · <span style="color:var(--bad)">kies één bestemming</span>' : ''}` : '';
+    $('#sel-info').innerHTML = cells.length ? `${cells.length} geselecteerd · <b style="color:var(--text)">${euro(sum)}</b>${cats.size > 1 ? ' · <span style="color:var(--bad)">kies één bestemming</span>' : ''}` : 'Selecteer cellen om te besteden';
     $('#trigger').disabled = !cells.length || cats.size > 1;
   };
   const load = async () => {
     const rows = await api(`/api/admin/cells?category=${$('#f-cat').value}&status=${$('#f-status').value}`);
     selected.clear(); updateSel();
     $('#tbl').innerHTML = table([
-      { label: '', render: (r) => (r.remaining_cents > 0 ? `<input type="checkbox" data-cell="${r.id}" aria-label="Selecteer cel ${r.id}">` : '') },
-      { label: 'Cel', render: (r) => `#${r.id}` },
-      { label: 'Donateur', render: (r) => donorLink(r.donor_id, r.donor_name) },
-      { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}` },
-      { label: 'Gedoneerd', render: (r) => date(r.received_at) },
-      { label: 'Wacht', num: true, render: (r) => (r.remaining_cents > 0 ? `${r.age_days} d` : '—') },
+      { label: '', width: '36px', render: (r) => (r.remaining_cents > 0 ? `<input type="checkbox" data-cell="${r.id}" aria-label="Selecteer cel ${r.id}">` : '') },
+      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.donor_name, 'sm')}<div class="grow">${donorLink(r.donor_id, r.donor_name)}<span class="sub">Cel #${r.id} · ${date(r.received_at)}</span></div></div>` },
+      { label: 'Bestemming', render: (r) => RF.catLabel(r) },
       { label: 'Status', render: (r) => badge('cell', r.status) },
-      { label: 'Vulling', render: (r) => `<div style="min-width:90px">${RF.splitBar(r.amount_cents - r.remaining_cents, r.remaining_cents)}</div>` },
-      { label: 'Bedrag', num: true, render: (r) => euro(r.amount_cents) },
-      { label: 'Saldo', num: true, render: (r) => `<b>${euro(r.remaining_cents)}</b>` },
-    ], rows, { empty: 'Geen cellen' });
+      { label: 'Gebruikt', width: '16%', render: (r) => `<div style="min-width:90px">${RF.splitBar(r.amount_cents - r.remaining_cents, r.remaining_cents)}</div>` },
+      { label: 'Wacht', num: true, render: (r) => `<span class="muted">${r.remaining_cents > 0 ? ago(r.age_days) : '—'}</span>` },
+      { label: 'Saldo', num: true, render: (r) => `<b style="font-weight:600">${euro(r.remaining_cents)}</b><span class="sub">van ${euro(r.amount_cents)}</span>` },
+    ], rows, { empty: 'Geen cellen in deze selectie', emptyIcon: 'piggy-bank' });
     $('#tbl').querySelectorAll('[data-cell]').forEach((cb) => cb.addEventListener('change', () => {
       const cell = rows.find((r) => r.id === Number(cb.dataset.cell));
       if (cb.checked) selected.set(cell.id, cell); else selected.delete(cell.id);
+      cb.closest('tr').style.background = cb.checked ? 'var(--accent-soft)' : '';
       updateSel();
     }));
   };
-  $('#f-cat').onchange = load;
   $('#f-status').onchange = load;
   $('#trigger').onclick = () => {
     const cells = [...selected.values()];
@@ -656,8 +838,8 @@ function bindUploads(form) {
       const data = await RF.readFileBase64(file);
       const r = await api('/api/admin/uploads', { method: 'POST', body: { filename: file.name, data } });
       form.elements[input.dataset.upload].value = r.url;
-      status.textContent = `✓ Geüpload (${Math.round(r.size / 1024)} kB)`;
-    } catch (e) { status.textContent = `✗ ${e.message}`; }
+      status.textContent = `Geüpload (${Math.round(r.size / 1024)} kB)`;
+    } catch (e) { status.textContent = `Uploaden mislukt: ${e.message}`; }
   }));
 }
 
@@ -757,21 +939,23 @@ function spendForm(pre, done) {
 
 async function renderExpenditures() {
   view().innerHTML = `
-    <div class="page-head"><h1>Bestedingen</h1>
-      <div class="toolbar"><select id="f-cat">${catOptions('', true)}</select><button class="btn btn-primary" id="new">Geld besteden</button></div></div>
-    <div class="card"><div id="tbl"></div></div>`;
+    ${pageHead('Bestedingen', { sub: 'Wanneer geld uit de cellen wordt uitgegeven, en aan wie', actions: btn('new', 'Geld besteden', { icon: 'hand-coins', kind: 'primary' }) })}
+    <div class="card flush">
+      <div class="filters"><select id="f-cat">${catOptions('', true)}</select></div>
+      <div id="tbl">${RF.skeleton('rows')}</div>
+    </div>`;
   const load = async () => {
     const rows = await api(`/api/admin/expenditures?category=${$('#f-cat').value}`);
+    const sum = rows.reduce((x, r) => x + r.amount_cents, 0);
     $('#tbl').innerHTML = table([
-      { label: 'Datum', render: (r) => date(r.spent_at) },
-      { label: 'Bestemming', render: (r) => `${r.icon} ${esc(r.category_name)}` },
-      { label: 'Ontvanger', render: (r) => esc(r.recipient_name || '—') },
-      { label: 'Omschrijving', render: (r) => `<span class="small">${esc(r.description)}</span>` },
-      { label: 'Aantal', num: true, render: (r) => (r.units ? `${num(r.units)} ${esc(r.units === 1 ? r.unit_label : r.unit_label_plural)}` : '—') },
-      { label: 'Donateurs', num: true, key: 'donor_count' },
-      { label: 'Bericht', render: (r) => (r.message_count ? `<span class="badge badge-besteed">✓ ${r.message_count}</span>` : '<span class="badge badge-wachtend">ontbreekt</span>') },
-      { label: 'Bedrag', num: true, render: (r) => `<b>${euro(r.amount_cents)}</b>` },
-    ], rows, { empty: 'Nog geen bestedingen', onRow: true });
+      { label: 'Besteding', render: (r) => `<span class="cat-name">${RF.catIcon(r)}<span><b style="font-weight:500">${esc(r.recipient_name || r.category_name)}</b><span class="sub">${esc(r.category_name)} · ${date(r.spent_at)}</span></span></span>` },
+      { label: 'Omschrijving', render: (r) => `<span class="muted" style="display:block;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.description) || '—'}</span>` },
+      { label: 'Aantal', num: true, render: (r) => (r.units ? `${num(r.units)} ${esc(r.units === 1 ? r.unit_label : r.unit_label_plural)}` : '<span class="muted">—</span>') },
+      { label: 'Donateurs', num: true, render: (r) => `<span class="muted">${r.donor_count}</span>` },
+      { label: 'Bericht', render: (r) => (r.message_count ? `<span class="badge badge-goedgekeurd">${r.message_count} verstuurd</span>` : '<span class="badge badge-wachtend">Ontbreekt</span>') },
+      { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b>` },
+    ], rows, { empty: 'Nog geen bestedingen', emptyIcon: 'hand-coins', onRow: true }) +
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'besteding' : 'bestedingen'}</span><span>Totaal: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
     bindRows($('#tbl'), rows, (r) => go(`#/bestedingen/${r.id}`));
   };
   $('#f-cat').onchange = load;
@@ -781,34 +965,35 @@ async function renderExpenditures() {
 
 async function renderExpenditure(expId) {
   const e = await api(`/api/admin/expenditures/${expId}`);
+  const donors = new Set(e.allocations.map((x) => x.donor_id)).size;
   view().innerHTML = `
-    <div class="page-head"><div><h1>${esc(e.icon)} Besteding #${e.id}</h1>
-      <div class="muted">${date(e.spent_at)} · ${esc(e.category_name)}${e.recipient_name ? ` · voor <b>${esc(e.recipient_name)}</b>` : ''}</div></div>
-      <div class="toolbar"><a class="btn btn-ghost" href="#/bestedingen">← Terug</a>
-        ${isAdmin() ? '<button class="btn btn-danger" id="reverse">Terugdraaien</button>' : ''}
-        <button class="btn btn-primary" id="add-msg">+ Brief / filmpje / foto koppelen</button></div></div>
-    <div class="grid grid-3">
-      <div class="card kpi accent"><div class="label">Bedrag</div><div class="value">${euro(e.amount_cents)}</div><div class="sub">${e.units ? `${num(e.units)} ${esc(e.unit_label_plural)}` : ''}</div></div>
-      <div class="card kpi"><div class="label">Gefinancierd door</div><div class="value">${new Set(e.allocations.map((a) => a.donor_id)).size} donateurs</div><div class="sub">uit ${e.allocations.length} cellen</div></div>
-      <div class="card kpi ${e.messages.length ? 'ok' : 'wait'}"><div class="label">Berichten</div><div class="value">${e.messages.length}</div><div class="sub">${e.messages.length ? 'verstuurd naar donateurs' : 'Nog geen bericht van de ontvanger'}</div></div>
+    <div class="crumbs"><a href="#/bestedingen">Bestedingen</a>${RF.icon('chevron-right', 'icon-sm')}<span>#${e.id}</span></div>
+    <div class="page-head" style="align-items:center"><div class="profile-head">${RF.catIcon(e, 'lg')}
+        <div><h1>${esc(e.recipient_name || e.category_name)}</h1>
+        <div class="profile-meta"><span>${esc(e.category_name)}</span><span class="dot-sep">${date(e.spent_at)}</span><span class="dot-sep">Besteding #${e.id}</span></div></div></div>
+      <div class="toolbar">${isAdmin() ? btn('reverse', 'Terugdraaien', { icon: 'undo-2', kind: 'danger' }) : ''}
+        ${btn('add-msg', 'Bericht koppelen', { icon: 'mail-open', kind: 'primary' })}</div></div>
+    <div class="kpis cols-3">
+      <div class="kpi"><div class="label">Bedrag</div><div class="value">${euro(e.amount_cents)}</div><div class="sub">${e.units ? `${num(e.units)} ${esc(e.unit_label_plural)}` : 'Vrij bedrag'}</div></div>
+      <div class="kpi"><div class="label">Gefinancierd door</div><div class="value">${donors} ${donors === 1 ? 'donateur' : 'donateurs'}</div><div class="sub">uit ${e.allocations.length} ${e.allocations.length === 1 ? 'cel' : 'cellen'}</div></div>
+      <div class="kpi"><div class="label">Berichten</div><div class="value">${e.messages.length}</div><div class="sub">${e.messages.length ? 'verstuurd naar donateurs' : 'Nog geen bericht van de ontvanger'}</div></div>
     </div>
-    ${e.description ? `<div class="card" style="margin-top:16px"><p style="margin:0">${esc(e.description)}</p></div>` : ''}
+    ${e.description ? `<div class="callout neutral" style="margin-top:16px">${RF.icon('info')}<span>${esc(e.description)}</span></div>` : ''}
     <div class="grid grid-2" style="margin-top:16px">
-      <div class="card"><h3>Uit welke cellen kwam het geld?</h3>
+      <div class="card flush"><div class="card-head"><h2>Herkomst van het geld</h2></div>
         ${table([
-          { label: 'Donateur', render: (a) => donorLink(a.donor_id, a.donor_name) },
-          { label: 'Cel', render: (a) => `#${a.cell_id} <span class="small muted">(${date(a.received_at)})</span>` },
-          { label: 'Celbedrag', num: true, render: (a) => euro(a.cell_amount_cents) },
-          { label: 'Gebruikt', num: true, render: (a) => `<b>${euro(a.amount_cents)}</b>` },
+          { label: 'Donateur', render: (x) => `<div class="cell-person">${RF.avatar(x.donor_name, 'sm')}<div class="grow">${donorLink(x.donor_id, x.donor_name)}<span class="sub">Cel #${x.cell_id} · ${date(x.received_at)}</span></div></div>` },
+          { label: 'Celbedrag', num: true, render: (x) => `<span class="muted">${euro(x.cell_amount_cents)}</span>` },
+          { label: 'Gebruikt', num: true, render: (x) => `<b style="font-weight:600">${euro(x.amount_cents)}</b>` },
         ], e.allocations)}</div>
-      <div class="card"><h3>Berichten van de ontvanger</h3>
-        ${e.messages.length ? e.messages.map((m) => `<div class="message-card" style="border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px">
-          <div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(label('message', m.type))} · ${esc(m.title)}</b>
-          <button class="icon-btn" data-del-msg="${m.id}" title="Verwijderen">🗑</button></div>
-          <div class="small muted">Bezorgd bij ${m.delivered} donateurs · ${m.read_count} gelezen</div>
+      <div class="card"><div class="card-head"><h2>Berichten van de ontvanger</h2></div>
+        ${e.messages.length ? e.messages.map((m) => `<div class="message-card" style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="cat-name"><span class="cat-ico sm" style="--c:var(--accent)">${RF.icon(RF.MESSAGE_ICONS[m.type] || 'mail')}</span><b style="font-weight:600">${esc(m.title)}</b></span>
+          <button class="icon-btn" data-del-msg="${m.id}" title="Verwijderen" aria-label="Bericht verwijderen">${RF.icon('trash-2')}</button></div>
+          <div class="small muted" style="margin-top:4px">${esc(label('message', m.type))} · bezorgd bij ${m.delivered} · ${m.read_count} gelezen</div>
           ${RF.mediaHtml(m.type, m.media_url, m.title)}
-          ${m.body ? `<div class="${m.type === 'brief' ? 'letter' : ''}" style="white-space:pre-line">${esc(m.body)}</div>` : ''}</div>`).join('')
-          : '<p class="muted">Nog geen bericht. Voeg een brief, filmpje of foto toe: alle donateurs hierboven krijgen het in hun portaal.</p>'}
+          ${m.body ? `<div class="${m.type === 'brief' ? 'letter' : ''}" style="white-space:pre-line;margin-top:8px">${esc(m.body)}</div>` : ''}</div>`).join('').replace('border-top:1px solid var(--border);padding-top:14px;margin-top:14px', '')
+          : RF.emptyState({ icon: 'mail-open', title: 'Nog geen bericht', text: 'Koppel een brief, foto of filmpje van de ontvanger. Alle donateurs hiernaast krijgen het in hun portaal.' })}
       </div>
     </div>`;
   const reload = () => renderExpenditure(expId);
@@ -837,18 +1022,21 @@ async function renderRecipients() {
   const rows = await api('/api/admin/recipients');
   state.recipients = rows;
   view().innerHTML = `
-    <div class="page-head"><h1>Ontvangers</h1><div class="toolbar"><button class="btn btn-primary" id="new">+ Nieuwe ontvanger</button></div></div>
-    <p class="muted">Kinderen, gezinnen, scholen en gemeenschappen die geholpen worden. Verhaal en foto worden alleen aan donateurs getoond als er toestemming is.</p>
-    <div class="grid grid-3">${rows.map((r) => `<div class="card" data-r="${r.id}" style="cursor:pointer;${r.active ? '' : 'opacity:.55'}">
+    ${pageHead('Ontvangers', { sub: 'Kinderen, gezinnen, scholen en projecten. Verhaal en foto zijn alleen zichtbaar voor donateurs bij toestemming.', actions: btn('new', 'Nieuwe ontvanger', { icon: 'plus', kind: 'primary' }) })}
+    ${rows.length ? `<div class="grid grid-3">${rows.map((r) => `<div class="card recipient-card" data-r="${r.id}" style="cursor:pointer;${r.active ? '' : 'opacity:.55'}" tabindex="0">
       <div style="display:flex;gap:12px;align-items:center">
-        ${r.photo_url ? `<img src="${esc(r.photo_url)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover">` : `<div class="avatar">${esc(initials(r.name))}</div>`}
-        <div><b>${esc(r.name)}</b><div class="small muted">${esc(label('recipient', r.kind))}${r.age ? ` · ${r.age} jaar` : ''} · ${esc([r.location, r.country].filter(Boolean).join(', '))}</div>
-        <div class="small">${r.consent ? '✅ toestemming delen' : '🚫 geen toestemming'}</div>
-        <div class="small">${r.has_login ? `🔑 ${esc(r.username)} · ${r.chat_enabled ? (r.chat_moderated ? '💬 chat (gemodereerd)' : '💬 chat') : 'chat uit'}` : '<span class="muted">geen inlog</span>'}</div></div></div>
-      <p class="small" style="margin-top:10px">${esc(r.story).slice(0, 160)}</p>
-      <div class="small muted">${r.expenditure_count} bestedingen · ${euro(r.received_cents)}${r.chat_count ? ` · ${r.chat_count} chatberichten` : ''}</div>
-      <div class="toolbar" style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-access="${r.id}">🔑 Inlog & chat</button>
-        ${isAdmin() && r.active ? `<button class="btn btn-ghost btn-sm" data-as="${r.id}">👁️ Inloggen als</button>` : ''}</div></div>`).join('') || '<p class="muted">Nog geen ontvangers.</p>'}</div>`;
+        ${r.photo_url ? `<img src="${esc(r.photo_url)}" alt="" style="width:44px;height:44px;border-radius:12px;object-fit:cover;background:var(--surface-2)">` : RF.avatar(r.name)}
+        <div style="min-width:0;flex:1"><div style="font-weight:600">${esc(r.name)}</div>
+          <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label('recipient', r.kind))}${r.age ? ` · ${r.age} jaar` : ''}${r.location || r.country ? ` · ${esc([r.location, r.country].filter(Boolean).join(', '))}` : ''}</div></div>
+        <button class="icon-btn" data-more="${r.id}" aria-label="Acties voor ${esc(r.name)}">${RF.icon('ellipsis')}</button></div>
+      <p class="small" style="margin:12px 0;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:36px">${esc(r.story) || '<span class="muted">Geen verhaal</span>'}</p>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <span class="tag">${RF.icon(r.consent ? 'shield-check' : 'lock', 'icon-sm')}&nbsp;${r.consent ? 'Delen toegestaan' : 'Niet delen'}</span>
+        <span class="tag">${RF.icon(r.has_login ? 'key-round' : 'circle-dashed', 'icon-sm')}&nbsp;${r.has_login ? esc(r.username) : 'Geen inlog'}</span>
+        ${r.has_login && r.chat_enabled ? `<span class="tag">${RF.icon('messages-square', 'icon-sm')}&nbsp;${r.chat_moderated ? 'Chat · gemodereerd' : 'Chat'}</span>` : ''}
+      </div>
+      <hr style="margin:14px 0 10px"><div style="display:flex;justify-content:space-between" class="small muted"><span>${r.expenditure_count} ${r.expenditure_count === 1 ? 'besteding' : 'bestedingen'}</span><b class="num" style="color:var(--text);font-weight:600">${euro(r.received_cents)}</b></div>
+    </div>`).join('')}</div>` : `<div class="card">${RF.emptyState({ icon: 'heart-handshake', title: 'Nog geen ontvangers', text: 'Voeg kinderen, scholen of projecten toe om geld aan te besteden.' })}</div>`}`;
   const form = (r = {}) => modal({
     title: r.id ? 'Ontvanger bewerken' : 'Nieuwe ontvanger', wide: true,
     body: `<div class="field-row"><div class="field"><label>Naam</label><input type="text" name="name" required value="${esc(r.name || '')}"></div>
@@ -869,12 +1057,19 @@ async function renderRecipients() {
     },
   });
   $('#new').onclick = () => form();
-  view().querySelectorAll('[data-r]').forEach((el) => el.addEventListener('click', (e) => {
-    if (e.target.closest('[data-access],[data-as]')) return;
-    form(rows.find((r) => r.id === Number(el.dataset.r)));
+  view().querySelectorAll('[data-r]').forEach((el) => {
+    const r = rows.find((x) => x.id === Number(el.dataset.r));
+    el.addEventListener('click', (e) => { if (!e.target.closest('[data-more]')) form(r); });
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === el) form(r); });
+  });
+  view().querySelectorAll('[data-more]').forEach((b) => b.addEventListener('click', () => {
+    const r = rows.find((x) => x.id === Number(b.dataset.more));
+    RF.menu(b, [
+      { label: 'Bewerken', icon: 'pencil', onClick: () => form(r) },
+      { label: 'Inlog & chat', icon: 'key-round', onClick: () => accessForm(r) },
+      ...(isAdmin() && r.active ? [{ label: 'Inloggen als ontvanger', icon: 'eye', onClick: () => loginAs(`/api/admin/recipients/${r.id}/impersonate`) }] : []),
+    ]);
   }));
-  view().querySelectorAll('[data-as]').forEach((b) => b.addEventListener('click', () => loginAs(`/api/admin/recipients/${b.dataset.as}/impersonate`)));
-  view().querySelectorAll('[data-access]').forEach((b) => b.addEventListener('click', () => accessForm(rows.find((r) => r.id === Number(b.dataset.access)))));
 }
 
 // "Inloggen als": opent het portaal in een nieuw tabblad (meekijken, alleen-lezen).
@@ -919,16 +1114,16 @@ function accessForm(r) {
 // ======================================================================= CHATMODERATIE
 async function renderChatModeration() {
   view().innerHTML = `
-    <div class="page-head"><h1>Chatmoderatie</h1>
+    <div class="page-head"><div><h1>Chatmoderatie</h1><div class="sub">Berichten tussen donateurs en ontvangers</div></div>
       <div class="toolbar"><select id="f-status">${opt('in_behandeling', 'Wacht op controle', 'in_behandeling')}${opt('goedgekeurd', 'Goedgekeurd')}${opt('afgewezen', 'Afgewezen')}${opt('', 'Alle')}</select></div></div>
     <div class="card" id="mod-card" style="margin-bottom:14px"></div>
     <div id="list"></div>`;
   const drawSwitch = (on) => {
     $('#mod-card').innerHTML = `<div class="card-head" style="margin:0"><div>
-        <h3 style="margin:0">${on ? '🛡️ Moderatie staat AAN' : '⚠️ Moderatie staat UIT'}</h3>
+        <h3 style="margin:0;display:flex;align-items:center;gap:8px"><span class="cat-ico sm" style="--c:var(--${on ? 'ok' : 'warn'})">${RF.icon(on ? 'shield-check' : 'shield-alert')}</span>${on ? 'Moderatie staat aan' : 'Moderatie staat uit'}</h3>
         <p class="small muted" style="margin:4px 0 0;max-width:720px">${on
           ? 'Berichten met kinderen (en berichten met contactgegevens, links of geldverzoeken) worden pas afgeleverd na goedkeuring.'
-          : 'Alle berichten worden direct afgeleverd, ook die met kinderen. Berichten met contactgegevens, links of geldverzoeken krijgen wel een ⚠️-markering zodat je ze hier achteraf kunt zien (kies "Alle"). Zet dit weer aan voordat je met echte kinderen werkt.'}</p></div>
+          : 'Alle berichten worden direct afgeleverd, ook die met kinderen. Berichten met contactgegevens, links of geldverzoeken krijgen wel een markering zodat je ze hier achteraf kunt zien (kies "Alle"). Zet dit weer aan voordat je met echte kinderen werkt.'}</p></div>
       ${isAdmin() ? `<button class="btn ${on ? 'btn-ghost' : 'btn-primary'}" id="mod-toggle">${on ? 'Moderatie uitzetten' : 'Moderatie aanzetten'}</button>` : ''}</div>`;
     const b = $('#mod-toggle');
     if (b) b.onclick = async () => {
@@ -945,16 +1140,16 @@ async function renderChatModeration() {
       <div class="card-head"><div>
         <b>${m.sender === 'donor' ? `${esc(m.donor_name)} → ${esc(m.recipient_name)}` : `${esc(m.recipient_name)} → ${esc(m.donor_name)}`}</b>
         <span class="small muted">· ${dateTime(m.created_at)} · ${esc(label('recipient', m.recipient_kind))}${m.managed_by ? ` (begeleider: ${esc(m.managed_by)})` : ''}</span>
-        ${m.flag_reason ? `<div><span class="badge badge-hoog">⚠️ bevat mogelijk: ${esc(m.flag_reason)}</span></div>` : ''}</div>
+        ${m.flag_reason ? `<div style="margin-top:6px"><span class="badge badge-hoog">Bevat mogelijk: ${esc(m.flag_reason)}</span></div>` : ''}</div>
         ${m.status === 'in_behandeling' ? '' : `<span class="badge badge-${m.status === 'goedgekeurd' ? 'besteed' : 'geannuleerd'}">${esc(m.status)}${m.reviewed_by_name ? ` · ${esc(m.reviewed_by_name)}` : ''}</span>`}</div>
       <div class="bubble theirs" style="max-width:100%"><div class="bubble-body">${esc(m.body)}</div></div>
       ${m.reject_reason ? `<p class="small muted">Reden afwijzing: ${esc(m.reject_reason)}</p>` : ''}
       <div class="toolbar" style="margin-top:10px">
-        ${m.status === 'in_behandeling' ? `<button class="btn btn-primary btn-sm" data-approve="${m.id}">✓ Goedkeuren</button>
-          <button class="btn btn-danger btn-sm" data-reject="${m.id}">✗ Afwijzen</button>` : ''}
+        ${m.status === 'in_behandeling' ? `<button class="btn btn-primary btn-sm" data-approve="${m.id}">${RF.icon('check')}<span>Goedkeuren</span></button>
+          <button class="btn btn-danger btn-sm" data-reject="${m.id}">${RF.icon('x')}<span>Afwijzen</span></button>` : ''}
         <button class="btn btn-ghost btn-sm" data-thread="${m.recipient_id}:${m.donor_id}">Heel gesprek bekijken</button>
         <a class="btn btn-ghost btn-sm" href="#/donateurs/${m.donor_id}">Donateur</a></div></div>`).join('')
-      : '<div class="card"><p class="empty">Geen berichten 🎉</p></div>';
+      : `<div class="card">${RF.emptyState({ icon: 'check-check', title: 'Niets te controleren', text: 'Alle chatberichten in deze selectie zijn afgehandeld.' })}</div>`;
     $('#list').querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
       await api(`/api/admin/chat/${b.dataset.approve}/approve`, { method: 'POST', body: {} });
       toast('Goedgekeurd en afgeleverd'); refreshNavCounts(); load();
@@ -1005,22 +1200,22 @@ function taskForm(t, done) {
 
 async function renderTasks() {
   view().innerHTML = `
-    <div class="page-head"><h1>Taken</h1>
+    <div class="page-head"><div><h1>Taken</h1><div class="sub">Opvolging en to-do’s van het team</div></div>
       <div class="toolbar"><select id="f-status">${opt('open', 'Open', 'open')}${opt('afgerond', 'Afgerond')}${opt('', 'Alle')}</select>
         <label class="check" style="margin:0"><input type="checkbox" id="f-mine"> Alleen mijn taken</label>
-        <button class="btn btn-primary" id="new">+ Nieuwe taak</button></div></div>
-    <div class="card"><div id="tbl"></div></div>`;
+        ${btn('new', 'Nieuwe taak', { icon: 'plus', kind: 'primary' })}</div></div>
+    <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
   const load = async () => {
     const rows = await api(`/api/admin/tasks?status=${$('#f-status').value}&mine=${$('#f-mine').checked ? 1 : 0}`);
     $('#tbl').innerHTML = table([
       { label: '', render: (t) => `<input type="checkbox" data-done="${t.id}" ${t.status === 'afgerond' ? 'checked' : ''} aria-label="Afronden">` },
-      { label: 'Taak', render: (t) => `<b>${esc(t.title)}</b>${t.description ? `<div class="small muted">${esc(t.description)}</div>` : ''}` },
-      { label: 'Donateur', render: (t) => (t.donor_id ? donorLink(t.donor_id, t.donor_name) : '—') },
-      { label: 'Deadline', render: (t) => `<span class="${t.status === 'open' && t.due_date && t.due_date < today() ? 'badge badge-hoog' : ''}">${date(t.due_date) || '—'}</span>` },
-      { label: 'Prioriteit', render: (t) => `<span class="badge badge-${esc(t.priority)}">${esc(t.priority)}</span>` },
-      { label: 'Toegewezen', render: (t) => esc(t.assigned_name || '—') },
-      { label: '', render: (t) => `<button class="icon-btn" data-del="${t.id}" title="Verwijderen">🗑</button>` },
-    ], rows, { empty: 'Geen taken', onRow: true });
+      { label: 'Taak', render: (t) => `<span style="font-weight:500;${t.status === 'afgerond' ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${esc(t.title)}</span>${t.description ? `<span class="sub">${esc(t.description)}</span>` : ''}` },
+      { label: 'Donateur', render: (t) => (t.donor_id ? donorLink(t.donor_id, t.donor_name) : '<span class="muted">—</span>') },
+      { label: 'Deadline', render: (t) => (t.status === 'open' && t.due_date && t.due_date < today() ? `<span class="badge badge-hoog">${date(t.due_date)}</span>` : `<span class="muted">${date(t.due_date) || '—'}</span>`) },
+      { label: 'Prioriteit', render: (t) => `<span class="badge badge-${esc(t.priority)}">${esc(t.priority.charAt(0).toUpperCase() + t.priority.slice(1))}</span>` },
+      { label: 'Toegewezen', render: (t) => (t.assigned_name ? `<div class="cell-person">${RF.avatar(t.assigned_name, 'sm')}<span>${esc(t.assigned_name)}</span></div>` : '<span class="muted">—</span>') },
+      { label: '', render: (t) => `<button class="icon-btn" data-del="${t.id}" title="Verwijderen" aria-label="Taak verwijderen">${RF.icon('trash-2')}</button>` },
+    ], rows, { empty: 'Geen taken in deze selectie', emptyIcon: 'check-check', onRow: true });
     bindRows($('#tbl'), rows, (t) => taskForm(t, load));
     $('#tbl').querySelectorAll('[data-done]').forEach((cb) => cb.addEventListener('change', async () => {
       await api(`/api/admin/tasks/${cb.dataset.done}`, { method: 'PUT', body: { status: cb.checked ? 'afgerond' : 'open' } });
@@ -1042,16 +1237,20 @@ async function renderCampaigns() {
   const rows = await api('/api/admin/campaigns');
   state.campaigns = rows;
   view().innerHTML = `
-    <div class="page-head"><h1>Campagnes</h1><div class="toolbar"><button class="btn btn-primary" id="new">+ Nieuwe campagne</button></div></div>
+    ${pageHead('Campagnes', { sub: 'Acties met een doel, zichtbaar in het donateursportaal', actions: btn('new', 'Nieuwe campagne', { icon: 'plus', kind: 'primary' }) })}
     <div class="grid grid-2">${rows.map((c) => {
       const pct = c.goal_cents ? Math.min(100, (c.raised_cents / c.goal_cents) * 100) : 0;
-      return `<div class="card" data-c="${c.id}" style="cursor:pointer;${c.active ? '' : 'opacity:.6'}">
-        <div class="card-head"><h3>${esc(c.name)}</h3>${c.active ? badge('donor', 'actief') : badge('donor', 'inactief')}</div>
-        <p class="small muted">${esc(c.description)}</p>
-        <div class="small">${c.category_name ? `Bestemming: ${esc(c.category_name)} · ` : ''}${date(c.start_date)} – ${date(c.end_date)}</div>
-        <div class="splitbar" style="margin:10px 0 6px"><span class="spent" style="width:${pct}%;background:var(--robin)"></span></div>
-        <div style="display:flex;justify-content:space-between"><b>${euro0(c.raised_cents)}</b><span class="muted">doel ${euro0(c.goal_cents)} · ${c.donor_count} donateurs</span></div></div>`;
-    }).join('') || '<p class="muted">Nog geen campagnes.</p>'}</div>`;
+      return `<div class="card" data-c="${c.id}" style="cursor:pointer;${c.active ? '' : 'opacity:.6'}" tabindex="0">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          ${c.category_key ? RF.catIcon({ key: c.category_key }, 'lg') : `<span class="cat-ico lg">${RF.icon('megaphone')}</span>`}
+          <div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><h3 style="margin:0">${esc(c.name)}</h3>${c.active ? badge('donor', 'actief') : badge('donor', 'inactief')}</div>
+          <div class="small muted" style="margin-top:2px">${c.category_name ? `${esc(c.category_name)} · ` : ''}${date(c.start_date)} – ${date(c.end_date) || 'doorlopend'}</div></div></div>
+        <p class="small" style="color:var(--text-2);margin:12px 0 16px">${esc(c.description)}</p>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span style="font-size:20px;font-weight:600;letter-spacing:-.02em" class="num">${euro0(c.raised_cents)}</span>
+          <span class="small muted">${Math.round(pct)}% van ${euro0(c.goal_cents)}</span></div>
+        <div class="meter"><span style="width:${pct}%"></span></div>
+        <div class="small muted" style="margin-top:8px">${c.donor_count} ${c.donor_count === 1 ? 'donateur' : 'donateurs'}</div></div>`;
+    }).join('') || `<div class="card" style="grid-column:1/-1">${RF.emptyState({ icon: 'megaphone', title: 'Nog geen campagnes', text: 'Start een actie met een doelbedrag, bijvoorbeeld voor noodhulp na een orkaan.' })}</div>`}</div>`;
   const form = (c = {}) => modal({
     title: c.id ? 'Campagne bewerken' : 'Nieuwe campagne',
     body: `<div class="field"><label>Naam</label><input type="text" name="name" required value="${esc(c.name || '')}"></div>
@@ -1074,21 +1273,21 @@ async function renderCampaigns() {
 // ======================================================================= LEADERBOARD
 async function renderLeaderboard() {
   view().innerHTML = `
-    <div class="page-head"><h1>Leaderboard</h1>
+    <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Intern overzicht met echte namen</div></div>
       <div class="toolbar"><select id="f-period">${opt('all', 'Altijd')}${opt('year', 'Dit jaar')}${opt('month', 'Deze maand')}</select>
-        <select id="f-cat">${catOptions('', true)}</select><a class="btn btn-ghost" href="/leaderboard" target="_blank">Publieke versie ↗</a></div></div>
-    <p class="muted">Intern overzicht met echte namen. Op het publieke leaderboard en in het portaal zien bezoekers alleen de publieke naam; anonieme donateurs verschijnen als “Anonieme donateur”.</p>
-    <div class="card"><div id="tbl"></div></div>`;
+        <select id="f-cat">${catOptions('', true)}</select><a class="btn btn-ghost" href="/leaderboard" target="_blank" rel="noopener">${RF.icon('arrow-up-right')}<span>Publieke versie</span></a></div></div>
+    <div class="callout neutral">${RF.icon('info')}<span>Op het publieke leaderboard en in het portaal zien bezoekers alleen de publieke naam. Anonieme donateurs verschijnen als “Anonieme donateur”.</span></div>
+    <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
   const load = async () => {
     const rows = await api(`/api/admin/leaderboard?period=${$('#f-period').value}&category=${$('#f-cat').value}&limit=100`);
     $('#tbl').innerHTML = table([
-      { label: '#', render: (r) => `<b>${r.rank <= 3 ? ['🥇', '🥈', '🥉'][r.rank - 1] : r.rank}</b>` },
-      { label: 'Donateur', render: (r) => donorLink(r.donor_id, r.full_name) },
-      { label: 'Publiek zichtbaar als', render: (r) => (r.anonymous ? '<i class="muted">🕶️ Anonieme donateur</i>' : esc(r.name)) },
-      { label: 'Giften', num: true, key: 'donation_count' },
-      { label: 'Besteed', num: true, render: (r) => euro(r.spent_cents) },
-      { label: 'Totaal', num: true, render: (r) => `<b>${euro(r.total_cents)}</b>` },
-    ], rows);
+      { label: '#', render: (r) => (r.rank <= 3 ? `<span class="medal m${r.rank}" style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:99px;font-size:12px;font-weight:700">${r.rank}</span>` : `<span class="muted num" style="display:inline-block;width:24px;text-align:center">${r.rank}</span>`) },
+      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}${donorLink(r.donor_id, r.full_name)}</div>` },
+      { label: 'Publiek zichtbaar als', render: (r) => (r.anonymous ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px">${RF.icon('eye-off', 'icon-sm')}Anonieme donateur</span>` : esc(r.name)) },
+      { label: 'Giften', num: true, render: (r) => `<span class="muted">${r.donation_count}</span>` },
+      { label: 'Besteed', num: true, render: (r) => `<span class="muted">${euro(r.spent_cents)}</span>` },
+      { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
+    ], rows, { empty: 'Nog geen donaties in deze periode', emptyIcon: 'trophy' });
   };
   $('#f-period').onchange = load;
   $('#f-cat').onchange = load;
@@ -1107,46 +1306,49 @@ async function renderReports(year) {
     return rows.map((x) => `<div class="hbar"><span>${esc(fmt(x[keyLabel]))}</span><div class="bar"><span style="width:${(x.cents / mx) * 100}%"></span></div><span class="right">${euro0(x.cents)}</span></div>`).join('') || '<p class="muted">Geen data</p>';
   };
   view().innerHTML = `
-    <div class="page-head"><h1>Rapportages ${esc(r.year)}</h1>
+    <div class="page-head"><div><h1>Rapportages ${esc(r.year)}</h1><div class="sub">Opbrengst, bestedingen en donateursgedrag per jaar</div></div>
       <div class="toolbar"><select id="f-year">${(r.years.length ? r.years : [r.year]).map((y) => opt(y, y, r.year)).join('')}</select>
-        <button class="btn btn-ghost" onclick="window.print()">🖨 Afdrukken</button>
-        <a class="btn btn-ghost" href="/api/admin/donations?from=${r.year}-01-01&to=${r.year}-12-31&format=csv">⬇ Donaties ${esc(r.year)} (CSV)</a></div></div>
-    <div class="grid grid-4">
-      <div class="card kpi accent"><div class="label">Opgehaald</div><div class="value">${euro0(r.totals.raised_cents)}</div><div class="sub">${r.totals.donations} giften</div></div>
-      <div class="card kpi ok"><div class="label">Besteed</div><div class="value">${euro0(r.spent.cents)}</div><div class="sub">${r.spent.n} bestedingen</div></div>
-      <div class="card kpi"><div class="label">Unieke donateurs</div><div class="value">${r.totals.donors}</div><div class="sub">gem. gift ${euro(r.totals.avg_cents)}</div></div>
-      <div class="card kpi"><div class="label">Donateursbehoud</div><div class="value">${ret == null ? '—' : `${ret}%`}</div><div class="sub">${r.retention.retained} van ${r.retention.last_year} van vorig jaar</div></div>
+        <button class="btn btn-ghost" onclick="window.print()">${RF.icon('printer')}<span>Afdrukken</span></button>
+        <a class="btn btn-ghost" href="/api/admin/donations?from=${r.year}-01-01&to=${r.year}-12-31&format=csv">${RF.icon('download')}<span>Donaties ${esc(r.year)}</span></a></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="label">${RF.icon('banknote')}Opgehaald</div><div class="value">${euro0(r.totals.raised_cents)}</div><div class="sub">${r.totals.donations} giften</div></div>
+      <div class="kpi"><div class="label">${RF.icon('hand-coins')}Besteed</div><div class="value">${euro0(r.spent.cents)}</div><div class="sub">${r.spent.n} bestedingen</div></div>
+      <div class="kpi"><div class="label">${RF.icon('users')}Unieke donateurs</div><div class="value">${r.totals.donors}</div><div class="sub">Gemiddelde gift ${euro(r.totals.avg_cents)}</div></div>
+      <div class="kpi"><div class="label">${RF.icon('repeat')}Donateursbehoud</div><div class="value">${ret == null ? '—' : `${ret}%`}</div><div class="sub">${r.retention.retained} van ${r.retention.last_year} van vorig jaar</div></div>
     </div>
     <div class="grid grid-2" style="margin-top:16px">
-      <div class="card"><h3>Per bestemming</h3>
-        ${r.byCategory.map((c) => `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between"><span>${esc(c.icon)} ${esc(c.name)}</span><span>${euro0(c.raised_cents)} in · ${euro0(c.spent_cents)} uit</span></div>
-          <div class="splitbar"><span style="width:${(c.raised_cents / max) * 100}%;background:${esc(c.color)}"></span></div>
-          ${c.units ? `<div class="small muted">${num(c.units)} ${esc(c.unit_label_plural)} gefinancierd</div>` : ''}</div>`).join('')}</div>
-      <div class="card"><h3>Per maand</h3>${RF.barChart(months.map(RF.monthName), [{ label: 'Ontvangen', values: months.map((m) => bm[m] || 0), color: 'var(--robin)' }])}</div>
-      <div class="card"><h3>Betaalwijze</h3>${hbars(r.byMethod, 'method', (k) => label('method', k))}</div>
-      <div class="card"><h3>Frequentie</h3>${hbars(r.byFrequency, 'frequency', (k) => label('frequency', k))}
-        <h3 style="margin-top:16px">Type donateur</h3>${hbars(r.byType, 'donor_type', (k) => label('type', k))}</div>
-      <div class="card"><h3>Top 10 donateurs ${esc(r.year)}</h3>${table([
-        { label: '#', key: 'rank' }, { label: 'Donateur', render: (x) => donorLink(x.donor_id, x.full_name) },
-        { label: 'Totaal', num: true, render: (x) => euro(x.total_cents) }], r.topDonors)}</div>
-      <div class="card"><h3>Impactberichten</h3>
-        <p>${num(r.messageStats.delivered)} berichten bezorgd in donateursportalen, waarvan <b>${num(r.messageStats.read)}</b> gelezen
-        (${r.messageStats.delivered ? Math.round((r.messageStats.read / r.messageStats.delivered) * 100) : 0}%).</p></div>
+      <div class="card"><div class="card-head"><h2>Per maand</h2><span class="small muted">Ontvangen giften</span></div>${RF.barChart(months.map(RF.monthName), [{ label: 'Ontvangen', values: months.map((m) => bm[m] || 0), color: 'var(--accent)' }])}</div>
+      <div class="card"><div class="card-head"><h2>Per bestemming</h2><span class="small muted">Ontvangen · besteed</span></div>
+        ${r.byCategory.map((c) => `<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${RF.catLabel(c, c.name)}<span class="num small"><b style="font-weight:600">${euro0(c.raised_cents)}</b> <span class="muted">· ${euro0(c.spent_cents)}</span></span></div>
+          <div class="meter"><span style="width:${(c.raised_cents / max) * 100}%;background:${RF.catColor(c)}"></span></div>
+          ${c.units ? `<div class="small muted" style="margin-top:6px">${num(c.units)} ${esc(c.unit_label_plural)} gefinancierd</div>` : ''}</div>`).join('')}</div>
+      <div class="card"><div class="card-head"><h2>Betaalwijze</h2></div>${hbars(r.byMethod, 'method', (k) => label('method', k))}</div>
+      <div class="card"><div class="card-head"><h2>Frequentie en type</h2></div>${hbars(r.byFrequency, 'frequency', (k) => label('frequency', k))}
+        <hr>${hbars(r.byType, 'donor_type', (k) => label('type', k))}</div>
+      <div class="card flush"><div class="card-head"><h2>Top 10 donateurs ${esc(r.year)}</h2></div>${table([
+        { label: '#', render: (x) => `<span class="muted num">${x.rank}</span>` }, { label: 'Donateur', render: (x) => `<div class="cell-person">${RF.avatar(x.full_name, 'sm')}${donorLink(x.donor_id, x.full_name)}</div>` },
+        { label: 'Totaal', num: true, render: (x) => `<b style="font-weight:600">${euro(x.total_cents)}</b>` }], r.topDonors, { empty: 'Geen donaties dit jaar', emptyIcon: 'trophy' })}</div>
+      <div class="card"><div class="card-head"><h2>Impactberichten</h2></div>
+        <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:28px;font-weight:600;letter-spacing:-.02em" class="num">${r.messageStats.delivered ? Math.round((r.messageStats.read / r.messageStats.delivered) * 100) : 0}%</span><span class="muted">gelezen</span></div>
+        <div class="meter" style="margin:10px 0"><span style="width:${r.messageStats.delivered ? (r.messageStats.read / r.messageStats.delivered) * 100 : 0}%"></span></div>
+        <p class="small muted" style="margin:0">${num(r.messageStats.read)} van ${num(r.messageStats.delivered)} brieven, foto’s en filmpjes zijn geopend door donateurs.</p></div>
     </div>`;
   $('#f-year').onchange = (e) => renderReports(e.target.value);
 }
 
 // ======================================================================= E-MAIL LOG
 async function renderOutbox() {
-  view().innerHTML = `<div class="page-head"><h1>E-mail log</h1>
+  view().innerHTML = `<div class="page-head"><div><h1>E-mail log</h1><div class="sub">Alle e-mails die het systeem naar donateurs stuurt</div></div>
       <div class="toolbar"><select id="f-kind">${opt('', 'Alle soorten')}${['bedankt', 'besteding', 'impactbericht', 'portaal'].map((k) => opt(k, k)).join('')}</select></div></div>
-    <p class="muted">Alle e-mails die het systeem naar donateurs stuurt. (In deze versie worden ze gelogd, niet echt verzonden — koppel een SMTP-/mailprovider voor productie.)</p>
-    <div class="card"><div id="tbl"></div></div>`;
+    <div class="callout neutral">${RF.icon('info')}<span>In deze versie worden e-mails gelogd, niet echt verzonden. Koppel een mailprovider voor productie.</span></div>
+    <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
   const load = async () => {
     const rows = await api(`/api/admin/outbox?kind=${$('#f-kind').value}`);
-    $('#tbl').innerHTML = rows.length ? rows.map((m) => `<details style="border-bottom:1px solid var(--line);padding:8px 0">
-      <summary><b>${esc(m.subject)}</b> <span class="small muted">→ ${m.donor_id ? donorLink(m.donor_id, m.to_email) : esc(m.to_email)} · ${dateTime(m.created_at)} · ${esc(m.kind)}</span></summary>
-      <p class="small" style="white-space:pre-line;margin-top:8px">${esc(m.body)}</p></details>`).join('') : '<p class="empty">Geen e-mails</p>';
+    $('#tbl').innerHTML = rows.length ? rows.map((m) => `<details style="border-top:1px solid var(--border);padding:12px 20px">
+      <summary style="gap:10px"><span class="cat-ico sm" style="--c:var(--text-3)">${RF.icon('mail')}</span><span style="min-width:0;flex:1"><span style="color:var(--text);font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.subject)}</span>
+        <span class="small muted">${esc(m.to_email)} · ${esc(m.kind)}</span></span><span class="small muted" style="white-space:nowrap">${dateTime(m.created_at)}</span></summary>
+      <p class="small" style="white-space:pre-line;margin:10px 0 0 32px;color:var(--text-2)">${esc(m.body)}</p></details>`).join('').replace('border-top:1px solid var(--border);', '')
+      : RF.emptyState({ icon: 'mail', title: 'Geen e-mails' });
   };
   $('#f-kind').onchange = load;
   await load();
@@ -1156,27 +1358,27 @@ async function renderOutbox() {
 async function renderSettings() {
   await loadLookups();
   view().innerHTML = `
-    <div class="page-head"><h1>Instellingen</h1></div>
-    ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2>🌐 Automatisch vertalen</h2>
-      <button class="btn btn-primary btn-sm" id="tr-test">Proefvertaling</button></div><div id="tr-status" class="muted">Laden…</div></div>` : ''}
-    <div class="card"><div class="card-head"><h2>Bestemmingen & kosten per eenheid</h2></div>
-      <p class="small muted">Bepaalt hoe donaties worden omgerekend naar impact (“€ 25 = 50 maaltijden”) en hoeveel er per eenheid uit de cellen wordt gehaald.</p>
+    <div class="page-head"><div><h1>Instellingen</h1><div class="sub">Bestemmingen, gebruikers, vertalen en beveiliging</div></div></div>
+    <div class="stack" style="max-width:980px">
+    ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('languages')}Automatisch vertalen</h2>
+      ${btn('tr-test', 'Proefvertaling', { icon: 'zap', size: 'sm' })}</div><div id="tr-status">${RF.skeleton('rows').slice(0, 400)}</div></div>` : ''}
+    <div class="card flush"><div class="card-head"><div><h2>Bestemmingen</h2><div class="small muted">Hoe donaties worden omgerekend naar impact (“€ 25 = 50 maaltijden”)</div></div></div>
       ${table([
-        { label: '', render: (c) => esc(c.icon) },
-        { label: 'Bestemming', render: (c) => `<b>${esc(c.name)}</b><div class="small muted">${esc(c.description)}</div>` },
-        { label: 'Eenheid', render: (c) => esc(c.unit_label || 'vrij bedrag') },
-        { label: 'Prijs / eenheid', num: true, render: (c) => (c.unit_cost_cents ? euro(c.unit_cost_cents) : '—') },
-        { label: 'Actief', render: (c) => (c.active ? '✅' : '—') },
-        { label: '', render: (c) => (isAdmin() ? `<button class="btn btn-ghost btn-sm" data-cat="${esc(c.key)}">Bewerk</button>` : '') },
+        { label: 'Bestemming', render: (c) => `<span class="cat-name">${RF.catIcon(c)}<span><b style="font-weight:500">${esc(c.name)}</b><span class="sub">${esc(c.description)}</span></span></span>` },
+        { label: 'Eenheid', render: (c) => `<span class="muted">${esc(c.unit_label || 'vrij bedrag')}</span>` },
+        { label: 'Prijs per eenheid', num: true, render: (c) => (c.unit_cost_cents ? euro(c.unit_cost_cents) : '<span class="muted">—</span>') },
+        { label: 'Status', render: (c) => (c.active ? '<span class="badge badge-actief">Actief</span>' : '<span class="badge">Uit</span>') },
+        { label: '', render: (c) => (isAdmin() ? `<button class="icon-btn" data-cat="${esc(c.key)}" aria-label="Bewerken" title="Bewerken">${RF.icon('pencil')}</button>` : '') },
       ], state.categories)}</div>
-    <div class="card"><div class="card-head"><h2>Gebruikers</h2>${isAdmin() ? '<button class="btn btn-primary btn-sm" id="new-user">+ Gebruiker</button>' : ''}</div>
+    <div class="card flush"><div class="card-head"><h2>Gebruikers</h2>${isAdmin() ? btn('new-user', 'Gebruiker', { icon: 'plus', size: 'sm' }) : ''}</div>
       ${table([
-        { label: 'Naam', key: 'name' }, { label: 'E-mail', key: 'email' },
-        { label: 'Rol', render: (u) => (u.role === 'admin' ? '<span class="badge badge-admin">Beheerder</span>' : 'Medewerker') },
+        { label: 'Naam', render: (u) => `<div class="cell-person">${RF.avatar(u.name, 'sm')}<div class="grow"><b>${esc(u.name)}</b><span class="sub">${esc(u.email)}</span></div></div>` },
+        { label: 'Rol', render: (u) => (u.role === 'admin' ? '<span class="badge badge-admin">Beheerder</span>' : '<span class="muted">Medewerker</span>') },
         { label: 'Status', render: (u) => (u.active ? badge('donor', 'actief') : badge('donor', 'inactief')) },
-        { label: '', render: (u) => (isAdmin() ? `<button class="btn btn-ghost btn-sm" data-user="${u.id}">Bewerk</button>` : '') },
+        { label: '', render: (u) => (isAdmin() ? `<button class="icon-btn" data-user="${u.id}" aria-label="Bewerken" title="Bewerken">${RF.icon('pencil')}</button>` : '') },
       ], state.users)}</div>
-    ${isAdmin() ? '<div class="card"><div class="card-head"><h2>Audit log</h2><button class="btn btn-ghost btn-sm" id="show-audit">Tonen</button></div><div id="audit"></div></div>' : ''}`;
+    ${isAdmin() ? `<div class="card flush"><div class="card-head" style="padding-bottom:14px"><div><h2>Audit log</h2><div class="small muted">Wie deed wat, en wanneer</div></div>${btn('show-audit', 'Tonen', { icon: 'eye', size: 'sm' })}</div><div id="audit"></div></div>` : ''}
+    </div>`;
 
   view().querySelectorAll('[data-cat]').forEach((b) => b.addEventListener('click', () => {
     const c = state.categories.find((x) => x.key === b.dataset.cat);
@@ -1197,17 +1399,17 @@ async function renderSettings() {
     });
   }));
   if (isAdmin()) {
-    const line = (ok, okText, badText) => `<div>${ok ? '✅' : '❌'} ${ok ? okText : badText}</div>`;
+    const line = (ok, okText, badText) => `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px"><span style="color:var(--${ok ? 'ok' : 'bad'});margin-top:1px">${RF.icon(ok ? 'circle-check' : 'circle-x')}</span><span>${ok ? okText : badText}</span></div>`;
     const showStatus = (st) => {
       $('#tr-status').innerHTML = `
         ${line(st.sdk_installed, 'Vertaalpakket is geïnstalleerd', 'Vertaalpakket ontbreekt → zet in Render het <b>Build Command</b> op <code>npm install</code> en deploy opnieuw')}
         ${st.key_problem ? '' : line(st.api_key_set, `API-sleutel is ingesteld ${st.key_source === 'render' ? 'in Render' : 'hier in het CRM'} (<code>${esc(st.key_hint)}</code>)`, 'API-sleutel ontbreekt → vul hem hieronder in')}
-        ${st.key_problem ? `<div class="form-error" style="margin:6px 0">❌ ${esc(st.key_problem)} ${st.key_source === 'render'
+        ${st.key_problem ? `<div class="form-error" style="margin:6px 0">${esc(st.key_problem)} ${st.key_source === 'render'
           ? 'Pas in Render bij <b>Environment</b> de waarde van <code>ANTHROPIC_API_KEY</code> aan (of verwijder hem en vul de sleutel hieronder in).'
           : 'Plak hieronder een nieuwe sleutel.'}</div>` : ''}
-        ${st.api_key_has_spaces ? '<div>⚠️ De API-sleutel begint of eindigt met een spatie: verwijder die in Render.</div>' : ''}
-        <div>🤖 Model: <code>${esc(st.model)}</code>${st.model_from_env ? ' (ingesteld in Render)' : ''}</div>
-        ${st.lookalikes && st.lookalikes.length ? `<div style="margin-top:6px">⚠️ Gevonden variabelen met een <b>bijna</b> goede naam: ${st.lookalikes.map((k) => `<code>${esc(k)}</code>`).join(', ')}
+        ${st.api_key_has_spaces ? '<div class="callout warn">De API-sleutel begint of eindigt met een spatie: verwijder die in Render.</div>' : ''}
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span class="muted">${RF.icon('sparkles')}</span><span>Model: <code>${esc(st.model)}</code>${st.model_from_env ? ' (ingesteld in Render)' : ''}</span></div>
+        ${st.lookalikes && st.lookalikes.length ? `<div class="callout warn" style="display:block">Gevonden variabelen met een <b>bijna</b> goede naam: ${st.lookalikes.map((k) => `<code>${esc(k)}</code>`).join(', ')}
           → hernoem ze precies naar <code>ANTHROPIC_API_KEY</code> en <code>CRM_TRANSLATE_MODEL</code>.</div>` : ''}
         <div class="small muted" style="margin-top:8px">Deze app draait als Render-service: <b>${esc(st.service || 'onbekend')}</b>${st.url ? ` (${esc(st.url)})` : ''}${st.commit ? ` · versie ${esc(st.commit)}` : ''}.
           </div>
@@ -1223,7 +1425,7 @@ async function renderSettings() {
             ${Object.entries(st.models || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === st.model ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
           <div class="toolbar"><button class="btn btn-primary">Opslaan</button>
             ${st.key_source === 'crm' ? '<button type="button" class="btn btn-danger btn-sm" id="tr-remove">Sleutel verwijderen</button>' : ''}</div>
-          <p class="hint" style="margin-top:8px">⚠️ Op het gratis Render-abonnement wordt de database bij elke nieuwe versie gewist; vul de sleutel daarna opnieuw in
+          <p class="hint" style="margin-top:8px">Op het gratis Render-abonnement wordt de database bij elke nieuwe versie gewist; vul de sleutel daarna opnieuw in
             (of zet hem in Render bij Environment als <code>ANTHROPIC_API_KEY</code>, dan blijft hij bewaard).</p>
         </form>`;
       $('#tr-form').onsubmit = async (e) => {
@@ -1249,8 +1451,8 @@ async function renderSettings() {
         const r = await api('/api/admin/translation/test', { method: 'POST', body: {} });
         showStatus(r);
         $('#tr-status').insertAdjacentHTML('afterbegin', r.ok
-          ? `<div style="margin:0 0 10px" class="impact-preview">✅ Het werkt! (${r.ms} ms)<br><span class="small">“${esc(r.input)}” (${esc(r.source_language)})<br>→ “${esc(r.output)}”</span></div>`
-          : `<div class="form-error" style="margin:0 0 10px">❌ ${esc(r.error)}${r.detail ? `<br><span class="small">${esc(r.detail)}</span>` : ''}</div>`);
+          ? `<div style="margin:0 0 10px" class="callout ok" style="display:block;margin:0 0 12px">Het werkt! (${r.ms} ms)<br><span class="small">“${esc(r.input)}” (${esc(r.source_language)})<br>→ “${esc(r.output)}”</span></div>`
+          : `<div class="form-error" style="margin:0 0 12px">${esc(r.error)}${r.detail ? `<br><span class="small">${esc(r.detail)}</span>` : ''}</div>`);
       } catch (e) { $('#tr-status').textContent = e.message; }
       finally { $('#tr-test').disabled = false; }
     };

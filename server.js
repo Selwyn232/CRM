@@ -17,7 +17,7 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
+  '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
 };
 
 const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html', '/login': 'login.html' };
@@ -63,6 +63,8 @@ function serveFile(req, res, file) {
     if (err || !stat.isFile()) return send(res, 404, 'Niet gevonden', { 'Content-Type': 'text/plain; charset=utf-8' });
     const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
     const headers = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
+    // Lettertypen veranderen nooit: lang cachen. Overige bestanden: altijd hervalideren.
+    headers['Cache-Control'] = /\.woff2$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache';
     const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
     if (range) {
       const start = range[1] ? Number(range[1]) : 0;

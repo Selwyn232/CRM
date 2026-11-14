@@ -10,13 +10,15 @@
 <body>
   <div class="auth-wrap">
     <div class="card auth-card login-card">
-      <div class="brand"><img src="/img/logo.svg" alt=""><div>Robin Foundation<small>Welkom terug</small></div></div>
+      <div class="brand"><img src="/img/logo.svg" alt=""></div>
+      <h1>Welkom terug</h1>
+      <p class="lead-c">Log in bij Robin Foundation</p>
 
       <p class="login-q">Ik ben een…</p>
       <div class="role-picker" role="radiogroup" aria-label="Kies hoe je inlogt">
-        <button type="button" role="radio" data-role="donateur"><span class="ri">💛</span><b>Donateur</b><small>Volg je donaties</small></button>
-        <button type="button" role="radio" data-role="ontvanger"><span class="ri">🧒</span><b>Ontvanger</b><small>Kind, school of project</small></button>
-        <button type="button" role="radio" data-role="medewerker"><span class="ri">🏢</span><b>Medewerker</b><small>Beheer &amp; CRM</small></button>
+        <button type="button" role="radio" data-role="donateur"><span class="ri" data-ic="heart"></span><b>Donateur</b><small>Volg je donaties</small></button>
+        <button type="button" role="radio" data-role="ontvanger"><span class="ri" data-ic="heart-handshake"></span><b>Ontvanger</b><small>Kind, school of project</small></button>
+        <button type="button" role="radio" data-role="medewerker"><span class="ri" data-ic="building-2"></span><b>Medewerker</b><small>Beheer &amp; CRM</small></button>
       </div>
 
       <div class="already hidden" id="already"></div>
@@ -30,7 +32,7 @@
           <input id="f-pw" name="password" type="password" required autocomplete="current-password">
         </div>
         <p class="form-error" hidden style="margin:0 0 12px"></p>
-        <button class="btn btn-primary" style="width:100%;padding:11px">Inloggen</button>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Inloggen</button>
         <p class="small muted login-extra" data-for="donateur" style="text-align:center;margin-top:12px">
           Nog geen account? <a href="#" id="to-register">Account aanmaken</a></p>
         <p class="small muted login-extra" data-for="ontvanger" style="text-align:center;margin-top:12px">
@@ -48,7 +50,7 @@
         <label class="check"><input type="checkbox" name="show_on_leaderboard"> Toon mijn naam op het leaderboard (anders verschijn je als “Anonieme donateur”)</label>
         <label class="check"><input type="checkbox" name="newsletter" checked> Houd me op de hoogte via de nieuwsbrief</label>
         <p class="form-error" hidden style="margin:12px 0"></p>
-        <button class="btn btn-primary" style="width:100%;margin-top:8px;padding:11px">Account aanmaken</button>
+        <button class="btn btn-primary btn-lg btn-block" style="margin-top:8px" type="submit">Account aanmaken</button>
         <p class="small" style="text-align:center;margin-top:12px"><a href="#" id="to-login">← Terug naar inloggen</a></p>
       </form>
 
@@ -56,6 +58,7 @@
       <p class="small muted" style="margin-top:12px;text-align:center"><a href="/">Home</a> · <a href="/leaderboard">Leaderboard</a></p>
     </div>
   </div>
+  <script src="/js/icons.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/login.js"></script>
 </body>

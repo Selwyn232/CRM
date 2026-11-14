@@ -98,6 +98,15 @@ Omgevingsvariabelen: `PORT`, `CRM_DB` (pad naar het databasebestand, standaard `
 - Draai de app achter HTTPS (cookies krijgen `Secure` bij `X-Forwarded-Proto: https`) en maak back-ups van `data/crm.db`.
 - Zelfregistratie met een e-mailadres dat al bekend is, wordt geweigerd: een medewerker geeft dan via het CRM portaaltoegang. Voeg e-mailverificatie toe als je dit wilt automatiseren.
 
+## Design system
+
+De interface gebruikt één design system (`public/css/style.css`):
+- **Tokens** voor kleur (neutrale grijstinten, één accentkleur, statuskleuren), radius, schaduw en beweging, met een licht en een donker thema (volgt de systeeminstelling).
+- **Typografie:** Inter, zelf gehost in `public/fonts` (OFL-licentie, geen Google Fonts).
+- **Iconen:** Lucide (ISC-licentie). Alleen de gebruikte iconen staan in `public/js/icons.js`, aan te roepen met `RF.icon('naam')`.
+- **Componenten** in `public/js/common.js`: `RF.icon`, `RF.catIcon`/`RF.catLabel` (bestemming), `RF.avatar`, `RF.skeleton`, `RF.emptyState`, `RF.menu` (dropdown), `RF.modal`, `RF.toast`, `RF.barChart`, `RF.splitBar` en `RF.chatBox`.
+- **Beheer:** sneltoets **⌘K** / **Ctrl K** om donateurs te zoeken, naar pagina's te springen of acties te starten.
+
 ## Structuur
 
 ```

@@ -3,43 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
   <title>Robin Foundation CRM</title>
   <link rel="icon" href="/img/logo.svg">
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <div id="app" class="app hidden">
     <div class="nav-backdrop" id="nav-backdrop"></div>
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar" id="sidebar" aria-label="Hoofdmenu">
       <div class="brand"><img src="/img/logo.svg" alt=""><div>Robin Foundation<small>CRM</small></div></div>
-      <nav class="nav" id="nav">
-        <a href="#/dashboard" data-route="dashboard">📊 Dashboard</a>
-        <a href="#/donateurs" data-route="donateurs">👥 Donateurs</a>
-        <a href="#/donaties" data-route="donaties">💶 Donaties</a>
-        <a href="#/cellen" data-route="cellen">🧊 Cellen <span class="count" id="nav-cells"></span></a>
-        <a href="#/bestedingen" data-route="bestedingen">📦 Bestedingen</a>
-        <a href="#/ontvangers" data-route="ontvangers">🧒 Ontvangers</a>
-        <a href="#/chat" data-route="chat">💬 Chatmoderatie <span class="count" id="nav-chat"></span></a>
-        <div class="sep"></div>
-        <a href="#/taken" data-route="taken">✅ Taken <span class="count" id="nav-tasks"></span></a>
-        <a href="#/campagnes" data-route="campagnes">📣 Campagnes</a>
-        <a href="#/leaderboard" data-route="leaderboard">🏆 Leaderboard</a>
-        <a href="#/rapportages" data-route="rapportages">📈 Rapportages</a>
-        <a href="#/emails" data-route="emails">📧 E-mail log</a>
-        <a href="#/instellingen" data-route="instellingen">⚙️ Instellingen</a>
-        <div class="sep"></div>
-        <a href="/leaderboard" target="_blank">🌍 Publiek leaderboard ↗</a>
-        <a href="/portal" target="_blank">🙋 Donateursportaal ↗</a>
-        <a href="/ontvanger" target="_blank">🧒 Ontvangersportaal ↗</a>
-      </nav>
-      <div class="me" id="me"></div>
+      <button type="button" class="side-search" id="open-cmdk"><span id="cmdk-icon"></span><span>Zoeken…</span><kbd id="cmdk-kbd">⌘K</kbd></button>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot"><button type="button" class="me" id="me" aria-haspopup="menu"></button></div>
     </aside>
     <main class="main">
-      <div class="mobile-bar"><button class="btn btn-ghost btn-sm" id="menu-toggle" aria-label="Menu openen">☰</button>
-        <img src="/img/logo.svg" alt=""><b>Robin Foundation</b></div>
+      <div class="mobile-bar">
+        <button type="button" class="icon-btn" id="menu-toggle" aria-label="Menu openen"></button>
+        <img src="/img/logo.svg" alt=""><b>Robin Foundation</b>
+        <div class="right-tools"><button type="button" class="icon-btn" id="m-search" aria-label="Zoeken"></button></div>
+      </div>
       <div id="view"></div>
     </main>
   </div>
+  <script src="/js/icons.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/admin.js"></script>
 </body>

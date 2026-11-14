@@ -111,6 +111,8 @@ $('#register-form').addEventListener('submit', async (e) => {
 $('#to-register').onclick = (e) => { e.preventDefault(); showRegister(true); };
 $('#to-login').onclick = (e) => { e.preventDefault(); showRegister(false); };
 
+document.querySelectorAll('[data-ic]').forEach((el) => { el.innerHTML = RF.icon(el.dataset.ic); });
+
 // Melding als je automatisch bent uitgelogd.
 try {
   if (sessionStorage.getItem('rf_session_expired')) {
