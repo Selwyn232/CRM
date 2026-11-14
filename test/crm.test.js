@@ -326,13 +326,11 @@ test('chat vertalen: alleen berichten van de ander, gecachet, fout breekt chat n
   }
 });
 
-test('taal: ontvanger standaard uit land, eigen keuze gaat voor; donateur standaard Nederlands', () => {
+test('taal: Nederlands is de standaard, eigen keuze gaat voor', () => {
   const T = require('../src/translate');
-  assert.equal(T.recipientLanguage({ country: 'Haïti', language: '' }), 'ht');
-  assert.equal(T.recipientLanguage({ country: 'Honduras', language: '' }), 'es');
-  assert.equal(T.recipientLanguage({ country: 'Filipijnen', language: '' }), 'tl');
-  assert.equal(T.recipientLanguage({ country: 'Haïti', language: 'fr' }), 'fr');
-  assert.equal(T.recipientLanguage({ country: 'Onbekend', language: '' }), 'en');
+  assert.equal(T.recipientLanguage({ country: 'Haïti', language: '' }), 'nl');
+  assert.equal(T.recipientLanguage({ country: 'Honduras', language: '' }), 'nl');
+  assert.equal(T.recipientLanguage({ country: 'Haïti', language: 'ht' }), 'ht');
   assert.equal(T.donorLanguage({ language: 'nl' }), 'nl');
   assert.equal(T.donorLanguage({}), 'nl');
 });
@@ -349,7 +347,7 @@ test('HTTP: chatgesprek geeft eigen taal en taal van de ander; taal wijzigen', a
     .headers.get('set-cookie').split(';')[0];
   let th = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie } })).json();
   assert.equal(th.my_language, 'nl');
-  assert.equal(th.their_language, 'ht');
+  assert.equal(th.their_language, 'nl');
   assert.equal((await fetch(`${base}/api/portal/language`, { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify({ language: 'tl' }) })).status, 200);
   assert.equal((await fetch(`${base}/api/portal/language`, { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify({ language: 'xx' }) })).status, 400);
   th = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie } })).json();
@@ -543,4 +541,21 @@ test('Livegang: sterke wachtwoorden verplicht en demodata wissen met waarborgen'
   assert.equal(get(db, 'SELECT COUNT(*) AS n FROM categories').n, 4);
   assert.equal((await (await fetch(`${base}/api/public/config`)).json()).demo, false);
   assert.equal((await fetch(`${base}/api/staff/me`, { headers: h })).status, 200); // nog steeds ingelogd
+});
+
+test('eigen menuvolgorde opslaan, opschonen en herstellen', async (t) => {
+  const db = freshDb();
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'A', 'medewerker', hashPassword('Lange zin met gecko 42'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'a@rf.org', password: 'Lange zin met gecko 42' }) })).headers.get('set-cookie').split(';')[0];
+  const h = { ...json, cookie };
+  const nav = [{ group: '', items: ['taken', 'dashboard', 'taken', 'X<script>'] }, { group: 'Fondsenwerving', items: ['donateurs'] }];
+  const r = await (await fetch(`${base}/api/staff/preferences/nav`, { method: 'PUT', headers: h, body: JSON.stringify({ nav }) })).json();
+  assert.deepEqual(r.nav[0].items, ['taken', 'dashboard']); // dubbel en ongeldig eruit
+  assert.deepEqual((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).nav, r.nav);
+  await fetch(`${base}/api/staff/preferences/nav`, { method: 'PUT', headers: h, body: JSON.stringify({ nav: null }) });
+  assert.equal((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).nav, null);
 });

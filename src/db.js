@@ -310,6 +310,7 @@ function migrate(db) {
   const addCol = (table, col, def) => {
     if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
   };
+  addCol('users', 'nav_prefs', "TEXT NOT NULL DEFAULT ''");          // eigen menuvolgorde (JSON)
   addCol('outbox', 'status', "TEXT NOT NULL DEFAULT 'gelogd'");      // gelogd | verzonden | mislukt
   addCol('outbox', 'error', "TEXT NOT NULL DEFAULT ''");
   addCol('outbox', 'provider_id', "TEXT NOT NULL DEFAULT ''");
