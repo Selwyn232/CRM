@@ -24,7 +24,7 @@ function showApp() {
   $('#app').classList.remove('hidden');
   RF.markLoggedIn();
   $('#nav-toggle-ic').innerHTML = RF.icon('menu', 'icon-lg');
-  $('#donate-btn').innerHTML = `${RF.icon('heart')}<span>Doneer</span>`;
+  $('#donate-btn').innerHTML = `${RF.icon('heart')}<span>Sponsor een kind</span>`;
   RF.impersonationBanner(me, '/api/donor/logout');
   const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.replace('/login?rol=donateur'); };
   $('#logout').onclick = logout;
@@ -39,7 +39,8 @@ function showApp() {
 }
 
 const ROUTES = {
-  overzicht: renderOverview, reis: renderJourney, berichten: renderMessages, doneren: renderDonate,
+  overzicht: renderOverview, kinderen: renderChildren, sponsoren: renderSponsor, doneren: renderSponsor,
+  berichten: renderMessages,
   chat: renderChat, leaderboard: renderLeaderboard, jaaroverzicht: renderAnnual, profiel: renderProfile,
 };
 
@@ -61,8 +62,8 @@ async function route() {
 
 async function refreshUnread() {
   try {
-    const msgs = await api('/api/portal/messages');
-    const n = msgs.filter((m) => !m.read_at).length;
+    const kids = await api('/api/portal/my-children');
+    const n = kids.reduce((s, k) => s + k.unread_updates, 0);
     $('#unread').textContent = n;
     $('#unread').classList.toggle('hidden', !n);
     const convs = await api('/api/portal/conversations');
@@ -76,117 +77,244 @@ async function refreshUnread() {
 
 // ======================================================================= OVERZICHT
 const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond'; };
+const childPhoto = (c, cls = '') => (c.photo_url
+  ? `<img class="child-photo ${cls}" src="${esc(c.photo_url)}" alt="${esc(c.first_name)}" loading="lazy">`
+  : `<div class="child-photo ${cls} ph">${esc((c.first_name || '?').slice(0, 1))}</div>`);
+const childMeta = (c) => [c.age != null ? `${c.age} jaar` : '', c.grade, [c.city, c.province].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+const monthName = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+let sponsorConfig = null;
+const getConfig = async () => (sponsorConfig = sponsorConfig || await api('/api/portal/sponsor/config'));
+
+function breakdownHtml(cfg, times = 1) {
+  return `<div class="breakdown">${cfg.parts.map((p) => `<div class="bd-row">
+    <span class="bd-ico">${RF.icon(p.icon || 'circle')}</span>
+    <div class="grow"><div class="t">${esc(p.label)}</div><div class="small muted">${esc(p.description)}</div></div>
+    <b class="num">${euro(p.cents * times)}</b></div>`).join('')}
+    <div class="bd-row total"><div class="grow">Per maand${times > 1 ? ` voor ${times} kinderen` : ''}</div><b class="num">${euro(cfg.amount_cents * times)}</b></div></div>`;
+}
 
 async function renderOverview() {
-  const [o, donations, journey] = await Promise.all([api('/api/portal/overview'), api('/api/portal/donations'), api('/api/portal/journey')]);
+  const [o, kids, cfg] = await Promise.all([api('/api/portal/overview'), api('/api/portal/my-children'), getConfig()]);
   me = o.donor;
-  const t = o.totals;
-  const openCells = donations.filter((d) => d.cell_id && d.remaining_cents > 0);
-  const impact = o.impact.filter((r) => r.spent_cents > 0);
-
+  const sp = o.sponsor;
   view().innerHTML = `
     <section class="hero">
-      <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Jouw impact</div>
+      <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Jouw sponsorkinderen</div>
       <h1>${greet()}, ${esc(me.first_name || me.full_name)}</h1>
-      <p>Iedere euro die je geeft, bewaren we in een eigen cel. Pas als hij echt wordt uitgegeven, zie je hier waar hij heen ging, met een bericht van wie je hebt geholpen.</p>
+      <p>${sp.children ? `Dankzij jou ${sp.children === 1 ? 'gaat' : 'gaan'} ${sp.children} ${sp.children === 1 ? 'kind' : 'kinderen'} op de Filipijnen elke dag met een volle buik naar school.`
+        : `Voor ${euro(cfg.amount_cents)} per maand geef je één kind op de Filipijnen elke schooldag een maaltijd, schoolgeld en basisverzorging. Je weet precies wie je helpt en kunt met het gezin chatten.`}</p>
       <div class="hero-stats">
-        <div><div class="label">Totaal gedoneerd</div><div class="value">${euro(t.donated_cents)}</div></div>
-        <div><div class="label">Al besteed</div><div class="value">${euro(t.spent_cents)}</div></div>
-        <div><div class="label">Wacht in je cellen</div><div class="value">${euro(t.waiting_cents)}</div></div>
+        <div><div class="label">Mijn kinderen</div><div class="value">${sp.children}</div></div>
+        <div><div class="label">Per maand</div><div class="value">${euro(sp.monthly_cents)}</div></div>
+        <div><div class="label">Totaal gesponsord</div><div class="value">${euro(sp.sponsored_cents)}</div></div>
         <div><div class="label">Leaderboard</div><div class="value">${o.rank ? `#${o.rank}` : '—'}<span class="muted" style="font-size:13px;font-weight:400"> ${o.rank ? `van ${o.ranked_donors}` : ''}</span></div></div>
       </div>
     </section>
-
-    ${o.unread ? `<a href="#/berichten" class="card" style="display:flex;gap:14px;align-items:center;margin-bottom:16px;text-decoration:none;color:inherit">
-      <span class="cat-ico lg" style="--c:var(--accent)">${RF.icon('mail-open')}</span>
-      <div style="flex:1"><div style="font-weight:600">${o.unread} ${o.unread === 1 ? 'nieuw bericht' : 'nieuwe berichten'} van wie je hebt geholpen</div>
-      <div class="muted small">Brieven, foto's en filmpjes van kinderen, gezinnen en scholen</div></div>
-      <span class="btn btn-ghost btn-sm">Bekijken ${RF.icon('arrow-right', 'icon-sm')}</span></a>` : ''}
-
-    <div class="grid grid-3-2">
-      <div class="card"><div class="card-head"><h2>Wat jouw geld heeft gedaan</h2>${t.recipients ? `<span class="small muted">${t.recipients} ${t.recipients === 1 ? 'ontvanger' : 'ontvangers'} geholpen</span>` : ''}</div>
-        ${impact.length ? `<div class="grid grid-2" style="gap:10px">${impact.map((r) => `<div style="display:flex;gap:12px;align-items:center;padding:14px;border:1px solid var(--border);border-radius:12px">
-          ${RF.catIcon(r, 'lg')}<div><div style="font-size:18px;font-weight:600;letter-spacing:-.01em" class="num">${r.unit_cost_cents ? esc(RF.unitsText(r, r.units_funded)) : euro(r.spent_cents)}</div>
-          <div class="small muted">${r.unit_cost_cents ? esc(r.name) : 'noodhulp na stormen'}</div></div></div>`).join('')}</div>`
-          : RF.emptyState({ icon: 'piggy-bank', title: 'Je geld staat nog veilig in je cellen', text: 'Zodra het wordt besteed, zie je hier wat het heeft opgeleverd.' })}
-      </div>
-      <div class="card"><div class="card-head"><h2>Per bestemming</h2>
-        <div class="legend"><span><i style="background:var(--spent)"></i>Besteed</span><span><i style="background:var(--waiting)"></i>In cel</span></div></div>
-        ${o.impact.filter((r) => r.donated_cents).map((r) => `<div style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">${RF.catLabel(r, r.name)}<b class="num" style="font-weight:600">${euro(r.donated_cents)}</b></div>
-          ${RF.splitBar(r.spent_cents, r.waiting_cents)}</div>`).join('') || '<p class="muted small">Nog geen donaties.</p>'}
-      </div>
-    </div>
-
-    <div class="section-title"><h2>Je cellen</h2><span class="small muted">Geld dat klaarstaat om te worden uitgegeven</span></div>
-    ${openCells.length ? `<div class="cell-viz">${openCells.map((c) => `<div class="cell-chip">
-        <div class="cat-name">${RF.catIcon(c, 'sm')}<span class="muted">${esc(c.category_name)}</span></div>
-        <div class="amt">${euro(c.remaining_cents)}</div>
-        <div class="small muted">van ${euro(c.amount_cents)} · sinds ${date(c.received_at)}</div>
-        <div class="fill"><span style="width:${(c.remaining_cents / c.amount_cents) * 100}%"></span></div></div>`).join('')}</div>`
-      : `<div class="card">${RF.emptyState({ icon: 'check-check', title: 'Al je geld is besteed', text: 'Dankjewel! Wil je nog meer kinderen helpen?', action: `<a class="btn btn-primary btn-sm" href="#/doneren">${RF.icon('heart')}Doneer opnieuw</a>` })}</div>`}
-
+    ${sp.unread_updates ? `<a href="#/kinderen" class="card linkcard">
+      <span class="cat-ico lg" style="--c:var(--accent)">${RF.icon('image')}</span>
+      <div style="flex:1"><div style="font-weight:600">${sp.unread_updates} ${sp.unread_updates === 1 ? 'nieuwe update' : 'nieuwe updates'} van je sponsorkinderen</div>
+      <div class="small muted">Foto’s, brieven en filmpjes</div></div><span class="btn btn-ghost btn-sm">Bekijken ${RF.icon('arrow-right', 'icon-sm')}</span></a>` : ''}
+    ${kids.length ? `<div class="section-title"><h2>Mijn kinderen</h2><a href="#/sponsoren" class="small">${RF.icon('plus', 'icon-sm')} Nog een kind sponsoren</a></div>
+      <div class="child-grid">${kids.map(myChildCard).join('')}</div>`
+      : `<div class="card">${RF.emptyState({ icon: 'smile', title: 'Je sponsort nog geen kind', text: 'Kies een kind uit de profielen. Je ziet precies waar je geld heen gaat en ontvangt elke maand een update.', action: `<a class="btn btn-primary" href="#/sponsoren">${RF.icon('heart')}Kies een kind</a>` })}</div>`}
     <div class="grid grid-2" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h2>Laatst besteed</h2><a href="#/reis">Alles bekijken</a></div>
-        <div class="list">${journey.slice(0, 4).map(journeyItem).join('') || RF.emptyState({ icon: 'hourglass', title: 'Nog niets besteed' })}</div></div>
-      <div class="card flush"><div class="card-head"><h2>Mijn donaties</h2><a href="#/jaaroverzicht">Jaaroverzicht</a></div>
-        <div class="table-wrap cards"><table><thead><tr><th>Bestemming</th><th>Status</th><th class="num">Bedrag</th></tr></thead><tbody>
-        ${donations.slice(0, 6).map((d) => `<tr><td data-label="Bestemming">${RF.catLabel(d)}<span class="sub">${date(d.received_at)}${d.frequency !== 'eenmalig' ? ` · ${esc(label('frequency', d.frequency))}` : ''}</span></td>
-          <td data-label="Status">${d.status === 'ontvangen' ? RF.badge('cell', d.cell_status) : RF.badge('donation', d.status)}</td><td class="num" data-label="Bedrag"><b style="font-weight:600">${euro(d.amount_cents)}</b></td></tr>`).join('')
-          || `<tr><td colspan="3" class="empty">Nog geen donaties</td></tr>`}
-        </tbody></table></div></div>
+      <div class="card"><div class="card-head"><h2>Waar gaat ${euro(cfg.amount_cents)} per kind heen?</h2></div>${breakdownHtml(cfg)}</div>
+      <div class="card"><div class="card-head"><h2>Zo werkt sponsoren</h2></div>
+        <ol class="steps-list">
+          <li>Je kiest zelf een of meer kinderen. Elk kind heeft maar <b>één sponsor</b>: jou.</li>
+          <li>Elke maand wordt ${euro(cfg.amount_cents)} per kind afgeschreven en direct <b>op naam van jouw kind</b> geboekt.</li>
+          <li>Je ziet per maand precies wat er van je geld is betaald.</li>
+          <li>Elke maand krijg je een <b>foto, brief of filmpje</b>, en je kunt <b>chatten met het gezin</b> (automatisch vertaald).</li>
+        </ol></div>
     </div>`;
 }
 
-function journeyItem(j) {
-  const pct = Math.round(j.share * 100);
-  return `<div class="list-row">
-    ${j.recipient_photo ? `<img src="${esc(j.recipient_photo)}" alt="" style="width:36px;height:36px;border-radius:10px;object-fit:cover;flex:none;background:var(--surface-2)">` : RF.catIcon(j, 'lg')}
-    <div class="grow"><div class="title">${j.recipient_name ? esc(j.recipient_name) : esc(j.category_name)}</div>
-    <div class="meta">${esc(j.category_name)} · ${date(j.spent_at)}${j.units ? ` · ${pct}% van ${esc(RF.unitsText(j, j.units))}` : ''}</div></div>
-    <div class="end"><b style="font-weight:600">${euro(j.amount_cents)}</b><div class="small">${j.messages.length ? `<a href="#/berichten">${j.messages.length} ${j.messages.length === 1 ? 'bericht' : 'berichten'}</a>` : '<span class="muted">bericht volgt</span>'}</div></div></div>`;
+function myChildCard(c) {
+  return `<a class="card child-card" href="#/kinderen/${c.id}">
+    ${childPhoto(c)}
+    <div class="child-body">
+      <div class="child-name">${esc(c.first_name)} ${c.unread_updates ? `<span class="pill">${c.unread_updates}</span>` : ''}</div>
+      <div class="small muted">${esc(childMeta(c))}</div>
+      <div class="small" style="margin-top:8px">${c.months} ${c.months === 1 ? 'maand' : 'maanden'} gesponsord · ${euro(c.total_cents)}</div>
+      ${c.sponsorship_status === 'betaling_gemist' ? `<div class="small" style="color:var(--danger);margin-top:4px">${RF.icon('circle-alert', 'icon-sm')} Laatste betaling is niet gelukt</div>` : ''}
+    </div></a>`;
 }
 
-// ======================================================================= REIS VAN HET GELD
-async function renderJourney() {
-  const [journey, donations] = await Promise.all([api('/api/portal/journey'), api('/api/portal/donations')]);
-  // Groepeer per donatie: van donatie -> cel -> bestedingen
-  const byCell = new Map();
-  for (const j of journey) {
-    if (!byCell.has(j.cell_id)) byCell.set(j.cell_id, []);
-    byCell.get(j.cell_id).push(j);
-  }
-  const received = donations.filter((d) => d.status === 'ontvangen');
+// ======================================================================= MIJN KINDEREN
+async function renderChildren(childId) {
+  if (childId) return renderChild(childId);
+  const kids = await api('/api/portal/my-children');
   view().innerHTML = `
-    <div class="page-head"><div><h1>Waar gaat mijn geld heen?</h1><div class="sub">Per donatie de hele reis: van jouw gift, via je eigen cel, tot wie ermee geholpen is</div></div></div>
-    <div class="stack">
-    ${received.map((d) => {
-      const steps = byCell.get(d.cell_id) || [];
-      const spent = d.amount_cents - (d.remaining_cents ?? 0);
-      return `<div class="card">
-        <div class="card-head"><span class="cat-name">${RF.catIcon(d, 'lg')}<span><b style="font-size:16px;font-weight:600" class="num">${euro(d.amount_cents)}</b><span class="sub">${esc(d.category_name)} · ${date(d.received_at)}</span></span></span>${RF.badge('cell', d.cell_status)}</div>
-        ${RF.splitBar(spent, d.remaining_cents ?? 0)}
-        <ul class="timeline" style="margin-top:14px">
-          <li><div class="when">${date(d.received_at)}</div>Je donatie is ontvangen${d.frequency !== 'eenmalig' ? ` (${esc(label('frequency', d.frequency).toLowerCase())})` : ''}</li>
-          <li><div class="when">${date(d.received_at)}</div>Opgeslagen in je eigen cel <span class="small muted">#${d.cell_id}</span></li>
-          ${steps.map((j) => `<li><div class="when">${date(j.spent_at)}</div>
-            <b class="num">${euro(j.amount_cents)}</b> besteed aan ${esc(j.category_name.toLowerCase())}${j.recipient_name ? ` voor <b>${esc(j.recipient_name)}</b>` : ''}
-            ${j.recipient_location ? `<span class="muted">in ${esc(j.recipient_location)}, ${esc(j.recipient_country)}</span>` : ''}
-            <div class="small muted">${esc(j.description)}${j.units ? ` — jouw deel: ${Math.round(j.share * 100)}% van ${esc(RF.unitsText(j, j.units))}` : ''}</div>
-            ${j.recipient_story ? `<div class="small" style="margin-top:6px;padding-left:10px;border-left:2px solid var(--border);color:var(--text-2)">${esc(j.recipient_story)}</div>` : ''}
-            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${j.messages.length ? j.messages.map((m) => `<a class="tag" href="#/berichten" style="text-decoration:none">${RF.icon(RF.MESSAGE_ICONS[m.type] || 'mail', 'icon-sm')}&nbsp;${esc(m.title)}</a>`).join('') : '<span class="small muted">Bericht van de ontvanger volgt</span>'}</div>
-          </li>`).join('')}
-          ${d.remaining_cents > 0 ? `<li><div class="when">Nu</div><b class="num">${euro(d.remaining_cents)}</b> wacht nog in je cel tot het wordt uitgegeven.</li>` : ''}
-        </ul></div>`;
-    }).join('') || `<div class="card">${RF.emptyState({ icon: 'heart', title: 'Nog geen donaties', text: 'Doe je eerste donatie en volg precies waar je geld heen gaat.', action: `<a class="btn btn-primary btn-sm" href="#/doneren">${RF.icon('heart')}Doneer</a>` })}</div>`}
+    <div class="page-head"><div><h1>Mijn kinderen</h1><div class="sub">De kinderen die jij sponsort, met elke maand een update</div></div>
+      <div class="toolbar"><a class="btn btn-primary" href="#/sponsoren">${RF.icon('plus')}<span>Kind toevoegen</span></a></div></div>
+    ${kids.length ? `<div class="child-grid">${kids.map(myChildCard).join('')}</div>`
+      : `<div class="card">${RF.emptyState({ icon: 'smile', title: 'Je sponsort nog geen kind', action: `<a class="btn btn-primary" href="#/sponsoren">${RF.icon('heart')}Kies een kind</a>` })}</div>`}`;
+}
+
+async function renderChild(childId) {
+  const d = await api(`/api/portal/my-children/${childId}`);
+  const c = d.child;
+  const maxTotal = Math.max(1, ...d.totals.map((t) => t.cents));
+  view().innerHTML = `
+    <a href="#/kinderen" class="back-link">${RF.icon('arrow-left', 'icon-sm')} Mijn kinderen</a>
+    <section class="card child-hero">
+      ${childPhoto(c, 'xl')}
+      <div class="grow">
+        <h1 style="margin:0">${esc(c.first_name)}</h1>
+        <div class="muted">${esc(childMeta(c))}${c.school ? ` · ${esc(c.school)}` : ''}</div>
+        <div class="child-stats">
+          <div><div class="label">Sponsor sinds</div><div class="value">${date(c.started_at)}</div></div>
+          <div><div class="label">Maanden</div><div class="value">${c.months}</div></div>
+          <div><div class="label">Totaal</div><div class="value">${euro(c.total_cents)}</div></div>
+        </div>
+        <div class="toolbar" style="margin-top:14px">
+          ${c.can_chat ? `<a class="btn btn-primary btn-sm" href="#/chat/${c.family_id}">${RF.icon('message-circle')}Chat met het gezin</a>` : ''}
+        </div>
+      </div>
+    </section>
+    <div class="grid grid-3-2" style="margin-top:16px">
+      <div class="stack">
+        ${c.story ? `<div class="card"><h2>Over ${esc(c.first_name)}</h2><p style="white-space:pre-line;margin:0">${esc(c.story)}</p></div>` : ''}
+        ${c.family_story || c.family_photo ? `<div class="card"><h2>Het gezin</h2>${c.family_photo ? `<img src="${esc(c.family_photo)}" alt="Gezin van ${esc(c.first_name)}" class="family-photo">` : ''}
+          <p style="white-space:pre-line;margin:0">${esc(c.family_story)}</p></div>` : ''}
+        <div class="card"><div class="card-head"><h2>Updates</h2><span class="small muted">Elke maand een foto, brief of filmpje</span></div>
+          ${d.updates.length ? `<div class="stack">${d.updates.map((u, i) => `${i === 3 ? `<details class="more-updates"><summary class="link">Oudere updates (${d.updates.length - 3})</summary><div class="stack">` : ''}<article class="update">
+            <div class="small muted">${esc(monthName(u.month))} · ${esc(label('message', u.type))}</div>
+            <h3 style="margin:4px 0 8px">${esc(u.title)}</h3>
+            ${RF.mediaHtml(u.type, u.media_url, u.title)}
+            ${u.body ? `<div class="${u.type === 'brief' ? 'letter' : ''}" style="white-space:pre-line">${esc(u.body)}</div>` : ''}</article>`).join('')}${d.updates.length > 3 ? '</div></details>' : ''}</div>`
+            : RF.emptyState({ icon: 'image', title: 'De eerste update komt eraan', text: `Binnen een maand ontvang je een foto of brief van ${esc(c.first_name)}.` })}
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card"><div class="card-head"><h2>Wat jouw geld deed</h2><span class="small muted">totaal</span></div>
+          ${d.totals.length ? d.totals.map((t) => `<div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px"><span class="cat-name"><span class="bd-ico sm">${RF.icon(t.icon || 'circle', 'icon-sm')}</span>${esc(t.label)}</span><b class="num">${euro(t.cents)}</b></div>
+            <div class="meter"><span style="width:${(t.cents / maxTotal) * 100}%"></span></div></div>`).join('') : '<p class="muted small">Nog geen maand geboekt.</p>'}
+        </div>
+        <div class="card"><div class="card-head"><h2>Per maand</h2></div>
+          ${d.months.map((m) => `<details class="month"><summary><span>${esc(monthName(m.month))}</span><b class="num">${euro(m.amount_cents)}</b></summary>
+            ${m.lines.map((l) => `<div class="bd-row"><span class="bd-ico sm">${RF.icon(l.icon || 'circle', 'icon-sm')}</span><div class="grow small">${esc(l.label)}</div><span class="num small">${euro(l.cents)}</span></div>`).join('')}
+          </details>`).join('') || '<p class="muted small">Nog geen maand geboekt.</p>'}
+        </div>
+        <div class="card"><h2>Sponsoring stoppen</h2>
+          <p class="small muted">Stop je, dan zoeken we een nieuwe sponsor voor ${esc(c.first_name)} zodat de hulp doorgaat.</p>
+          <button class="btn btn-ghost btn-sm" id="stop">Sponsoring van ${esc(c.first_name)} stoppen</button></div>
+      </div>
     </div>`;
+  $('#stop').onclick = async () => {
+    if (!await RF.confirmDialog(`Weet je zeker dat je stopt met het sponsoren van ${c.first_name}? De maandelijkse betaling voor ${c.first_name} stopt dan.`, 'Ja, stoppen')) return;
+    try { await api(`/api/portal/my-children/${c.id}/stop`, { method: 'POST', body: {} }); toast(`Sponsoring van ${c.first_name} is gestopt`); location.hash = '#/kinderen'; }
+    catch (ex) { toast(ex.message, 'error'); }
+  };
+}
+
+// ======================================================================= KIND KIEZEN
+async function renderSponsorDone(donationId) {
+  const draw = (d) => {
+    const ok = d.status === 'ontvangen'; const bad = d.status === 'geannuleerd';
+    view().innerHTML = `<div class="card" style="max-width:520px;margin:40px auto">${RF.emptyState({
+      icon: ok ? 'party-popper' : bad ? 'circle-x' : 'hourglass',
+      title: ok ? 'Welkom als sponsor!' : bad ? 'De betaling is niet gelukt' : 'Je betaling wordt bevestigd…',
+      text: ok ? 'Je sponsorschap is gestart en de eerste maand is geboekt. Elke maand ontvang je een update.'
+        : bad ? 'Er is niets afgeschreven. Je kunt het opnieuw proberen.' : 'Dit duurt meestal maar een paar seconden.',
+      action: ok ? `<a class="btn btn-primary btn-sm" href="#/kinderen">Naar mijn kinderen</a>` : bad ? `<a class="btn btn-primary btn-sm" href="#/sponsoren">Opnieuw proberen</a>` : '',
+    })}</div>`;
+    return ok || bad;
+  };
+  for (let i = 0; i < 20; i++) {
+    const d = await api(`/api/portal/sponsor/${donationId}`);
+    if (!location.hash.includes('/klaar/')) return;
+    if (draw(d)) return;
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+}
+
+async function renderSponsor(sub) {
+  if (sub === 'klaar') return renderSponsorDone(location.hash.split('/').pop());
+  const [kids, cfg, config] = await Promise.all([api('/api/portal/children'), getConfig(), api('/api/public/config').catch(() => ({}))]);
+  const picked = new Set();
+  view().innerHTML = `
+    <div class="page-head"><div><h1>Kies een kind</h1><div class="sub">${euro(cfg.amount_cents)} per kind per maand. Elk kind heeft één sponsor. ${kids.length} ${kids.length === 1 ? 'kind wacht' : 'kinderen wachten'} op een sponsor.</div></div></div>
+    ${kids.length ? `<div class="toolbar wrap" style="margin-bottom:14px">
+        <span class="small muted">Snel kiezen:</span>
+        ${[1, 2, 5, 10, 20].filter((n) => n <= kids.length).map((n) => `<button type="button" class="btn btn-ghost btn-sm" data-auto="${n}">${n} ${n === 1 ? 'kind' : 'kinderen'}</button>`).join('')}
+        <span class="small muted">(wie het langst wacht)</span></div>
+      <div class="child-grid" id="kids">${kids.map((c) => `<label class="card child-card pick" data-id="${c.id}">
+        <input type="checkbox" value="${c.id}" class="sr-only">
+        ${childPhoto(c)}
+        <span class="pick-check">${RF.icon('check', 'icon-sm')}</span>
+        <div class="child-body">
+          <div class="child-name">${esc(c.first_name)}</div>
+          <div class="small muted">${esc(childMeta(c))}</div>
+          ${c.story ? `<p class="small story">${esc(c.story)}</p>` : ''}
+          <button type="button" class="link small" data-more="${c.id}">Lees meer</button>
+        </div></label>`).join('')}</div>
+      <div class="sponsor-bar" id="bar" hidden>
+        <div class="grow"><b id="bar-n"></b><div class="small muted" id="bar-t"></div></div>
+        <button class="btn btn-primary" id="go">${RF.icon('heart')}<span>Sponsor nu</span></button>
+      </div>
+      <p class="hint" style="text-align:center;margin-top:12px">${!config.payments ? 'Demo-omgeving: er wordt niet echt betaald.'
+        : config.payments_mode === 'test' ? 'Testmodus: je gaat naar een testbetaling van Mollie, er wordt niets afgeschreven.'
+          : 'Je betaalt de eerste maand veilig via Mollie (iDEAL); daarna wordt elke maand automatisch afgeschreven. Stoppen kan altijd.'}</p>`
+      : `<div class="card">${RF.emptyState({ icon: 'party-popper', title: 'Alle kinderen hebben op dit moment een sponsor', text: 'Nieuwe kinderen worden steeds toegevoegd. Kijk binnenkort nog eens.' })}</div>`}`;
+  if (!kids.length) return;
+  const draw = () => {
+    view().querySelectorAll('.child-card.pick').forEach((el) => {
+      const on = picked.has(Number(el.dataset.id));
+      el.classList.toggle('selected', on);
+      el.querySelector('input').checked = on;
+    });
+    const n = picked.size;
+    $('#bar').hidden = !n;
+    $('#bar-n').textContent = `${n} ${n === 1 ? 'kind' : 'kinderen'} · ${euro(n * cfg.amount_cents)} per maand`;
+    $('#bar-t').textContent = [...picked].map((id) => kids.find((k) => k.id === id).first_name).join(', ');
+  };
+  $('#kids').addEventListener('click', (e) => {
+    const more = e.target.closest('[data-more]');
+    if (more) { e.preventDefault(); return showChild(kids.find((k) => k.id === Number(more.dataset.more))); }
+    const card = e.target.closest('.child-card.pick');
+    if (!card) return;
+    e.preventDefault();
+    const idn = Number(card.dataset.id);
+    if (picked.has(idn)) picked.delete(idn); else picked.add(idn);
+    draw();
+  });
+  view().querySelectorAll('[data-auto]').forEach((b) => b.addEventListener('click', () => {
+    picked.clear(); kids.slice(0, Number(b.dataset.auto)).forEach((k) => picked.add(k.id)); draw();
+  }));
+  const showChild = (c) => RF.modal({
+    title: c.first_name, wide: true,
+    body: `<div class="child-modal">${childPhoto(c, 'xl')}<div><div class="muted">${esc(childMeta(c))}${c.school ? ` · ${esc(c.school)}` : ''}</div>
+      <p style="white-space:pre-line">${esc(c.story)}</p>
+      ${c.family_story ? `<h3>Het gezin</h3>${c.family_photo ? `<img src="${esc(c.family_photo)}" alt="" class="family-photo">` : ''}<p style="white-space:pre-line">${esc(c.family_story)}</p>` : ''}</div></div>`,
+  });
+  $('#go').onclick = () => {
+    const n = picked.size;
+    RF.modal({
+      title: `${n} ${n === 1 ? 'kind' : 'kinderen'} sponsoren`, submitLabel: `Sponsor voor ${euro(n * cfg.amount_cents)} per maand`,
+      body: `<p>Je sponsort <b>${esc([...picked].map((id) => kids.find((k) => k.id === id).first_name).join(', '))}</b>. Elke maand betaal je:</p>${breakdownHtml(cfg, n)}
+        <p class="small muted" style="margin-top:12px">Het noodfondsdeel gaat naar een gezamenlijke pot voor als een orkaan of overstroming de gezinnen treft.</p>`,
+      onSubmit: async () => {
+        try {
+          const r = await api('/api/portal/sponsor', { method: 'POST', body: { child_ids: [...picked] } });
+          if (r.checkout_url) { location.href = r.checkout_url; return false; }
+          toast('Welkom als sponsor! De eerste maand is geboekt.');
+          location.hash = '#/kinderen';
+        } catch (ex) {
+          if (ex.status === 409) setTimeout(() => renderSponsor(), 1500);
+          throw ex;
+        }
+      },
+    });
+  };
 }
 
 // ======================================================================= BERICHTEN
 async function renderMessages() {
   const msgs = await api('/api/portal/messages');
   view().innerHTML = `
-    <div class="page-head"><div><h1>Berichten</h1><div class="sub">Brieven, foto’s en filmpjes van wie je hebt geholpen</div></div></div>
+    <div class="page-head"><div><h1>Berichten</h1><div class="sub">Nieuws over het Robin Noodfonds, waaraan jij meebetaalt</div></div></div>
     <div class="stack" style="max-width:760px">${msgs.map((m) => `<article class="card message-card" data-id="${m.id}" data-read="${m.read_at ? 1 : 0}">
       <div style="display:flex;gap:12px;align-items:center">
         ${m.recipient_photo ? `<img src="${esc(m.recipient_photo)}" alt="" style="width:40px;height:40px;border-radius:12px;object-fit:cover;margin:0;flex:none">` : RF.catIcon(m, 'lg')}
@@ -197,7 +325,7 @@ async function renderMessages() {
       ${RF.mediaHtml(m.type, m.media_url, m.title)}
       ${m.body ? `<div class="${m.type === 'brief' ? 'letter' : ''}" style="white-space:pre-line">${esc(m.body)}</div>` : ''}
       <div class="callout neutral" style="margin:14px 0 0">${RF.catIcon(m, 'sm')}<span>${esc(m.category_name)} · besteed op ${date(m.spent_at)} · jouw bijdrage <b>${euro(m.my_share_cents)}</b></span></div>
-    </article>`).join('') || `<div class="card">${RF.emptyState({ icon: 'mail-open', title: 'Nog geen berichten', text: 'Zodra je geld wordt uitgegeven, sturen de kinderen, gezinnen en scholen je een brief, foto of filmpje.' })}</div>`}</div>`;
+    </article>`).join('') || `<div class="card">${RF.emptyState({ icon: 'mail-open', title: 'Nog geen berichten', text: 'Wordt het noodfonds ingezet na een orkaan of overstroming, dan lees je hier wat er met jouw bijdrage is gedaan.' })}</div>`}</div>`;
   // Markeer als gelezen zodra het bericht in beeld komt.
   const io = new IntersectionObserver((entries) => {
     entries.forEach(async (e) => {
@@ -211,121 +339,12 @@ async function renderMessages() {
   view().querySelectorAll('[data-read="0"]').forEach((el) => io.observe(el));
 }
 
-// ======================================================================= DONEREN
-// Terugkeer van Mollie: wacht tot de betaling bevestigd is (webhook).
-async function renderDonateDone(donationId) {
-  const draw = (d) => {
-    const ok = d.status === 'ontvangen'; const bad = d.status === 'geannuleerd';
-    view().innerHTML = `<div class="card" style="max-width:520px;margin:40px auto">${RF.emptyState({
-      icon: ok ? 'circle-check' : bad ? 'circle-x' : 'hourglass',
-      title: ok ? 'Dankjewel voor je donatie!' : bad ? 'De betaling is niet gelukt' : 'Je betaling wordt bevestigd…',
-      text: ok ? `${euro(d.amount_cents)} voor ${esc(d.category_name)} staat nu veilig in je eigen cel.${d.frequency !== 'eenmalig' ? ` Je periodieke gift (${esc(d.frequency)}) is gestart.` : ''}`
-        : bad ? 'Er is niets afgeschreven. Je kunt het opnieuw proberen.' : 'Dit duurt meestal maar een paar seconden.',
-      action: ok ? `<a class="btn btn-primary btn-sm" href="#/overzicht">Naar mijn overzicht</a>` : bad ? `<a class="btn btn-primary btn-sm" href="#/doneren">Opnieuw proberen</a>` : '',
-    })}</div>`;
-    return ok || bad;
-  };
-  for (let i = 0; i < 20; i++) {
-    const d = await api(`/api/portal/donations/${donationId}`);
-    if (!location.hash.includes('/klaar/')) return;
-    if (draw(d)) return;
-    await new Promise((res) => setTimeout(res, 2000));
-  }
-}
-
-async function renderDonate(sub) {
-  if (sub === 'klaar') return renderDonateDone(location.hash.split('/').pop());
-  const [cats, campaigns] = await Promise.all([api('/api/portal/categories'), api('/api/portal/campaigns')]);
-  const presets = { schoolmaaltijd: [1000, 2500, 5000], schoolgeld: [5000, 15000, 30000], noodfonds: [2500, 5000, 10000], gezondheidspakket: [2500, 5000, 10000] };
-  view().innerHTML = `
-    <div class="page-head"><div><h1>Doneer</h1><div class="sub">Kies waar je geld heen gaat. Je volgt het tot het moment dat het wordt uitgegeven.</div></div></div>
-    <div class="grid grid-3-2">
-      <form class="card" id="donate-form">
-        <div class="step-title"><span class="n">1</span>Kies een bestemming</div>
-        <div class="cat-picker">${cats.map((c, i) => `<label><input type="radio" name="category_key" value="${esc(c.key)}" ${i === 0 ? 'checked' : ''}>
-          ${RF.catIcon(c, 'lg')}<span><span class="t">${esc(c.name)}</span><span class="small muted" style="display:block">${esc(c.description)}</span>
-          <span class="small" style="display:block;margin-top:6px;font-weight:500">${c.unit_cost_cents ? `${euro(c.unit_cost_cents)} per ${esc(c.unit_label)}` : 'Elk bedrag helpt'}</span></span></label>`).join('')}</div>
-        <div class="step-title"><span class="n">2</span>Kies een bedrag</div>
-        <div class="amount-picker" id="presets"></div>
-        <div class="field"><label>Of vul zelf een bedrag in (€)</label><input type="text" name="amount" inputmode="decimal" placeholder="bv. 20"></div>
-        <div class="impact-preview" id="preview"></div>
-        <div class="field-row">
-          <div class="field"><label>Hoe vaak?</label><select name="frequency">${Object.entries(RF.LABELS.frequency).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-          ${campaigns.length ? `<div class="field"><label>Campagne (optioneel)</label><select name="campaign_id"><option value="">—</option>${campaigns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>` : ''}
-        </div>
-        <p class="form-error" hidden style="margin:0 0 12px"></p>
-        <button class="btn btn-primary btn-lg btn-block">${RF.icon('heart')}Doneer nu via iDEAL</button>
-        <p class="hint" style="text-align:center" id="pay-note"></p>
-      </form>
-      <div class="stack">
-        <div class="card"><div class="card-head"><h2>Zo werkt het</h2></div>
-          <ol style="padding-left:18px;margin:0;line-height:1.7;color:var(--text-2)">
-            <li>Je donatie komt in een <b>eigen cel</b> — gescheiden van ander geld.</li>
-            <li>Zodra er een maaltijd, schoolgeld, noodhulp of pakket nodig is, wordt jouw cel <b>getriggerd</b>.</li>
-            <li>Je krijgt bericht en ziet precies <b>waar en aan wie</b> je geld is besteed.</li>
-            <li>Je ontvangt een <b>brief, foto of filmpje</b> van degene die je hebt geholpen.</li>
-          </ol></div>
-        ${campaigns.map((c) => {
-          const pct = c.goal_cents ? Math.min(100, (c.raised_cents / c.goal_cents) * 100) : 0;
-          return `<div class="card"><div class="small muted" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">${RF.icon('megaphone', 'icon-sm')}Campagne</div>
-            <h3 style="margin:0 0 4px">${esc(c.name)}</h3><p class="small muted">${esc(c.description)}</p>
-            <div class="meter"><span style="width:${pct}%"></span></div>
-            <div class="small" style="margin-top:8px;display:flex;justify-content:space-between"><b class="num">${euro0(c.raised_cents)}</b><span class="muted">van ${euro0(c.goal_cents)}</span></div></div>`;
-        }).join('')}
-      </div>
-    </div>`;
-  RF.api('/api/public/config').then((c) => {
-    $('#pay-note').innerHTML = !c.payments ? 'Demo-omgeving: er wordt niet echt betaald.'
-      : c.payments_mode === 'test' ? 'Testmodus: je gaat naar een testbetaling van Mollie, er wordt niets afgeschreven.'
-        : `${RF.icon('lock', 'icon-sm')} Je betaalt veilig via Mollie (iDEAL, creditcard en meer).`;
-  }).catch(() => {});
-  const form = $('#donate-form');
-  let preset = null;
-  const cat = () => cats.find((c) => c.key === form.elements.category_key.value);
-  const amount = () => (form.elements.amount.value ? toCents(form.elements.amount.value) : preset);
-  const drawPresets = () => {
-    const list = presets[cat().key] || [1000, 2500, 5000];
-    if (!list.includes(preset)) preset = list[1];
-    $('#presets').innerHTML = list.map((v) => `<button type="button" data-v="${v}" class="${v === preset && !form.elements.amount.value ? 'active' : ''}">${euro0(v)}</button>`).join('');
-  };
-  const update = () => {
-    const c = cat();
-    const a = amount();
-    $('#preview').innerHTML = !a || isNaN(a) ? 'Kies een bedrag'
-      : c.unit_cost_cents ? `${euro(a)} = ${esc(RF.unitsText(c, a / c.unit_cost_cents))} ${c.key === 'schoolgeld' && a < c.unit_cost_cents ? '(samen met andere donateurs)' : ''}`
-        : `${euro(a)} gaat direct naar het noodfonds voor stormen en orkanen`;
-  };
-  $('#presets').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-v]');
-    if (!b) return;
-    preset = Number(b.dataset.v); form.elements.amount.value = ''; drawPresets(); update();
-  });
-  form.addEventListener('change', (e) => { if (e.target.name === 'category_key') drawPresets(); update(); });
-  form.elements.amount.addEventListener('input', () => { drawPresets(); update(); });
-  drawPresets(); update();
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const err = form.querySelector('.form-error');
-    err.hidden = true;
-    try {
-      const f = RF.formData(form);
-      const btnEl = form.querySelector('button.btn-primary');
-      btnEl.disabled = true;
-      const r = await api('/api/portal/donate', { method: 'POST', body: { category_key: f.category_key, amount_cents: amount(), frequency: f.frequency, campaign_id: f.campaign_id || null } })
-        .finally(() => { btnEl.disabled = false; });
-      if (r.checkout_url) { location.href = r.checkout_url; return; } // naar Mollie om te betalen
-      toast('Dankjewel! Je donatie staat in je eigen cel.');
-      location.hash = '#/overzicht';
-    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
-  };
-}
-
 // ======================================================================= CHAT
 async function renderChat(openId) {
   const convs = await api('/api/portal/conversations');
   const selected = openId ? Number(openId) : null;
   view().innerHTML = `
-    <div class="page-head"><div><h1>Chat</h1><div class="sub">Praat met de kinderen, scholen en projecten die je hebt geholpen</div></div></div>
+    <div class="page-head"><div><h1>Chat</h1><div class="sub">Praat met de gezinnen van je sponsorkinderen. Berichten worden automatisch vertaald.</div></div></div>
     <div class="callout neutral">${RF.icon(me.anonymous ? 'eye-off' : 'user')}<span>${me.anonymous ? 'Je bent anoniem: ontvangers zien je als “Anonieme donateur”.' : `Ontvangers zien je als <b>${esc(me.public_name)}</b>.`} <a href="#/profiel">Wijzigen</a></span></div>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
@@ -334,8 +353,8 @@ async function renderChat(openId) {
           <div style="min-width:0"><div class="who">${esc(c.name)}</div>
           <div class="last">${esc(c.last_message || [c.location, c.country].filter(Boolean).join(', '))}</div></div>
           ${c.unread ? `<span class="pill">${c.unread}</span>` : ''}</button>`).join('')
-          || `<p class="muted" style="padding:10px">Er is nog niemand om mee te chatten. Zodra Robin Foundation geld uit <b>jouw</b> cellen besteedt aan een kind, school of project, verschijnt die ontvanger hier.
-            <a href="#/reis">Bekijk waar je geld nu is →</a></p>`}
+          || `<p class="muted" style="padding:10px">Er is nog niemand om mee te chatten. Zodra je een kind sponsort, kun je hier met het gezin chatten.
+            <a href="#/sponsoren">Kies een kind →</a></p>`}
       </div>
       <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies een gesprek om te chatten.</p>'}</div>
     </div>`;
@@ -361,31 +380,22 @@ async function renderChat(openId) {
 // ======================================================================= LEADERBOARD
 async function renderLeaderboard() {
   view().innerHTML = `
-    <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Samen maken we het verschil</div></div>
-      <div class="toolbar"><select id="f-period"><option value="all">Altijd</option><option value="year">Dit jaar</option><option value="month">Deze maand</option></select>
-      <select id="f-cat"><option value="">Alle bestemmingen</option></select></div></div>
+    <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Wie sponsort de meeste kinderen?</div></div></div>
     <p class="muted">Je verschijnt hier als <b>${esc(me.anonymous ? 'Anonieme donateur' : me.public_name)}</b>. <a href="#/profiel">Wijzig in je privacy-instellingen</a>.</p>
     <div class="card" id="lb"></div>`;
-  const cats = await api('/api/portal/categories');
-  $('#f-cat').innerHTML += cats.map((c) => `<option value="${esc(c.key)}">${esc(c.name)}</option>`).join('');
-  const load = async () => {
-    const rows = await api(`/api/portal/leaderboard?period=${$('#f-period').value}&category=${$('#f-cat').value}&limit=100`);
-    $('#lb').innerHTML = leaderboardRows(rows);
-    const mine = $('#lb .me');
-    if (mine) mine.scrollIntoView({ block: 'nearest' });
-  };
-  $('#f-period').onchange = load;
-  $('#f-cat').onchange = load;
-  await load();
+  const rows = await api('/api/portal/leaderboard?limit=100');
+  $('#lb').innerHTML = leaderboardRows(rows);
+  const mine = $('#lb .me');
+  if (mine) mine.scrollIntoView({ block: 'nearest' });
 }
 
 function leaderboardRows(rows) {
-  if (!rows.length) return '<p class="empty">Nog geen donaties in deze periode.</p>';
+  if (!rows.length) return '<p class="empty">Nog geen sponsors.</p>';
   return rows.map((r) => `<div class="lb-row ${r.rank <= 3 ? `top${r.rank}` : ''} ${r.is_me ? 'me' : ''}">
     <div class="lb-rank">${r.rank <= 3 ? `<span class="medal m${r.rank}">${r.rank}</span>` : r.rank}</div>
     <div><div class="lb-name">${r.anonymous ? `<span class="anon">${RF.icon('eye-off', 'icon-sm')}${esc(r.name)}</span>` : esc(r.name)} ${r.is_me ? '<span class="badge badge-admin">jij</span>' : ''}</div>
-      <div class="lb-meta">${r.donation_count} ${r.donation_count === 1 ? 'gift' : 'giften'}${r.city ? ` · ${esc(r.city)}` : ''}${r.messages ? ` · ${r.messages} berichten ontvangen` : ''}</div></div>
-    <div class="lb-amount">${euro0(r.total_cents)}</div></div>`).join('');
+      <div class="lb-meta">${r.months} ${r.months === 1 ? 'maand' : 'maanden'} gesponsord${r.city ? ` · ${esc(r.city)}` : ''}</div></div>
+    <div class="lb-amount">${r.children} ${r.children === 1 ? 'kind' : 'kinderen'}</div></div>`).join('');
 }
 
 // ======================================================================= JAAROVERZICHT

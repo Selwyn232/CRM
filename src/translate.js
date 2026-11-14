@@ -31,7 +31,8 @@ const LANGUAGES = {
 };
 
 // Standaardtaal is Nederlands; een ontvanger kan zelf (of via een medewerker) een andere taal kiezen.
-const recipientLanguage = (r) => (r && LANGUAGES[r.language] ? r.language : 'nl');
+// Gezinnen op de Filipijnen schrijven standaard in het Tagalog; overige ontvangers in het Nederlands.
+const recipientLanguage = (r) => (r && LANGUAGES[r.language] ? r.language : (r && r.kind === 'gezin' ? 'tl' : 'nl'));
 const donorLanguage = (d) => (d && LANGUAGES[d.language] ? d.language : 'nl');
 
 const DEFAULT_MODEL = 'claude-opus-5-5';

@@ -81,6 +81,7 @@ function createDonation(db, input, actor) {
   const donor = get(db, 'SELECT * FROM donors WHERE id = ?', input.donor_id);
   if (!donor) throw new AppError(404, 'Donateur niet gevonden');
   const cat = getCategory(db, input.category_key);
+  if (cat.key === 'sponsoring' && !input._sponsor) throw new AppError(400, 'Sponsorbetalingen registreer je bij Sponsorschappen.');
   const status = input.status || 'ontvangen';
 
   return tx(db, () => {
@@ -127,6 +128,9 @@ function updateDonation(db, id, input, actor) {
 
   const financialChange = next.amount_cents !== donation.amount_cents ||
     next.category_key !== donation.category_key || next.status !== donation.status;
+  if (donation.category_key === 'sponsoring' && financialChange) {
+    throw new AppError(409, 'Dit is een sponsorbetaling. Pas sponsorschappen aan via Sponsorschappen.');
+  }
   if (touched && financialChange) {
     throw new AppError(409, 'Deze donatie is (deels) uitgegeven; bedrag, bestemming en status kunnen niet meer worden gewijzigd. Draai eerst de besteding terug.');
   }
@@ -382,9 +386,12 @@ function chatRecipient(db, recipientId) {
   return r;
 }
 
+// Een donateur mag chatten met een gezin als hij een kind uit dat gezin sponsort (of, vroeger, geld aan hen besteedde).
 function hasFunded(db, donorId, recipientId) {
-  return !!get(db, `SELECT 1 AS ok FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
-    WHERE a.donor_id = ? AND e.recipient_id = ? LIMIT 1`, donorId, recipientId);
+  return !!get(db, `SELECT 1 AS ok FROM sponsorships s JOIN children ch ON ch.id = s.child_id
+      WHERE s.donor_id = ? AND ch.family_id = ? AND s.status <> 'beeindigd'
+    UNION SELECT 1 FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
+      WHERE a.donor_id = ? AND e.recipient_id = ? LIMIT 1`, donorId, recipientId, donorId, recipientId);
 }
 
 // Algemene schakelaar (Instellingen). Staat de moderatie uit, dan wordt alles direct afgeleverd;

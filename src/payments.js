@@ -54,6 +54,10 @@ module.exports = {
     call('POST', `/customers/${encodeURIComponent(customerId)}/subscriptions`, {
       amount: amount(cents), interval, description, webhookUrl, startDate, metadata,
     }),
+  updateSubscription: (customerId, subId, { cents, description }) =>
+    call('PATCH', `/customers/${encodeURIComponent(customerId)}/subscriptions/${encodeURIComponent(subId)}`, {
+      amount: amount(cents), ...(description ? { description } : {}),
+    }),
   cancelSubscription: (customerId, subId) => call('DELETE', `/customers/${encodeURIComponent(customerId)}/subscriptions/${encodeURIComponent(subId)}`),
   checkKey: () => call('GET', '/methods'),
 };
