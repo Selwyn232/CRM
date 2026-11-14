@@ -60,4 +60,7 @@ module.exports = {
     }),
   cancelSubscription: (customerId, subId) => call('DELETE', `/customers/${encodeURIComponent(customerId)}/subscriptions/${encodeURIComponent(subId)}`),
   checkKey: () => call('GET', '/methods'),
+  // Welke betaalmethoden kunnen een machtiging starten (eerste betaling), en waarmee kan Mollie daarna automatisch afschrijven?
+  methods: (sequenceType) => call('GET', `/methods?sequenceType=${encodeURIComponent(sequenceType)}`),
+  mandates: (customerId) => call('GET', `/customers/${encodeURIComponent(customerId)}/mandates`),
 };

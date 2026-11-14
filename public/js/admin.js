@@ -1140,7 +1140,10 @@ async function renderIntegrations() {
   };
   $('#test-mollie').onclick = async () => {
     const r = await api('/api/admin/integrations/test-mollie', { method: 'POST', body: {} });
-    result('#mollie-result', r.ok, r.ok ? `Werkt (${r.mode === 'live' ? 'live' : 'test'}): ${(r.methods || []).slice(0, 4).join(', ') || 'geen betaalmethoden actief'}` : r.error);
+    if (!r.ok) return result('#mollie-result', false, r.error);
+    $('#mollie-result').innerHTML = `<span style="color:var(--ok)">Werkt (${r.mode === 'live' ? 'live' : 'testmodus'}): ${esc((r.methods || []).slice(0, 5).join(', ') || 'geen betaalmethoden actief')}</span><br>
+      ${r.recurring_ready ? `<span style="color:var(--ok)">${RF.icon('check', 'icon-sm')} Automatische maandelijkse incasso staat klaar (${esc(r.recurring.join(', '))}). Eerste betaling kan met: ${esc((r.first || []).join(', '))}.</span>`
+        : `<span style="color:var(--bad)">${RF.icon('circle-alert', 'icon-sm')} Automatische incasso staat nog niet aan. Activeer <b>SEPA-incasso</b> in je Mollie-dashboard (Instellingen → Betaalmethoden), anders stopt de betaling na de eerste maand.</span>`}`;
   };
   $('#test-mail').onclick = async () => {
     try { const r = await api('/api/admin/integrations/test-mail', { method: 'POST', body: { to: $('#test-to').value } }); result('#mail-result', r.ok, r.ok ? 'Verstuurd! Kijk in je inbox.' : r.error); }

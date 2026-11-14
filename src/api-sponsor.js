@@ -61,6 +61,26 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     } catch (err) { S.audit(db, actor, 'abonnement_aanpassen_mislukt', 'subscription', null, `${subscriptionId}: ${err.message}`); }
   }
 
+  // Maandelijkse automatische incasso starten bij Mollie voor deze sponsorschappen (vanaf volgende maand).
+  async function startSubscription(donorRow, ids, { webhookUrl, reference }) {
+    const P = require('./payments');
+    const cents = all(db, `SELECT monthly_cents FROM sponsorships WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids).reduce((t, x) => t + x.monthly_cents, 0);
+    const start = new Date(); start.setMonth(start.getMonth() + 1);
+    const sub = await P.createSubscription(donorRow.mollie_customer_id, {
+      cents, interval: '1 month', description: `Robin Foundation – sponsoring ${ids.length} ${ids.length === 1 ? 'kind' : 'kinderen'} #${reference}`,
+      webhookUrl, startDate: start.toISOString().slice(0, 10), metadata: { sponsor: true, reference },
+    });
+    run(db, `UPDATE sponsorships SET subscription_id = ? WHERE id IN (${ids.map(() => '?').join(',')})`, sub.id, ...ids);
+    return sub;
+  }
+  // Lukt de automatische incasso niet, dan een taak voor kantoor (anders stopt de betaling na de eerste maand ongemerkt).
+  function incassoTask(donorId, reason) {
+    const d = get(db, 'SELECT * FROM donors WHERE id = ?', donorId);
+    run(db, "INSERT INTO tasks (title, description, donor_id, priority, due_date) VALUES (?, ?, ?, 'hoog', date('now', '+3 days'))",
+      `Automatische incasso niet gestart: ${S.donorFullName(d)}`,
+      `De eerste betaling is binnen, maar Mollie kon de maandelijkse incasso niet starten (${reason}). Ga naar Sponsorschappen en kies "Automatische incasso starten", of neem contact op met de sponsor.`, donorId);
+  }
+
   // Wordt vanuit de Mollie-webhook aangeroepen. Geeft true als de betaling bij het sponsormodel hoort.
   async function handleSponsorPayment(pay) {
     const P = require('./payments');
@@ -98,17 +118,17 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
         return true;
       }
       SP.bookPayment(db, { donorId: donation.donor_id, sponsorshipIds: ids, amountCents: donation.amount_cents, method: pay.method || 'online', donationId: donation.id, actor: 'mollie' });
-      if (pay.customerId) {
-        const cents = all(db, `SELECT monthly_cents FROM sponsorships WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids).reduce((s, x) => s + x.monthly_cents, 0);
-        const start = new Date(); start.setMonth(start.getMonth() + 1);
+      const donorRow = get(db, 'SELECT * FROM donors WHERE id = ?', donation.donor_id);
+      if (pay.customerId && donorRow.mollie_customer_id) {
         try {
-          const sub = await P.createSubscription(pay.customerId, {
-            cents, interval: '1 month', description: `Robin Foundation – sponsoring ${ids.length} ${ids.length === 1 ? 'kind' : 'kinderen'} #${donation.id}`,
-            webhookUrl: pay.webhookUrl, startDate: start.toISOString().slice(0, 10), metadata: { sponsor: true, donation_id: donation.id },
-          });
-          run(db, `UPDATE sponsorships SET subscription_id = ? WHERE id IN (${ids.map(() => '?').join(',')})`, sub.id, ...ids);
+          const sub = await startSubscription(donorRow, ids, { webhookUrl: pay.webhookUrl, reference: donation.id });
           run(db, 'UPDATE donations SET subscription_id = ? WHERE id = ?', sub.id, donation.id);
-        } catch (err) { S.audit(db, 'mollie', 'abonnement_mislukt', 'donation', donation.id, err.message); }
+        } catch (err) {
+          S.audit(db, 'mollie', 'abonnement_mislukt', 'donation', donation.id, err.message);
+          incassoTask(donation.donor_id, err.message);
+        }
+      } else {
+        incassoTask(donation.donor_id, 'geen Mollie-klant bij deze betaling');
       }
     } else if (failed && donation.status === 'in_afwachting') {
       run(db, "UPDATE donations SET status = 'geannuleerd', note = ? WHERE id = ?", `Betaling ${pay.status}`, donation.id);
@@ -346,6 +366,27 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
       const res = SP.bookPayment(db, { donorId: did, sponsorshipIds: sids, month, method: str(ctx.body.method, 30) || 'overschrijving', reference: str(ctx.body.reference, 100), actor: ctx.actor });
       if (!res) throw new AppError(400, 'Geen lopende sponsorschappen gevonden');
       return res;
+    }, staff],
+    // Automatische incasso (opnieuw) starten voor alle lopende sponsorschappen van deze sponsor zonder incasso.
+    ['POST', '/api/admin/sponsorships/:id/subscription', async (ctx) => {
+      const P = require('./payments');
+      if (!P.isEnabled()) throw new AppError(400, 'Koppel eerst Mollie (Instellingen → Integraties)');
+      const sp = get(db, 'SELECT * FROM sponsorships WHERE id = ?', id(ctx.params.id));
+      if (!sp) throw new AppError(404, 'Sponsorschap niet gevonden');
+      const donorRow = get(db, 'SELECT * FROM donors WHERE id = ?', sp.donor_id);
+      if (!donorRow.mollie_customer_id) throw new AppError(400, 'Deze sponsor heeft nog nooit online betaald. Laat de sponsor één keer betalen via het portaal; daarmee geeft hij toestemming voor automatische incasso.');
+      let mandates = [];
+      try { mandates = ((await P.mandates(donorRow.mollie_customer_id))._embedded || {}).mandates || []; } catch { /* hieronder gemeld */ }
+      if (!mandates.some((m) => m.status === 'valid' || m.status === 'pending')) {
+        throw new AppError(400, 'Mollie heeft geen geldige machtiging voor deze sponsor. De sponsor moet één keer opnieuw betalen via het portaal.');
+      }
+      const ids = all(db, "SELECT id FROM sponsorships WHERE donor_id = ? AND status <> 'beeindigd' AND subscription_id IS NULL", sp.donor_id).map((x) => x.id);
+      if (!ids.length) throw new AppError(409, 'Alle sponsorschappen van deze sponsor hebben al een automatische incasso');
+      try {
+        const sub = await startSubscription(donorRow, ids, { webhookUrl: `${publicBase(ctx)}/api/webhooks/mollie`, reference: `s${sp.id}` });
+        S.audit(db, ctx.actor, 'incasso_gestart', 'sponsorship', sp.id, sub.id);
+        return { ok: true, subscription_id: sub.id, sponsorships: ids.length };
+      } catch (err) { throw new AppError(502, `Mollie: ${err.message}`); }
     }, staff],
     ['POST', '/api/admin/sponsorships/:id/missed', (ctx) => SP.missedPayment(db, [id(ctx.params.id)], ctx.actor), staff],
     ['POST', '/api/admin/sponsorships/:id/end', async (ctx) => {
