@@ -436,9 +436,10 @@ const RF = (() => {
   function impersonationBanner(me, logoutPath) {
     if (!me || !me.impersonated_by) return;
     document.body.classList.add('impersonating');
+    document.body.classList.toggle('readonly', !me.impersonation_write); // bij volledige toegang blijft alles bruikbaar
     const bar = document.createElement('div');
     bar.className = 'impersonation-bar';
-    bar.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px">${icon("eye")} Je kijkt mee als <b>${esc(me.full_name || me.name)}</b> — ingelogd door ${esc(me.impersonated_by)} · alleen-lezen</span>
+    bar.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px">${icon("eye")} Je bent ingelogd als <b>${esc(me.full_name || me.name)}</b> — door ${esc(me.impersonated_by)} · ${me.impersonation_write ? 'volledige toegang (alles wordt gelogd)' : 'alleen-lezen'}</span>
       <button type="button" class="btn btn-sm">Stoppen</button>`;
     bar.querySelector('button').onclick = async () => {
       await api(logoutPath, { method: 'POST', body: {} });

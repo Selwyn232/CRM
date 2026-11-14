@@ -220,6 +220,12 @@ function buildRoutes({ db, uploadDir }) {
     run(db, "INSERT OR IGNORE INTO users (email, name, role, password_hash) VALUES ('veld', 'Joy Veldwerker', 'veldmedewerker', ?)", auth.hashPassword('veld'));
     run(db, "INSERT INTO settings (key, value) VALUES ('veld_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
   }
+  // "Inloggen als": standaard volledige toegang (op verzoek), uit te zetten bij Instellingen.
+  if (!setting('impersonation_write_v1')) {
+    for (const [k, v] of [['impersonation_write', 'aan'], ['impersonation_write_v1', '1']]) {
+      run(db, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, v);
+    }
+  }
   S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION !== 'uit');
   // ------------------------------------------------------------ guards
   // Iedere ingelogde medewerker, ook veldmedewerkers (alleen voor eigen account en onboarding).
@@ -268,10 +274,15 @@ function buildRoutes({ db, uploadDir }) {
     if (!u || !u.active || u.role !== 'admin') throw new AppError(401, 'Sessie "inloggen als" is verlopen');
     ctx.impersonator = u;
     ctx.actor = `medewerker:${u.email} als ${ctx.actor}`;
-    // Alleen meekijken: een medewerker kan niets doen namens een donateur of ontvanger (bv. niet chatten met een kind).
-    if (ctx.req.method !== 'GET') throw new AppError(403, `Je kijkt mee als medewerker (alleen-lezen). Je kunt niets doen namens deze persoon.`);
+    if (ctx.req.method === 'GET') return;
+    // Instelling (Instellingen → Inloggen als): alleen meekijken, of volledige toegang namens de persoon.
+    if (!impersonationWrite()) throw new AppError(403, 'Je kijkt mee als medewerker (alleen-lezen). Zet volledige toegang aan bij Instellingen → Inloggen als.');
+    // Ook met volledige toegang: geen wachtwoord of Face ID van het account wijzigen (dat zou het account overnemen).
+    const p = ctx.url.pathname;
+    if (/\/password$/.test(p) || p.startsWith('/api/passkeys/')) throw new AppError(403, 'Wachtwoord en Face ID kan alleen de persoon zelf wijzigen, ook als je meekijkt.');
   }
-  const meWith = (ctx, obj) => (ctx.impersonator ? { ...obj, impersonated_by: ctx.impersonator.name } : obj);
+  const impersonationWrite = () => setting('impersonation_write') === 'aan';
+  const meWith = (ctx, obj) => (ctx.impersonator ? { ...obj, impersonated_by: ctx.impersonator.name, impersonation_write: impersonationWrite() } : obj);
 
   const impersonate = (ctx, kind, subjectId, cookie, url) => {
     setCookie(ctx, cookie, auth.createSession(db, kind, subjectId, ctx.user.id));
@@ -955,6 +966,14 @@ function buildRoutes({ db, uploadDir }) {
       S.audit(db, ctx.actor, 'bestemming_gewijzigd', 'category', null, cat.key);
     }, admin],
     ['GET', '/api/admin/translation/status', () => require('./translate').status(), admin],
+    ['GET', '/api/admin/settings/impersonation', () => ({ write: impersonationWrite() }), admin],
+    ['PUT', '/api/admin/settings/impersonation', (ctx) => {
+      const on = !!ctx.body.write;
+      run(db, `INSERT INTO settings (key, value, updated_at) VALUES ('impersonation_write', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, on ? 'aan' : 'uit');
+      S.audit(db, ctx.actor, on ? 'inloggen_als_volledige_toegang' : 'inloggen_als_alleen_lezen', 'settings', null);
+      return { write: on };
+    }, admin],
     ['GET', '/api/admin/chat/moderation', () => ({ enabled: S.moderationEnabled() }), staff],
     ['PUT', '/api/admin/chat/moderation', (ctx) => {
       const on = !!ctx.body.enabled;
@@ -1108,7 +1127,7 @@ function buildRoutes({ db, uploadDir }) {
         weak_password: isWeakStored(me.password_hash),
         weak_users: all(db, 'SELECT id, email, password_hash FROM users WHERE active = 1').filter((u) => isWeakStored(u.password_hash)).map((u) => u.email),
         moderation: S.moderationEnabled(),
-        impersonation_read_only: true,
+        impersonation_read_only: !impersonationWrite(),
         payments: require('./payments').isEnabled(),
         email: require('./mailer').isEnabled(),
         translation: T.isEnabled(),
