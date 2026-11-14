@@ -44,14 +44,17 @@ const MODELS = { 'claude-haiku-5-5': 'Claude Haiku 5.5 (snel en goedkoop, aanbev
 
 // Sleutel/model kunnen uit Render (omgevingsvariabelen) komen of in het CRM zelf worden ingesteld
 // (Instellingen). Omgevingsvariabelen gaan voor.
-const runtime = { apiKey: '', model: '' };
+const runtime = { apiKey: '', model: '', workspace: '' };
 const envKey = () => (process.env.ANTHROPIC_API_KEY || '').trim();
 const envModel = () => (process.env.CRM_TRANSLATE_MODEL || '').trim();
 const currentKey = () => envKey() || runtime.apiKey;
 const currentModel = () => envModel() || runtime.model || DEFAULT_MODEL;
-function configure({ apiKey, model } = {}) {
+// Persoonlijke sleutels die niet aan één workspace vastzitten, hebben een workspace-ID nodig (header anthropic-workspace-id).
+const currentWorkspace = () => (process.env.ANTHROPIC_WORKSPACE_ID || '').trim() || runtime.workspace;
+function configure({ apiKey, model, workspace } = {}) {
   if (apiKey !== undefined) runtime.apiKey = String(apiKey || '').trim();
   if (model !== undefined) runtime.model = MODELS[model] ? model : '';
+  if (workspace !== undefined) runtime.workspace = String(workspace || '').trim();
   client = null;
 }
 
@@ -59,7 +62,11 @@ let client = null;
 let clientKey = '';
 function getClient() {
   const key = currentKey();
-  if (!client || clientKey !== key) { client = new (loadSdk())({ apiKey: key }); clientKey = key; }
+  const ws = currentWorkspace();
+  if (!client || clientKey !== key + ws) {
+    client = new (loadSdk())({ apiKey: key, ...(ws ? { defaultHeaders: { 'anthropic-workspace-id': ws } } : {}) });
+    clientKey = key + ws;
+  }
   return client;
 }
 
@@ -71,7 +78,8 @@ function keyProblem(key = currentKey()) {
     return `De sleutel bevat een ongeldig teken (${bad === ' ' ? 'een spatie' : `"${bad}"`}). Waarschijnlijk is er iets anders geplakt dan de sleutel.`;
   }
   if (/^rnd_/i.test(key)) return 'Dit is een Render-sleutel, geen Anthropic API-sleutel.';
-  if (!/^sk-ant-api\d\d-[A-Za-z0-9_\-]{20,}$/.test(key)) return 'Dit is geen Anthropic API-sleutel (die begint met "sk-ant-api03-").';
+  if (/^sk-ant-(admin|oat|ort|sid)/i.test(key)) return 'Dit soort sleutel (admin-sleutel of inlogtoken) kan niet vertalen. Maak een API-sleutel aan op platform.claude.com → API Keys.';
+  if (!/^sk-ant-[a-z]{3}\d{0,2}-[A-Za-z0-9_\-]{20,}$/i.test(key)) return 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-").';
   return null;
 }
 const isEnabled = () => !!currentKey() && !keyProblem() && !!loadSdk();
@@ -135,8 +143,9 @@ async function translateBatch(items, target) {
   } catch (err) {
     const A = loadSdk();
     let msg = 'Vertalen is mislukt';
-    if (err instanceof A.AuthenticationError) msg = `Vertalen mislukt: Anthropic accepteert de API-sleutel (eindigend op …${currentKey().slice(-4)}) niet. Controleer of deze sleutel nog actief is op console.anthropic.com → API Keys, of maak een nieuwe aan.`;
+    if (err instanceof A.AuthenticationError) msg = `Vertalen mislukt: Anthropic accepteert de API-sleutel (eindigend op …${currentKey().slice(-4)}) niet. Controleer of deze sleutel nog actief is op platform.claude.com → API Keys, of maak een nieuwe aan.${currentKey().startsWith('sk-ant-usr') && !currentWorkspace() ? ' Bij een persoonlijke sleutel (sk-ant-usr-) kan ook een Workspace-ID nodig zijn.' : ''}`;
     else if (err instanceof A.PermissionDeniedError) msg = 'Vertalen mislukt: deze sleutel heeft geen toegang tot het model. Controleer je workspace/rechten op console.anthropic.com.';
+    else if (err instanceof A.BadRequestError && /workspace/i.test(err.message)) msg = 'Vertalen mislukt: deze sleutel hoort niet bij één vaste workspace. Vul hieronder het Workspace-ID in (platform.claude.com → Settings → Workspaces, kolom ID, begint met "wrkspc_").';
     else if (err instanceof A.BadRequestError && /credit|balance|billing/i.test(err.message)) msg = 'Vertalen mislukt: er staat geen tegoed op je Anthropic-account. Voeg tegoed toe bij Billing op console.anthropic.com.';
     else if (err instanceof A.RateLimitError) msg = 'Vertalen is even druk, probeer het zo opnieuw';
     else if (err instanceof A.APIConnectionError) msg = 'Vertaaldienst niet bereikbaar';
@@ -173,6 +182,8 @@ function status() {
     key_source: envKey() ? 'render' : runtime.apiKey ? 'crm' : null,
     key_hint: currentKey() && !keyProblem() ? `…${currentKey().slice(-4)}` : '',
     key_problem: keyProblem(),
+    workspace: currentWorkspace(),
+    workspace_source: (process.env.ANTHROPIC_WORKSPACE_ID || '').trim() ? 'render' : runtime.workspace ? 'crm' : null,
     api_key_has_spaces: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== process.env.ANTHROPIC_API_KEY.trim(),
     model_from_env: envModel() || null,
     model: currentModel(),
@@ -186,4 +197,4 @@ function status() {
   };
 }
 
-module.exports = { LANGUAGES, MODELS, isEnabled, translateBatch, recipientLanguage, donorLanguage, status, configure };
+module.exports = { keyProblem, LANGUAGES, MODELS, isEnabled, translateBatch, recipientLanguage, donorLanguage, status, configure };

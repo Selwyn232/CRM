@@ -1216,6 +1216,9 @@ async function renderSettings() {
             <input type="password" name="api_key" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
               placeholder="${st.api_key_set ? 'Ingesteld — plak een nieuwe sleutel om te vervangen' : 'sk-ant-…'}">
             <div class="hint">Maak een sleutel op <b>console.anthropic.com → API Keys</b> en plak hem hier. Hij wordt daarna nooit meer volledig getoond.</div></div>
+          <div class="field"><label>Workspace-ID <span class="muted">(alleen nodig bij een persoonlijke sleutel, sk-ant-usr-…)</span></label>
+            <input type="text" name="workspace" value="${esc(st.workspace || '')}" placeholder="wrkspc_…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+            <div class="hint">Te vinden op <b>platform.claude.com → Settings → Workspaces</b>, kolom <b>ID</b>. Laat leeg als je sleutel bij één workspace hoort.</div></div>
           <div class="field"><label>Model</label><select name="model">
             ${Object.entries(st.models || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === st.model ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
           <div class="toolbar"><button class="btn btn-primary">Opslaan</button>
@@ -1227,7 +1230,7 @@ async function renderSettings() {
         e.preventDefault();
         const f = RF.formData(e.target);
         try {
-          const st2 = await api('/api/admin/translation/settings', { method: 'PUT', body: { api_key: f.api_key, model: f.model } });
+          const st2 = await api('/api/admin/translation/settings', { method: 'PUT', body: { api_key: f.api_key, model: f.model, workspace: f.workspace } });
           showStatus(st2);
           toast('Opgeslagen — tik op Proefvertaling om te testen');
         } catch (ex) { toast(ex.message, 'error'); }

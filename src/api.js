@@ -124,7 +124,7 @@ function donorJourney(db, donorId) {
 function buildRoutes({ db, uploadDir }) {
   // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
   const setting = (k) => (get(db, 'SELECT value FROM settings WHERE key = ?', k) || {}).value || '';
-  require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model') });
+  require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model'), workspace: setting('translate_workspace') });
   // Chatmoderatie: standaard UIT tijdens de testfase (zet aan in Instellingen of met CRM_CHAT_MODERATION=aan).
   S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION === 'aan');
   // ------------------------------------------------------------ guards
@@ -877,15 +877,18 @@ function buildRoutes({ db, uploadDir }) {
       const b = ctx.body;
       if (b.api_key !== undefined && b.api_key !== '') {
         const key = String(b.api_key).trim();
-        if (/^rnd_/i.test(key)) throw new AppError(400, 'Dit is een Render-sleutel. Gebruik een Anthropic API-sleutel (begint met "sk-ant-api03-") van console.anthropic.com → API Keys.');
-        if (/^sk-ant-admin/i.test(key)) throw new AppError(400, 'Dit is een Anthropic admin-sleutel; die kan niet vertalen. Maak een gewone API-sleutel aan (begint met "sk-ant-api03-").');
-        if (/^sk-ant-(oat|ort|sid|usr)/i.test(key)) throw new AppError(400, 'Dit is geen API-sleutel maar een inlogtoken. Maak een API-sleutel aan op console.anthropic.com → API Keys (begint met "sk-ant-api03-").');
-        if (/\s/.test(key)) throw new AppError(400, 'De sleutel bevat een spatie of regeleinde; plak hem opnieuw met de kopieerknop.');
-        if (!/^sk-ant-api\d\d-[A-Za-z0-9_\-]{20,}$/.test(key)) throw new AppError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-api03-"). Controleer of je hem volledig hebt gekopieerd.');
+        const problem = T.keyProblem(key);
+        if (problem) throw new AppError(400, problem);
         save('translate_api_key', key);
         T.configure({ apiKey: key });
       }
       if (b.remove_key) { save('translate_api_key', ''); T.configure({ apiKey: '' }); }
+      if (b.workspace !== undefined) {
+        const ws = String(b.workspace || '').trim();
+        if (ws && !/^wrkspc_[A-Za-z0-9]{8,}$/.test(ws)) throw new AppError(400, 'Een Workspace-ID begint met "wrkspc_" (te vinden op platform.claude.com → Settings → Workspaces, kolom ID).');
+        save('translate_workspace', ws);
+        T.configure({ workspace: ws });
+      }
       if (b.model !== undefined) {
         if (b.model && !T.MODELS[b.model]) throw new AppError(400, 'Onbekend model');
         save('translate_model', b.model || '');

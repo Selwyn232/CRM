@@ -394,3 +394,38 @@ test('chatmoderatie uit: alles direct afgeleverd, contactgegevens wel gemarkeerd
     assert.equal(S.chatThread(db, rid, donor, 'recipient').length, 2);
   } finally { S.setModeration(true); }
 });
+
+test('vertalen: persoonlijke sleutel + workspace-ID worden meegestuurd', async (t) => {
+  const http = require('node:http');
+  let seen = null;
+  const fake = http.createServer((req, res) => {
+    seen = req.headers;
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify({ translations: [{ id: 1, source_language: 'ht', text: 'Hallo!' }] }) }],
+        usage: { input_tokens: 1, output_tokens: 1 } }));
+    });
+  }).listen(0);
+  const prevBase = process.env.ANTHROPIC_BASE_URL;
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${fake.address().port}`;
+  delete process.env.ANTHROPIC_API_KEY;
+  const T = require('../src/translate');
+  t.after(() => {
+    fake.close();
+    T.configure({ apiKey: '', workspace: '', model: '' });
+    if (prevBase === undefined) delete process.env.ANTHROPIC_BASE_URL; else process.env.ANTHROPIC_BASE_URL = prevBase;
+    if (prevKey !== undefined) process.env.ANTHROPIC_API_KEY = prevKey;
+  });
+  const key = 'sk-ant-usr-' + 'a'.repeat(40);
+  assert.equal(T.keyProblem(key), null);
+  assert.match(T.keyProblem('sk-ant-admin01-' + 'a'.repeat(30)), /admin/);
+  T.configure({ apiKey: key, workspace: 'wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ', model: 'claude-haiku-5-5' });
+  const out = await T.translateBatch([{ id: 1, text: 'Bonjou!' }], 'nl');
+  assert.equal(out.get(1).text, 'Hallo!');
+  assert.equal(seen['anthropic-workspace-id'], 'wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ');
+  assert.equal(seen.authorization, `Bearer ${key}`);
+});
