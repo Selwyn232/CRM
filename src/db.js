@@ -289,12 +289,14 @@ function migrate(db) {
   add('last_login_at', 'TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_recipients_username ON recipients(username COLLATE NOCASE)');
 
+  const sessionCols = () => db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name);
   // Oude sessions-tabel kende geen ontvanger-sessies: opnieuw aanmaken (sessies zijn wegwerpdata).
   const s = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").get();
   if (s && !s.sql.includes("'recipient'")) {
     db.exec(`DROP TABLE sessions; CREATE TABLE sessions (token TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')), subject_id INTEGER NOT NULL, expires_at TEXT NOT NULL);`);
   }
+  if (!sessionCols().includes('impersonator_id')) db.exec('ALTER TABLE sessions ADD COLUMN impersonator_id INTEGER');
 }
 
 // Voert fn uit binnen een transactie; rollback bij een fout.

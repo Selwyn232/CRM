@@ -18,10 +18,13 @@ function verifyPassword(password, stored) {
   return expected.length === candidate.length && crypto.timingSafeEqual(candidate, expected);
 }
 
-function createSession(db, kind, subjectId) {
+// impersonatorId: id van de medewerker die meekijkt ("inloggen als"); zulke sessies duren 1 uur.
+function createSession(db, kind, subjectId, impersonatorId = null) {
   const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
-  run(db, 'INSERT INTO sessions (token, kind, subject_id, expires_at) VALUES (?,?,?,?)', token, kind, subjectId, expires);
+  const ms = impersonatorId ? 3600e3 : SESSION_DAYS * 864e5;
+  const expires = new Date(Date.now() + ms).toISOString();
+  run(db, 'INSERT INTO sessions (token, kind, subject_id, expires_at, impersonator_id) VALUES (?,?,?,?,?)',
+    token, kind, subjectId, expires, impersonatorId);
   run(db, 'DELETE FROM sessions WHERE expires_at < ?', new Date().toISOString());
   return token;
 }

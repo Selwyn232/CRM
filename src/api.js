@@ -140,15 +140,33 @@ function buildRoutes({ db, uploadDir }) {
     if (!d) throw new AppError(401, 'Niet ingelogd');
     ctx.donor = d;
     ctx.actor = `donateur:${d.id}`;
+    readOnlyIfImpersonating(ctx, s);
   };
 
   const recipient = (ctx) => {
     const s = auth.getSession(db, ctx.cookies[RECIPIENT_COOKIE]);
     if (!s || s.kind !== 'recipient') throw new AppError(401, 'Niet ingelogd');
     const r = get(db, 'SELECT * FROM recipients WHERE id = ?', s.subject_id);
-    if (!r || !r.active || !r.password_hash) throw new AppError(401, 'Niet ingelogd');
+    if (!r || !r.active || (!r.password_hash && !s.impersonator_id)) throw new AppError(401, 'Niet ingelogd');
     ctx.recipient = r;
     ctx.actor = `ontvanger:${r.id}`;
+    readOnlyIfImpersonating(ctx, s);
+  };
+
+  // "Inloggen als": medewerker kijkt mee, maar kan niets doen namens de donateur/ontvanger.
+  function readOnlyIfImpersonating(ctx, s) {
+    if (!s.impersonator_id) return;
+    const u = get(db, 'SELECT id, name, email, role, active FROM users WHERE id = ?', s.impersonator_id);
+    if (!u || !u.active || u.role !== 'admin') throw new AppError(401, 'Meekijksessie verlopen');
+    ctx.impersonator = u;
+    if (ctx.req.method !== 'GET') throw new AppError(403, `Je kijkt mee als ${u.name} (alleen-lezen). Je kunt niets doen namens deze persoon.`);
+  }
+  const meWith = (ctx, obj) => (ctx.impersonator ? { ...obj, impersonated_by: ctx.impersonator.name } : obj);
+
+  const impersonate = (ctx, kind, subjectId, cookie, url) => {
+    setCookie(ctx, cookie, auth.createSession(db, kind, subjectId, ctx.user.id));
+    S.audit(db, ctx.actor, 'ingelogd_als', kind === 'donor' ? 'donor' : 'recipient', subjectId);
+    return { url };
   };
 
   // Donateurs die een ontvanger hebben gesteund, zoals de ontvanger ze mag zien (anoniem blijft anoniem).
@@ -246,7 +264,7 @@ function buildRoutes({ db, uploadDir }) {
       auth.destroySession(db, ctx.cookies[DONOR_COOKIE]);
       setCookie(ctx, DONOR_COOKIE, '');
     }],
-    ['GET', '/api/donor/me', (ctx) => publicDonor(ctx.donor), donor],
+    ['GET', '/api/donor/me', (ctx) => meWith(ctx, publicDonor(ctx.donor)), donor],
 
     // ================================================================ DONATEURSPORTAAL
     ['GET', '/api/portal/overview', (ctx) => {
@@ -345,7 +363,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/portal/conversations/:id', (ctx) => {
       const rid = id(ctx.params.id);
       if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
-      return S.chatThread(db, rid, ctx.donor.id, 'donor');
+      return S.chatThread(db, rid, ctx.donor.id, 'donor', !ctx.impersonator);
     }, donor],
     ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
       { recipientId: id(ctx.params.id), donorId: ctx.donor.id, sender: 'donor', body: ctx.body.body }, ctx.actor), donor],
@@ -362,7 +380,7 @@ function buildRoutes({ db, uploadDir }) {
       auth.destroySession(db, ctx.cookies[RECIPIENT_COOKIE]);
       setCookie(ctx, RECIPIENT_COOKIE, '');
     }],
-    ['GET', '/api/recipient/me', (ctx) => publicRecipient(ctx.recipient), recipient],
+    ['GET', '/api/recipient/me', (ctx) => meWith(ctx, publicRecipient(ctx.recipient)), recipient],
     ['GET', '/api/recipient/supporters', (ctx) => {
       if (!ctx.recipient.chat_enabled) return [];
       return supportersOf(ctx.recipient.id);
@@ -370,7 +388,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/recipient/supporters/:id', (ctx) => {
       const did = id(ctx.params.id);
       if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
-      return S.chatThread(db, ctx.recipient.id, did, 'recipient');
+      return S.chatThread(db, ctx.recipient.id, did, 'recipient', !ctx.impersonator);
     }, recipient],
     ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
       { recipientId: ctx.recipient.id, donorId: id(ctx.params.id), sender: 'recipient', body: ctx.body.body }, ctx.actor), recipient],
@@ -546,6 +564,16 @@ function buildRoutes({ db, uploadDir }) {
       S.audit(db, ctx.actor, 'portaaltoegang_ingesteld', 'donor', donorId);
       return { password };
     }, staff],
+    ['POST', '/api/admin/donors/:id/impersonate', (ctx) => {
+      const did = id(ctx.params.id);
+      if (!get(db, 'SELECT id FROM donors WHERE id = ?', did)) throw new AppError(404, 'Donateur niet gevonden');
+      return impersonate(ctx, 'donor', did, DONOR_COOKIE, '/portal');
+    }, admin],
+    ['POST', '/api/admin/recipients/:id/impersonate', (ctx) => {
+      const rid = id(ctx.params.id);
+      if (!get(db, 'SELECT id FROM recipients WHERE id = ? AND active = 1', rid)) throw new AppError(404, 'Ontvanger niet gevonden of inactief');
+      return impersonate(ctx, 'recipient', rid, RECIPIENT_COOKIE, '/ontvanger');
+    }, admin],
     ['GET', '/api/admin/donors/:id/annual', (ctx) => annualStatement(db, id(ctx.params.id), ctx.query.year), staff],
     ['POST', '/api/admin/donors/:id/interactions', (ctx) => {
       const donorId = id(ctx.params.id);

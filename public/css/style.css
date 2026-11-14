@@ -393,6 +393,16 @@ textarea { min-height: 90px; resize: vertical; }
   .toast { max-width: none; }
 }
 
+
+/* ---------- meekijken (inloggen als) ---------- */
+.impersonation-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  background: #6b46c1; color: #fff; padding: 8px 14px; font-size: .9rem; text-align: center; }
+.impersonation-bar .btn { background: #fff; color: #6b46c1; }
+.impersonating .topbar { top: 40px; }
+.impersonating .chat-form { display: none; }
+.impersonating #pw-btn, .impersonating #logout, .impersonating #logout-m { display: none !important; }
+.impersonating .chat::after { content: 'Meekijken is alleen-lezen: je kunt geen berichten sturen namens deze persoon.'; font-size: .85rem; color: var(--ink-3); }
+
 /* ---------- print ---------- */
 @media print {
   .sidebar, .topbar, .no-print, .page-head .toolbar, #toasts { display: none !important; }

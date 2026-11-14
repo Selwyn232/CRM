@@ -303,6 +303,7 @@ async function renderDonor(donorId) {
         <button class="btn btn-ghost" id="edit">Bewerken</button>
         <button class="btn btn-ghost" id="portal">${d.has_portal ? '🔑 Nieuw wachtwoord' : '🔑 Portaaltoegang geven'}</button>
         <button class="btn btn-ghost" id="annual">📄 Jaaroverzicht</button>
+        ${isAdmin() ? '<button class="btn btn-ghost" id="as-donor">👁️ Inloggen als donateur</button>' : ''}
         <button class="btn btn-ghost" id="spend-donor">⚡ Geld besteden</button>
         <button class="btn btn-primary" id="add-donation">+ Donatie</button>
       </div>
@@ -387,6 +388,7 @@ async function renderDonor(donorId) {
   const reload = () => renderDonor(donorId);
   $('#edit').onclick = () => donorForm(d, reload);
   $('#add-donation').onclick = () => donationForm({ donor_id: d.id }, reload);
+  if (isAdmin()) $('#as-donor').onclick = () => loginAs(`/api/admin/donors/${d.id}/impersonate`);
   $('#spend-donor').onclick = () => {
     const withMoney = data.impact.find((r) => r.waiting_cents > 0);
     if (!withMoney) { toast('Deze donateur heeft geen geld meer in de cellen', 'error'); return; }
@@ -854,7 +856,8 @@ async function renderRecipients() {
         <div class="small">${r.has_login ? `🔑 ${esc(r.username)} · ${r.chat_enabled ? (r.chat_moderated ? '💬 chat (gemodereerd)' : '💬 chat') : 'chat uit'}` : '<span class="muted">geen inlog</span>'}</div></div></div>
       <p class="small" style="margin-top:10px">${esc(r.story).slice(0, 160)}</p>
       <div class="small muted">${r.expenditure_count} bestedingen · ${euro(r.received_cents)}${r.chat_count ? ` · ${r.chat_count} chatberichten` : ''}</div>
-      <button class="btn btn-ghost btn-sm" data-access="${r.id}" style="margin-top:8px">🔑 Inlog & chat</button></div>`).join('') || '<p class="muted">Nog geen ontvangers.</p>'}</div>`;
+      <div class="toolbar" style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-access="${r.id}">🔑 Inlog & chat</button>
+        ${isAdmin() && r.active ? `<button class="btn btn-ghost btn-sm" data-as="${r.id}">👁️ Inloggen als</button>` : ''}</div></div>`).join('') || '<p class="muted">Nog geen ontvangers.</p>'}</div>`;
   const form = (r = {}) => modal({
     title: r.id ? 'Ontvanger bewerken' : 'Nieuwe ontvanger', wide: true,
     body: `<div class="field-row"><div class="field"><label>Naam</label><input type="text" name="name" required value="${esc(r.name || '')}"></div>
@@ -876,10 +879,23 @@ async function renderRecipients() {
   });
   $('#new').onclick = () => form();
   view().querySelectorAll('[data-r]').forEach((el) => el.addEventListener('click', (e) => {
-    if (e.target.closest('[data-access]')) return;
+    if (e.target.closest('[data-access],[data-as]')) return;
     form(rows.find((r) => r.id === Number(el.dataset.r)));
   }));
+  view().querySelectorAll('[data-as]').forEach((b) => b.addEventListener('click', () => loginAs(`/api/admin/recipients/${b.dataset.as}/impersonate`)));
   view().querySelectorAll('[data-access]').forEach((b) => b.addEventListener('click', () => accessForm(rows.find((r) => r.id === Number(b.dataset.access)))));
+}
+
+// "Inloggen als": opent het portaal in een nieuw tabblad (meekijken, alleen-lezen).
+async function loginAs(url) {
+  const win = window.open('about:blank', '_blank'); // direct openen, anders blokkeert Safari de pop-up
+  try {
+    const r = await api(url, { method: 'POST', body: {} });
+    if (win) win.location = r.url; else location.href = r.url;
+  } catch (e) {
+    if (win) win.close();
+    toast(e.message, 'error');
+  }
 }
 
 function accessForm(r) {

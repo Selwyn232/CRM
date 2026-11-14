@@ -409,12 +409,12 @@ function moderateChat(db, id, approve, reason, user) {
 }
 
 // Gesprek zoals één partij het ziet: goedgekeurde berichten + eigen berichten (met status).
-function chatThread(db, recipientId, donorId, viewer) {
+function chatThread(db, recipientId, donorId, viewer, markRead = true) {
   const rows = all(db, `SELECT id, sender, body, status, reject_reason, read_at, created_at FROM chat_messages
     WHERE recipient_id = ? AND donor_id = ? AND (status = 'goedgekeurd' OR sender = ?) ORDER BY created_at, id`,
     recipientId, donorId, viewer);
   const other = viewer === 'donor' ? 'recipient' : 'donor';
-  run(db, `UPDATE chat_messages SET read_at = datetime('now') WHERE recipient_id = ? AND donor_id = ?
+  if (markRead) run(db, `UPDATE chat_messages SET read_at = datetime('now') WHERE recipient_id = ? AND donor_id = ?
     AND sender = ? AND status = 'goedgekeurd' AND read_at IS NULL`, recipientId, donorId, other);
   return rows.map((m) => ({ ...m, mine: m.sender === viewer, reject_reason: m.sender === viewer ? m.reject_reason : '' }));
 }

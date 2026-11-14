@@ -255,3 +255,41 @@ test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)'
   const m = S.sendChat(db, { recipientId: rid, donorId: selwyn, sender: 'donor', body: 'Hoi Elias!' });
   assert.equal(m.status, 'in_behandeling');
 });
+
+test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', async (t) => {
+  const { db, donor, rid } = chatSetup('school', 0);
+  S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Dankjewel!' });
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'm@rf.org', 'Mila', 'medewerker', hashPassword('medewerker123'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const login = async (email, password) => (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email, password }) }))
+    .headers.get('set-cookie').split(';')[0];
+
+  const mila = await login('m@rf.org', 'medewerker123');
+  assert.equal((await fetch(`${base}/api/admin/donors/${donor}/impersonate`, { method: 'POST', headers: { ...json, cookie: mila }, body: '{}' })).status, 403);
+
+  const admin = await login('a@rf.org', 'admin123');
+  const res = await fetch(`${base}/api/admin/donors/${donor}/impersonate`, { method: 'POST', headers: { ...json, cookie: admin }, body: '{}' });
+  assert.equal(res.status, 200);
+  const as = res.headers.get('set-cookie').split(';')[0];
+  const me = await (await fetch(`${base}/api/donor/me`, { headers: { cookie: as } })).json();
+  assert.equal(me.impersonated_by, 'Admin');
+  // lezen mag, maar markeert niets als gelezen
+  const thread = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie: as } })).json();
+  assert.equal(thread.length, 1);
+  assert.equal(get(db, 'SELECT read_at FROM chat_messages').read_at, null);
+  // schrijven mag niet
+  const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
+  assert.equal(post.status, 403);
+  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 403);
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'ingelogd_als'").n, 1);
+
+  // ontvanger zonder eigen wachtwoord kan ook bekeken worden
+  run(db, 'UPDATE recipients SET password_hash = NULL, username = NULL WHERE id = ?', rid);
+  const r2 = await fetch(`${base}/api/admin/recipients/${rid}/impersonate`, { method: 'POST', headers: { ...json, cookie: admin }, body: '{}' });
+  const asR = r2.headers.get('set-cookie').split(';')[0];
+  assert.equal((await fetch(`${base}/api/recipient/supporters`, { headers: { cookie: asR } })).status, 200);
+});

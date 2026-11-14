@@ -49,6 +49,13 @@ Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
 - Taken, campagnes met doel en voortgang, rapportages (per jaar, bestemming, maand, betaalwijze, donateursbehoud, top 10)
 - E-mail log, gebruikersbeheer (beheerder of medewerker), audit log, instelbare kosten per eenheid
 
+## Inloggen als donateur of ontvanger (meekijken)
+
+Beheerders zien bij een donateur de knop **👁️ Inloggen als donateur** en bij elke ontvanger **👁️ Inloggen als**. Het portaal opent dan in een nieuw tabblad, precies zoals die persoon het ziet. Een paarse balk bovenaan laat zien dat je meekijkt, met een knop **Stoppen**.
+- Het werkt alleen voor beheerders, ook als de persoon zelf nog geen wachtwoord heeft.
+- Het is **alleen-lezen**: je kunt niet doneren of chatten namens iemand, en berichten worden niet als gelezen gemarkeerd.
+- Een meekijksessie verloopt na 1 uur en wordt vastgelegd in het audit log.
+
 ## Starten
 
 Vereist **Node.js 22.13 of hoger**. Er zijn geen npm-dependencies: de app gebruikt de ingebouwde `node:sqlite`.

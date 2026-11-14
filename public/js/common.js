@@ -267,7 +267,24 @@ const RF = (() => {
     return refresh();
   }
 
+  // Balk bovenaan wanneer een medewerker meekijkt ("inloggen als").
+  function impersonationBanner(me, logoutPath) {
+    if (!me || !me.impersonated_by) return;
+    document.body.classList.add('impersonating');
+    const bar = document.createElement('div');
+    bar.className = 'impersonation-bar';
+    bar.innerHTML = `<span>👁️ Je kijkt mee als <b>${esc(me.full_name || me.name)}</b> — ingelogd door ${esc(me.impersonated_by)} · alleen-lezen</span>
+      <button type="button" class="btn btn-sm">Stoppen</button>`;
+    bar.querySelector('button').onclick = async () => {
+      await api(logoutPath, { method: 'POST', body: {} });
+      if (window.opener) window.close();
+      location.href = '/admin';
+    };
+    document.body.prepend(bar);
+  }
+
   return {
+    impersonationBanner,
     chatBox,
     api, esc, euro, euro0, num, date, dateTime, today, toCents, centsToInput, monthName, label, badge, LABELS,
     toast, modal, formData, confirmDialog, barChart, splitBar, mediaHtml, readFileBase64, debounce, unitsText,

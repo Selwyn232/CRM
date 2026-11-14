@@ -25,6 +25,7 @@ function showAuth() {
 function showApp() {
   $('#auth').classList.add('hidden');
   $('#app').classList.remove('hidden');
+  RF.impersonationBanner(me, '/api/recipient/logout');
   $('#who').textContent = me.name + (me.managed_by ? ` · begeleid door ${me.managed_by}` : '');
   $('#logout').onclick = async () => { await api('/api/recipient/logout', { method: 'POST', body: {} }); location.reload(); };
   $('#pw-btn').onclick = () => modal({

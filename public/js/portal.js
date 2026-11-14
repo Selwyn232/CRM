@@ -43,6 +43,7 @@ function showAuth() {
 function showApp() {
   $('#auth').classList.add('hidden');
   $('#app').classList.remove('hidden');
+  RF.impersonationBanner(me, '/api/donor/logout');
   const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.hash = ''; location.reload(); };
   $('#logout').onclick = logout;
   $('#logout-m').onclick = (e) => { e.preventDefault(); logout(); };
@@ -215,7 +216,7 @@ async function renderMessages() {
   // Markeer als gelezen zodra het bericht in beeld komt.
   const io = new IntersectionObserver((entries) => {
     entries.forEach(async (e) => {
-      if (!e.isIntersecting || e.target.dataset.read === '1') return;
+      if (!e.isIntersecting || e.target.dataset.read === '1' || me.impersonated_by) return;
       e.target.dataset.read = '1';
       io.unobserve(e.target);
       await api(`/api/portal/messages/${e.target.dataset.id}/read`, { method: 'POST', body: {} });
