@@ -75,7 +75,7 @@ function renderNav() {
   $('#nav').classList.toggle('editing', navEditing);
   $('#nav').innerHTML = `${navEditing ? `<div class="nav-edit-bar"><span>${RF.icon('arrow-down-up', 'icon-sm')} Sleep om te ordenen</span>
       <button type="button" class="btn btn-quiet btn-sm" id="nav-reset">Standaard</button><button type="button" class="btn btn-primary btn-sm" id="nav-done">Klaar</button></div>` : ''}
-    ${groups.map((g, gi) => `<div class="nav-section" data-group="${esc(g.group)}">
+    ${groups.filter((g) => navEditing || g.items.length).map((g, gi) => `<div class="nav-section" data-group="${esc(g.group)}">
       ${g.group ? `<div class="nav-group">${esc(g.group)}</div>` : ''}
       ${g.items.map((it) => `<a href="#/${it.route}" data-route="${it.route}" class="${it.route === current ? 'active' : ''}" ${navEditing ? 'draggable="false"' : ''}>
         ${navEditing ? `<span class="grip" aria-hidden="true">${RF.icon('ellipsis')}</span>` : ''}${RF.icon(it.icon)}<span>${esc(it.label)}</span>
@@ -425,7 +425,7 @@ async function renderDonors() {
         <select id="f-status">${labelOptions('donor', params.get('status') || '', 'Alle statussen')}</select>
         <select id="f-type">${labelOptions('type', params.get('type') || '', 'Alle typen')}</select>
         <input type="search" id="f-tag" placeholder="Tag" value="${esc(params.get('tag') || '')}" style="min-width:110px">
-        <select id="f-sort" style="margin-left:auto">${opt('name', 'Naam A–Z', params.get('sort'))}${opt('total', 'Hoogste totaal', params.get('sort'))}${opt('recent', 'Laatste gift', params.get('sort'))}${opt('created', 'Nieuwste', params.get('sort'))}</select>
+        <select id="f-sort" style="margin-left:auto">${opt('name', 'Naam A–Z', params.get('sort'))}${opt('monthly', 'Meeste per maand', params.get('sort'))}${opt('total', 'Hoogste totaal betaald', params.get('sort'))}${opt('recent', 'Laatste gift', params.get('sort'))}${opt('created', 'Nieuwste', params.get('sort'))}</select>
       </div>
       <div id="donor-table">${RF.skeleton('rows')}</div>
     </div>`;
@@ -433,7 +433,8 @@ async function renderDonors() {
     const p = new URLSearchParams({ q: $('#f-q').value, status: $('#f-status').value, type: $('#f-type').value, tag: $('#f-tag').value, sort: $('#f-sort').value });
     sessionStorage.setItem('donorFilters', p.toString());
     const rows = await api(`/api/admin/donors?${p}`);
-    const total = rows.reduce((a, r) => a + r.total_cents, 0);
+    const monthly = rows.reduce((a, r) => a + (r.monthly_cents || 0), 0);
+    const kids = rows.reduce((a, r) => a + (r.children || 0), 0);
     $('#donor-table').innerHTML = table([
       { label: 'Naam', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}<div class="grow"><a href="#/sponsoren/${r.id}">${esc(r.full_name)}</a>
           <span class="sub">${esc(r.email || label('type', r.donor_type))}</span></div></div>` },
@@ -445,11 +446,12 @@ async function renderDonors() {
         r.has_portal ? `<span class="tag" title="Heeft een portaal-account">${RF.icon('key-round', 'icon-sm')}&nbsp;Portaal</span>` : '',
         r.anonymous ? `<span class="tag" title="Anoniem op het leaderboard">${RF.icon('eye-off', 'icon-sm')}&nbsp;Anoniem</span>` : '',
       ].join('') || '<span class="muted">—</span>' },
-      { label: 'Laatste gift', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
+      { label: 'Laatste betaling', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
       { label: 'Kinderen', num: true, render: (r) => `<span class="muted">${r.children || '—'}</span>` },
-      { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
+      { label: 'Per maand', num: true, render: (r) => (r.monthly_cents ? `<b style="font-weight:600">${euro(r.monthly_cents)}</b>` : '<span class="muted">—</span>')
+        + (r.total_cents ? `<span class="sub">${euro(r.total_cents)} totaal betaald</span>` : '') },
     ], rows, { empty: 'Geen sponsoren gevonden', emptyIcon: 'users', onRow: true }) +
-      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'sponsor' : 'sponsoren'}</span><span>Samen ${euro(total)} betaald</span></div>`;
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'sponsor' : 'sponsoren'}</span><span>${kids} ${kids === 1 ? 'kind' : 'kinderen'} · samen ${euro(monthly)} per maand</span></div>`;
     bindRows($('#donor-table'), rows, (r) => go(`#/sponsoren/${r.id}`));
   };
   const deb = RF.debounce(load);
