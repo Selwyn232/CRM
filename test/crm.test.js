@@ -258,7 +258,7 @@ test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)'
   assert.equal(m.status, 'in_behandeling');
 });
 
-test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang en gelogd', async (t) => {
+test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', async (t) => {
   const { db, donor, rid } = chatSetup('school', 0);
   S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Dankjewel!' });
   run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
@@ -281,12 +281,11 @@ test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang en gelogd',
   assert.equal(me.impersonated_by, 'Admin');
   const thread = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie: as } })).json();
   assert.equal(thread.messages.length, 1);
-  // namens de donateur chatten en doneren mag; audit log laat zien wie het deed
+  assert.equal(get(db, 'SELECT read_at FROM chat_messages').read_at, null); // meekijken markeert niets als gelezen
   const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
-  assert.equal(post.status, 200);
-  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 200);
+  assert.equal(post.status, 403);
+  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 403);
   assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'ingelogd_als'").n, 1);
-  assert.match(get(db, "SELECT actor FROM audit_log WHERE action = 'donatie_aangemaakt' ORDER BY id DESC").actor, /^medewerker:a@rf\.org als donateur:/);
 
   // ontvanger zonder eigen wachtwoord kan ook bekeken worden
   run(db, 'UPDATE recipients SET password_hash = NULL, username = NULL WHERE id = ?', rid);
@@ -431,4 +430,117 @@ test('vertalen: persoonlijke sleutel + workspace-ID worden meegestuurd', async (
   assert.equal(out.get(1).text, 'Hallo!');
   assert.equal(seen['anthropic-workspace-id'], 'wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ');
   assert.equal(seen.authorization, `Bearer ${key}`);
+});
+
+// ------------------------------------------------------------------ livegang: betalingen, e-mail, beveiliging
+function fakeProvider(handler) {
+  const http = require('node:http');
+  const calls = [];
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      const call = { method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null };
+      calls.push(call);
+      const [status, out] = handler(call);
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(out));
+    });
+  }).listen(0);
+  return { srv, calls, url: () => `http://127.0.0.1:${srv.address().port}` };
+}
+
+test('Mollie: betaling starten, webhook boekt de gift, maandelijks start een abonnement', async (t) => {
+  const payments = {};
+  let n = 0;
+  const mollie = fakeProvider((c) => {
+    if (c.method === 'POST' && c.url === '/customers') return [201, { id: 'cst_test1' }];
+    if (c.method === 'POST' && c.url === '/payments') {
+      const id = `tr_test${++n}`;
+      payments[id] = { id, status: 'open', amount: c.body.amount, customerId: c.body.customerId, sequenceType: c.body.sequenceType, webhookUrl: c.body.webhookUrl, _links: { checkout: { href: `https://mollie.test/checkout/${id}` } } };
+      return [201, payments[id]];
+    }
+    if (c.method === 'GET' && c.url.startsWith('/payments/')) return [200, payments[c.url.split('/')[2]]];
+    if (c.method === 'POST' && /\/subscriptions$/.test(c.url)) return [201, { id: 'sub_test1' }];
+    return [404, {}];
+  });
+  process.env.MOLLIE_API_BASE = mollie.url();
+  const P = require('../src/payments');
+  const db = freshDb();
+  const donor = addDonor(db, { email: 'p@x.nl' });
+  run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', hashPassword('welkom123'), donor);
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  P.configure({ apiKey: 'test_' + 'a'.repeat(30) });
+  t.after(() => { server.close(); mollie.srv.close(); P.configure({ apiKey: '' }); delete process.env.MOLLIE_API_BASE; });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'p@x.nl', password: 'welkom123' }) })).headers.get('set-cookie').split(';')[0];
+
+  const res = await (await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie }, body: JSON.stringify({ category_key: 'schoolgeld', amount_cents: 2500, frequency: 'maandelijks' }) })).json();
+  assert.match(res.checkout_url, /checkout\/tr_test1/);
+  assert.equal(get(db, 'SELECT status FROM donations WHERE id = ?', res.id).status, 'in_afwachting');
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM cells').n, 0);
+  assert.equal(mollie.calls.find((c) => c.url === '/payments').body.sequenceType, 'first');
+
+  // Mollie roept de webhook aan (formulier) nadat er betaald is
+  payments.tr_test1.status = 'paid'; payments.tr_test1.method = 'ideal';
+  const wh = await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_test1' });
+  assert.equal(wh.status, 200);
+  const d = get(db, 'SELECT * FROM donations WHERE id = ?', res.id);
+  assert.equal(d.status, 'ontvangen');
+  assert.equal(d.subscription_id, 'sub_test1');
+  assert.equal(get(db, 'SELECT remaining_cents FROM cells WHERE donation_id = ?', res.id).remaining_cents, 2500);
+  // Tweede keer dezelfde webhook: niets dubbel
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_test1' });
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM cells').n, 1);
+  // Vervolgbetaling vanuit het abonnement
+  payments.tr_sub2 = { id: 'tr_sub2', status: 'paid', subscriptionId: 'sub_test1', amount: { value: '25.00' } };
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_sub2' });
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM donations WHERE status = 'ontvangen'").n, 2);
+});
+
+test('Brevo: e-mails worden echt verstuurd en de status komt in de log', async (t) => {
+  const brevo = fakeProvider((c) => (c.headers['api-key'] === 'xkeysib-' + 'b'.repeat(30) ? [201, { messageId: '<m1@brevo>' }] : [401, { message: 'Key not found' }]));
+  process.env.BREVO_API_BASE = brevo.url();
+  const M = require('../src/mailer');
+  M.configure({ apiKey: 'xkeysib-' + 'b'.repeat(30), fromEmail: 'info@robin.test', fromName: 'Robin' });
+  t.after(() => { brevo.srv.close(); M.configure({ apiKey: '', fromEmail: '', fromName: '' }); delete process.env.BREVO_API_BASE; });
+  const db = freshDb();
+  const donor = addDonor(db, { email: 'mail@x.nl' });
+  S.createDonation(db, { donor_id: donor, category_key: 'noodfonds', amount_cents: 1000 });
+  await new Promise((r) => setTimeout(r, 150));
+  const m = get(db, 'SELECT * FROM outbox');
+  assert.equal(m.status, 'verzonden');
+  assert.equal(m.provider_id, '<m1@brevo>');
+  assert.equal(brevo.calls[0].body.to[0].email, 'mail@x.nl');
+  assert.equal(brevo.calls[0].body.sender.email, 'info@robin.test');
+});
+
+test('Livegang: sterke wachtwoorden verplicht en demodata wissen met waarborgen', async (t) => {
+  const db = freshDb();
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'robin', 'Robin', 'admin', hashPassword('robin'));
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'medewerker@robinfoundation.org', 'Mila', 'medewerker', hashPassword('medewerker123'));
+  const d = addDonor(db, { email: 'demo@example.nl' });
+  S.createDonation(db, { donor_id: d, category_key: 'noodfonds', amount_cents: 1000 });
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'robin', password: 'robin' }) })).headers.get('set-cookie').split(';')[0];
+  const h = { ...json, cookie };
+  assert.equal((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).weak_password, true);
+  assert.equal((await (await fetch(`${base}/api/public/config`)).json()).demo, true);
+  // Wissen weigert zolang het demo-wachtwoord en de demo-inlognaam gebruikt worden
+  assert.equal((await fetch(`${base}/api/admin/demo/wipe`, { method: 'POST', headers: h, body: JSON.stringify({ confirm: 'VERWIJDER' }) })).status, 400);
+  // Te zwak wachtwoord wordt geweigerd
+  assert.equal((await fetch(`${base}/api/staff/password`, { method: 'POST', headers: h, body: JSON.stringify({ current: 'robin', password: 'kort' }) })).status, 400);
+  assert.equal((await fetch(`${base}/api/staff/password`, { method: 'POST', headers: h, body: JSON.stringify({ current: 'robin', password: 'Lange zin met gecko 42' }) })).status, 200);
+  assert.equal((await fetch(`${base}/api/admin/users/1`, { method: 'PUT', headers: h, body: JSON.stringify({ email: 'beheer@robin.test' }) })).status, 200);
+  assert.equal((await fetch(`${base}/api/admin/demo/wipe`, { method: 'POST', headers: h, body: JSON.stringify({ confirm: 'nee' }) })).status, 400);
+  assert.equal((await fetch(`${base}/api/admin/demo/wipe`, { method: 'POST', headers: h, body: JSON.stringify({ confirm: 'VERWIJDER' }) })).status, 200);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM donors').n, 0);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM users').n, 1);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM categories').n, 4);
+  assert.equal((await (await fetch(`${base}/api/public/config`)).json()).demo, false);
+  assert.equal((await fetch(`${base}/api/staff/me`, { headers: h })).status, 200); // nog steeds ingelogd
 });

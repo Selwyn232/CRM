@@ -42,6 +42,7 @@ function setRole(r) {
   $('#f-id-label').textContent = cfg.idLabel;
   $('#f-id').type = cfg.idType;
   $('#demo').innerHTML = cfg.demo;
+  $('#demo').hidden = !demoMode;
   document.querySelectorAll('.login-extra').forEach((p) => p.classList.toggle('hidden', p.dataset.for !== role));
   showRegister(false);
   $('#login-form .form-error').hidden = true;
@@ -124,6 +125,10 @@ try {
     document.querySelector('#already').before(n);
   }
 } catch { /* geen opslag */ }
+
+// Demo-inloggegevens alleen tonen zolang er demodata in de CRM staat.
+let demoMode = false;
+RF.api('/api/public/config').then((c) => { demoMode = !!c.demo; $('#demo').hidden = !demoMode; }).catch(() => {});
 
 // Startrol: ?rol=… > laatst gebruikte rol > donateur
 setRole(params.get('rol') || store.get() || 'donateur');

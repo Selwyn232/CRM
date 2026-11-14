@@ -201,7 +201,7 @@ async function renderMessages() {
   // Markeer als gelezen zodra het bericht in beeld komt.
   const io = new IntersectionObserver((entries) => {
     entries.forEach(async (e) => {
-      if (!e.isIntersecting || e.target.dataset.read === '1') return;
+      if (!e.isIntersecting || e.target.dataset.read === '1' || me.impersonated_by) return;
       e.target.dataset.read = '1';
       io.unobserve(e.target);
       await api(`/api/portal/messages/${e.target.dataset.id}/read`, { method: 'POST', body: {} });
@@ -212,7 +212,29 @@ async function renderMessages() {
 }
 
 // ======================================================================= DONEREN
-async function renderDonate() {
+// Terugkeer van Mollie: wacht tot de betaling bevestigd is (webhook).
+async function renderDonateDone(donationId) {
+  const draw = (d) => {
+    const ok = d.status === 'ontvangen'; const bad = d.status === 'geannuleerd';
+    view().innerHTML = `<div class="card" style="max-width:520px;margin:40px auto">${RF.emptyState({
+      icon: ok ? 'circle-check' : bad ? 'circle-x' : 'hourglass',
+      title: ok ? 'Dankjewel voor je donatie!' : bad ? 'De betaling is niet gelukt' : 'Je betaling wordt bevestigd…',
+      text: ok ? `${euro(d.amount_cents)} voor ${esc(d.category_name)} staat nu veilig in je eigen cel.${d.frequency !== 'eenmalig' ? ` Je periodieke gift (${esc(d.frequency)}) is gestart.` : ''}`
+        : bad ? 'Er is niets afgeschreven. Je kunt het opnieuw proberen.' : 'Dit duurt meestal maar een paar seconden.',
+      action: ok ? `<a class="btn btn-primary btn-sm" href="#/overzicht">Naar mijn overzicht</a>` : bad ? `<a class="btn btn-primary btn-sm" href="#/doneren">Opnieuw proberen</a>` : '',
+    })}</div>`;
+    return ok || bad;
+  };
+  for (let i = 0; i < 20; i++) {
+    const d = await api(`/api/portal/donations/${donationId}`);
+    if (!location.hash.includes('/klaar/')) return;
+    if (draw(d)) return;
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+}
+
+async function renderDonate(sub) {
+  if (sub === 'klaar') return renderDonateDone(location.hash.split('/').pop());
   const [cats, campaigns] = await Promise.all([api('/api/portal/categories'), api('/api/portal/campaigns')]);
   const presets = { schoolmaaltijd: [1000, 2500, 5000], schoolgeld: [5000, 15000, 30000], noodfonds: [2500, 5000, 10000], gezondheidspakket: [2500, 5000, 10000] };
   view().innerHTML = `
@@ -233,7 +255,7 @@ async function renderDonate() {
         </div>
         <p class="form-error" hidden style="margin:0 0 12px"></p>
         <button class="btn btn-primary btn-lg btn-block">${RF.icon('heart')}Doneer nu via iDEAL</button>
-        <p class="hint" style="text-align:center">Demo-omgeving: er wordt niet echt betaald.</p>
+        <p class="hint" style="text-align:center" id="pay-note"></p>
       </form>
       <div class="stack">
         <div class="card"><div class="card-head"><h2>Zo werkt het</h2></div>
@@ -252,6 +274,11 @@ async function renderDonate() {
         }).join('')}
       </div>
     </div>`;
+  RF.api('/api/public/config').then((c) => {
+    $('#pay-note').innerHTML = !c.payments ? 'Demo-omgeving: er wordt niet echt betaald.'
+      : c.payments_mode === 'test' ? 'Testmodus: je gaat naar een testbetaling van Mollie, er wordt niets afgeschreven.'
+        : `${RF.icon('lock', 'icon-sm')} Je betaalt veilig via Mollie (iDEAL, creditcard en meer).`;
+  }).catch(() => {});
   const form = $('#donate-form');
   let preset = null;
   const cat = () => cats.find((c) => c.key === form.elements.category_key.value);
@@ -282,7 +309,11 @@ async function renderDonate() {
     err.hidden = true;
     try {
       const f = RF.formData(form);
-      await api('/api/portal/donate', { method: 'POST', body: { category_key: f.category_key, amount_cents: amount(), frequency: f.frequency, campaign_id: f.campaign_id || null } });
+      const btnEl = form.querySelector('button.btn-primary');
+      btnEl.disabled = true;
+      const r = await api('/api/portal/donate', { method: 'POST', body: { category_key: f.category_key, amount_cents: amount(), frequency: f.frequency, campaign_id: f.campaign_id || null } })
+        .finally(() => { btnEl.disabled = false; });
+      if (r.checkout_url) { location.href = r.checkout_url; return; } // naar Mollie om te betalen
       toast('Dankjewel! Je donatie staat in je eigen cel.');
       location.hash = '#/overzicht';
     } catch (ex) { err.textContent = ex.message; err.hidden = false; }
@@ -382,7 +413,7 @@ async function renderAnnual(y) {
 async function renderProfile() {
   me = await api('/api/donor/me');
   view().innerHTML = `
-    <div class="page-head"><div><h1>Profiel & privacy</h1><div class="sub">Je gegevens, je taal en hoe je zichtbaar bent op het leaderboard</div></div></div>
+    <div class="page-head"><div><h1>Profiel & privacy</h1><div class="sub">Je gegevens, je taal en hoe je zichtbaar bent op het leaderboard · <a href="/privacy" target="_blank" rel="noopener">Privacyverklaring</a></div></div></div>
     <div class="grid grid-2">
       <form class="card" id="privacy">
         <h2>Leaderboard & privacy</h2>

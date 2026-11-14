@@ -45,8 +45,25 @@ function donorPublicName(d) {
 // ---------------------------------------------------------------------------
 function sendMail(db, donor, subject, body, kind = 'algemeen') {
   if (!donor || !donor.email) return;
-  run(db, 'INSERT INTO outbox (donor_id, to_email, subject, body, kind) VALUES (?,?,?,?,?)',
+  const r = run(db, 'INSERT INTO outbox (donor_id, to_email, subject, body, kind) VALUES (?,?,?,?,?)',
     donor.id, donor.email, subject, body, kind);
+  deliver(db, Number(r.lastInsertRowid));
+}
+
+// Echt versturen (als e-mail is ingesteld) ná de huidige transactie; resultaat komt in de e-mail log.
+function deliver(db, outboxId) {
+  const mailer = require('./mailer');
+  if (!mailer.isEnabled()) return;
+  setImmediate(async () => {
+    const m = get(db, 'SELECT * FROM outbox WHERE id = ?', outboxId);
+    if (!m || m.status === 'verzonden') return; // bv. transactie teruggedraaid
+    try {
+      const pid = await mailer.send({ to: m.to_email, subject: m.subject, text: m.body });
+      run(db, "UPDATE outbox SET status = 'verzonden', provider_id = ?, error = '' WHERE id = ?", pid, outboxId);
+    } catch (err) {
+      run(db, "UPDATE outbox SET status = 'mislukt', error = ? WHERE id = ?", String(err.message).slice(0, 300), outboxId);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +389,7 @@ function hasFunded(db, donorId, recipientId) {
 
 // Algemene schakelaar (Instellingen). Staat de moderatie uit, dan wordt alles direct afgeleverd;
 // berichten met contactgegevens e.d. worden dan nog wel gemarkeerd (flag_reason) voor controle achteraf.
-let moderationOn = false;
+let moderationOn = true;
 const setModeration = (on) => { moderationOn = !!on; };
 const moderationEnabled = () => moderationOn;
 const isModerated = (r) => moderationOn && (!!r.chat_moderated || r.kind === 'kind');
@@ -464,7 +481,7 @@ async function withTranslations(db, msgs, lang) {
 module.exports = {
   withTranslations,
   chatFlags, hasFunded, isModerated, setModeration, moderationEnabled, sendChat, moderateChat, chatThread,
-  AppError, euro, audit, getCategory, donorFullName, donorPublicName, sendMail,
+  AppError, euro, audit, getCategory, donorFullName, donorPublicName, sendMail, deliver,
   createDonation, updateDonation, deleteDonation, spend, reverseExpenditure, addImpactMessage,
   categoryBalances, donorImpact, leaderboard,
 };

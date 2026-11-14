@@ -67,6 +67,7 @@ async function showApp() {
     { label: 'Donateursportaal', icon: 'heart', href: '/portal', external: true },
     { label: 'Ontvangersportaal', icon: 'heart-handshake', href: '/ontvanger', external: true },
     '-',
+    { label: 'Wachtwoord wijzigen', icon: 'lock', onClick: changeOwnPassword },
     { label: 'Uitloggen', icon: 'log-out', onClick: async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace('/login?rol=medewerker'); } },
   ], { align: 'start' });
   const setMenu = (open) => { $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open); };
@@ -79,6 +80,7 @@ async function showApp() {
   });
   await loadLookups();
   window.addEventListener('hashchange', route);
+  if (state.user.weak_password) showWeakPasswordBanner();
   route();
 }
 
@@ -144,6 +146,33 @@ async function route() {
 }
 
 const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
+
+// ------------------------------------------------------------------ eigen wachtwoord
+function changeOwnPassword() {
+  modal({
+    title: 'Wachtwoord wijzigen', submitLabel: 'Wachtwoord opslaan',
+    body: `<div class="field"><label>Huidig wachtwoord</label><input type="password" name="current" required autocomplete="current-password"></div>
+      <div class="field"><label>Nieuw wachtwoord</label><input type="password" name="password" required minlength="10" autocomplete="new-password">
+        <div class="hint">Minimaal 10 tekens. Een korte zin van een paar woorden is sterk en goed te onthouden.</div></div>`,
+    onSubmit: async (f) => {
+      await api('/api/staff/password', { method: 'POST', body: f });
+      state.user.weak_password = false;
+      const b = document.getElementById('weak-banner'); if (b) b.remove();
+      toast('Wachtwoord gewijzigd. Andere sessies zijn afgemeld.');
+    },
+  });
+}
+function showWeakPasswordBanner() {
+  if (document.getElementById('weak-banner')) return;
+  const el = document.createElement('div');
+  el.id = 'weak-banner';
+  el.className = 'callout warn';
+  el.style.cssText = 'margin:0 0 18px;align-items:center';
+  el.innerHTML = `${RF.icon('shield-alert')}<span style="flex:1">Je gebruikt een demo- of zwak wachtwoord. Iedereen die dat kent kan als beheerder inloggen.</span>
+    <button class="btn btn-sm btn-ghost" type="button">Nu wijzigen</button>`;
+  el.querySelector('button').onclick = changeOwnPassword;
+  document.querySelector('.main').insertBefore(el, document.getElementById('view'));
+}
 
 // ------------------------------------------------------------------ command palette (⌘K)
 function openCommandPalette() {
@@ -1340,18 +1369,96 @@ async function renderReports(year) {
 async function renderOutbox() {
   view().innerHTML = `<div class="page-head"><div><h1>E-mail log</h1><div class="sub">Alle e-mails die het systeem naar donateurs stuurt</div></div>
       <div class="toolbar"><select id="f-kind">${opt('', 'Alle soorten')}${['bedankt', 'besteding', 'impactbericht', 'portaal'].map((k) => opt(k, k)).join('')}</select></div></div>
-    <div class="callout neutral">${RF.icon('info')}<span>In deze versie worden e-mails gelogd, niet echt verzonden. Koppel een mailprovider voor productie.</span></div>
+    <div class="callout neutral">${RF.icon('info')}<span>Zonder e-mailkoppeling worden berichten alleen hier gelogd. Koppel Brevo bij <a href="#/instellingen">Instellingen → Integraties</a> om ze echt te versturen.</span></div>
     <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
   const load = async () => {
     const rows = await api(`/api/admin/outbox?kind=${$('#f-kind').value}`);
     $('#tbl').innerHTML = rows.length ? rows.map((m) => `<details style="border-top:1px solid var(--border);padding:12px 20px">
       <summary style="gap:10px"><span class="cat-ico sm" style="--c:var(--text-3)">${RF.icon('mail')}</span><span style="min-width:0;flex:1"><span style="color:var(--text);font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.subject)}</span>
-        <span class="small muted">${esc(m.to_email)} · ${esc(m.kind)}</span></span><span class="small muted" style="white-space:nowrap">${dateTime(m.created_at)}</span></summary>
+        <span class="small muted">${esc(m.to_email)} · ${esc(m.kind)}${m.status === 'verzonden' ? ' · <span style="color:var(--ok)">verzonden</span>' : m.status === 'mislukt' ? ` · <span style="color:var(--bad)" title="${esc(m.error)}">mislukt</span>` : ''}</span></span><span class="small muted" style="white-space:nowrap">${dateTime(m.created_at)}</span></summary>
       <p class="small" style="white-space:pre-line;margin:10px 0 0 32px;color:var(--text-2)">${esc(m.body)}</p></details>`).join('').replace('border-top:1px solid var(--border);', '')
       : RF.emptyState({ icon: 'mail', title: 'Geen e-mails' });
   };
   $('#f-kind').onchange = load;
   await load();
+}
+
+// ======================================================================= LIVEGANG & INTEGRATIES
+async function renderGoLive() {
+  const g = await api('/api/admin/golive');
+  const step = (ok, title, text, action = '') => `<div class="list-row" style="align-items:flex-start">
+    <span style="color:var(--${ok ? 'ok' : 'text-4'});margin-top:2px">${RF.icon(ok ? 'circle-check' : 'circle')}</span>
+    <div class="grow"><div class="title" style="white-space:normal">${title}</div><div class="meta" style="white-space:normal">${text}</div></div>${ok ? '' : action}</div>`;
+  const done = [!g.weak_password && !g.weak_users.length, !g.demo, g.moderation, g.payments, g.email].filter(Boolean).length;
+  $('#golive-card').innerHTML = `<div class="card-head"><div><h2>Klaar voor livegang</h2><div class="small muted">${done} van 5 stappen gedaan</div></div>
+      <div class="meter" style="width:140px"><span style="width:${(done / 5) * 100}%"></span></div></div>
+    <div class="list">
+      ${step(!g.weak_password && !g.weak_users.length, 'Sterke wachtwoorden', g.weak_users.length ? `Zwak of demo-wachtwoord bij: ${g.weak_users.map(esc).join(', ')}` : 'Alle actieve gebruikers hebben een eigen wachtwoord.',
+        g.weak_password ? `<button class="btn btn-sm btn-ghost" data-act="pw">Wijzigen</button>` : '')}
+      ${step(!g.demo, 'Demodata verwijderd', g.demo ? `Nu: ${g.counts.donors} donateurs, ${g.counts.donations} donaties, ${g.counts.recipients} ontvangers en ${g.counts.users} gebruikers (voorbeeld). Wis ze vóór je echte gegevens invoert.` : 'Er staan geen demo-accounts of voorbeelddonateurs meer in.',
+        `<button class="btn btn-sm btn-danger" data-act="wipe">Demodata wissen…</button>`)}
+      ${step(g.moderation, 'Chatmoderatie aan', g.moderation ? 'Berichten met kinderen worden eerst gecontroleerd.' : 'Staat uit: berichten met kinderen worden direct afgeleverd.', '<a class="btn btn-sm btn-ghost" href="#/chat">Aanzetten</a>')}
+      ${step(g.payments, 'Echte betalingen (Mollie)', g.payments ? 'Donaties worden via Mollie betaald.' : 'Doneren in het portaal is nog een demo. Vul hieronder je Mollie-sleutel in.')}
+      ${step(g.email, 'Echte e-mails (Brevo)', g.email ? 'Bedankjes en meldingen worden echt verstuurd.' : 'E-mails worden nu alleen gelogd. Vul hieronder je Brevo-sleutel in.')}
+      ${step(true, '“Inloggen als” is alleen-lezen', 'Medewerkers kunnen meekijken, maar niets doen namens een donateur of ontvanger.')}
+    </div>`;
+  const pw = $('#golive-card [data-act=pw]'); if (pw) pw.onclick = changeOwnPassword;
+  $('#golive-card [data-act=wipe]').onclick = () => modal({
+    title: 'Alle demodata wissen', submitLabel: 'Definitief wissen',
+    body: `<div class="callout warn" style="font-weight:400">${RF.icon('triangle-alert')}<span>Dit verwijdert <b>alle</b> donateurs, donaties, cellen, bestedingen, ontvangers, berichten, chats, taken, campagnes, de e-mail log en alle andere gebruikers. Alleen jouw account, de bestemmingen en de instellingen (sleutels) blijven. Dit kan niet ongedaan worden gemaakt.</span></div>
+      <p class="small muted">Voorwaarden: je hebt een eigen, sterk wachtwoord en je inlognaam is je e-mailadres (niet “robin”).</p>
+      <div class="field"><label>Typ <b>VERWIJDER</b> om te bevestigen</label><input type="text" name="confirm" autocomplete="off" autocapitalize="characters"></div>`,
+    onSubmit: async (f) => {
+      await api('/api/admin/demo/wipe', { method: 'POST', body: f });
+      toast('Demodata gewist. De CRM is klaar voor echte gegevens.');
+      await loadLookups(); renderSettings();
+    },
+  });
+}
+
+async function renderIntegrations() {
+  const st = await api('/api/admin/integrations');
+  const p = st.payments; const m = st.email;
+  const src = (x) => (x.key_source === 'render' ? ' (ingesteld in Render)' : '');
+  $('#int-card').innerHTML = `<div class="card-head"><div><h2>Integraties</h2><div class="small muted">Echte betalingen en e-mail. Sleutels worden nooit volledig getoond.</div></div></div>
+    <form id="int-form">
+      <section class="form-section"><h3 style="display:flex;align-items:center;gap:8px">${RF.icon('wallet')}Betalingen via Mollie
+        ${p.enabled ? `<span class="badge badge-actief" style="margin-left:auto">${p.mode === 'live' ? 'Live' : 'Testmodus'} · ${esc(p.key_hint)}${src(p)}</span>` : '<span class="badge" style="margin-left:auto">Demo (niet gekoppeld)</span>'}</h3>
+        <div class="field"><label>Mollie API-sleutel</label><input type="password" name="mollie_api_key" placeholder="${p.key_set ? 'Ingesteld · plak een nieuwe om te vervangen' : 'test_… of live_…'}" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <div class="hint">Maak een account op <b>mollie.com</b> → Ontwikkelaars → API-sleutels. Begin met de <b>test_</b>-sleutel; met <b>live_</b> wordt er echt betaald.
+          Periodieke giften (maandelijks e.d.) worden automatisch een Mollie-abonnement.</div></div>
+        <div class="toolbar">${btn('test-mollie', 'Sleutel testen', { icon: 'zap', size: 'sm' })}${p.key_source === 'crm' ? btn('rm-mollie', 'Ontkoppelen', { size: 'sm', kind: 'quiet' }) : ''}<span class="small" id="mollie-result"></span></div>
+      </section>
+      <section class="form-section"><h3 style="display:flex;align-items:center;gap:8px">${RF.icon('mail')}E-mail via Brevo
+        ${m.enabled ? `<span class="badge badge-actief" style="margin-left:auto">Verstuurt · ${esc(m.key_hint)}${src(m)}</span>` : '<span class="badge" style="margin-left:auto">Alleen loggen</span>'}</h3>
+        <div class="field"><label>Brevo API-sleutel</label><input type="password" name="mail_api_key" placeholder="${m.key_set ? 'Ingesteld · plak een nieuwe om te vervangen' : 'xkeysib-…'}" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <div class="hint">Maak een (gratis) account op <b>brevo.com</b> → SMTP &amp; API → API Keys. Bevestig daar ook je afzenderadres of domein.</div></div>
+        <div class="field-row">
+          <div class="field"><label>Afzenderadres</label><input type="text" name="mail_from_email" value="${esc(m.from_email)}" placeholder="info@robinfoundation.org" autocapitalize="none"></div>
+          <div class="field"><label>Afzendernaam</label><input type="text" name="mail_from_name" value="${esc(m.from_name)}"></div>
+        </div>
+        <div class="toolbar"><input type="text" id="test-to" placeholder="Stuur testmail naar…" style="width:auto;min-width:220px;height:28px;font-size:13px" autocapitalize="none">${btn('test-mail', 'Testmail sturen', { icon: 'send', size: 'sm' })}${m.key_source === 'crm' ? btn('rm-mail', 'Ontkoppelen', { size: 'sm', kind: 'quiet' }) : ''}<span class="small" id="mail-result"></span></div>
+      </section>
+      <div class="toolbar" style="justify-content:flex-end;margin-top:6px"><button class="btn btn-primary" type="submit">Opslaan</button></div>
+    </form>`;
+  const result = (sel, ok, text) => { $(sel).innerHTML = `<span style="color:var(--${ok ? 'ok' : 'bad'})">${esc(text)}</span>`; };
+  $('#int-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = RF.formData(e.target);
+    try { await api('/api/admin/integrations', { method: 'PUT', body: f }); toast('Integraties opgeslagen'); renderIntegrations(); renderGoLive(); }
+    catch (ex) { toast(ex.message, 'error'); }
+  };
+  $('#test-mollie').onclick = async () => {
+    const r = await api('/api/admin/integrations/test-mollie', { method: 'POST', body: {} });
+    result('#mollie-result', r.ok, r.ok ? `Werkt (${r.mode === 'live' ? 'live' : 'test'}): ${(r.methods || []).slice(0, 4).join(', ') || 'geen betaalmethoden actief'}` : r.error);
+  };
+  $('#test-mail').onclick = async () => {
+    try { const r = await api('/api/admin/integrations/test-mail', { method: 'POST', body: { to: $('#test-to').value } }); result('#mail-result', r.ok, r.ok ? 'Verstuurd! Kijk in je inbox.' : r.error); }
+    catch (ex) { result('#mail-result', false, ex.message); }
+  };
+  const rm = (sel, body) => { const b = $(sel); if (b) b.onclick = async () => { await api('/api/admin/integrations', { method: 'PUT', body }); renderIntegrations(); renderGoLive(); }; };
+  rm('#rm-mollie', { remove_mollie: true });
+  rm('#rm-mail', { remove_mail: true });
 }
 
 // ======================================================================= INSTELLINGEN
@@ -1360,6 +1467,7 @@ async function renderSettings() {
   view().innerHTML = `
     <div class="page-head"><div><h1>Instellingen</h1><div class="sub">Bestemmingen, gebruikers, vertalen en beveiliging</div></div></div>
     <div class="stack" style="max-width:980px">
+    ${isAdmin() ? '<div class="card" id="golive-card"></div><div class="card" id="int-card"></div>' : ''}
     ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('languages')}Automatisch vertalen</h2>
       ${btn('tr-test', 'Proefvertaling', { icon: 'zap', size: 'sm' })}</div><div id="tr-status">${RF.skeleton('rows').slice(0, 400)}</div></div>` : ''}
     <div class="card flush"><div class="card-head"><div><h2>Bestemmingen</h2><div class="small muted">Hoe donaties worden omgerekend naar impact (“€ 25 = 50 maaltijden”)</div></div></div>
@@ -1460,16 +1568,19 @@ async function renderSettings() {
   const userForm = (u = {}) => modal({
     title: u.id ? 'Gebruiker bewerken' : 'Nieuwe gebruiker',
     body: `<div class="field"><label>Naam</label><input type="text" name="name" value="${esc(u.name || '')}" required></div>
-      ${u.id ? '' : '<div class="field"><label>E-mail</label><input type="email" name="email" required></div>'}
+      <div class="field"><label>Inlognaam (e-mailadres)</label><input type="text" name="email" value="${esc(u.email || '')}" required autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       <div class="field"><label>Rol</label><select name="role">${opt('medewerker', 'Medewerker', u.role)}${opt('admin', 'Beheerder', u.role)}</select></div>
-      <div class="field"><label>${u.id ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="password" name="password" ${u.id ? '' : 'required'} minlength="8"></div>
+      <div class="field"><label>${u.id ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="password" name="password" ${u.id ? '' : 'required'} minlength="10" autocomplete="new-password">
+        <div class="hint">Minimaal 10 tekens. Een korte zin van een paar woorden is sterk en goed te onthouden.</div></div>
       ${u.id ? `<label class="check"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Actief</label>` : ''}`,
     onSubmit: async (f) => {
+      if (u.id && !f.password) delete f.password;
       await api(u.id ? `/api/admin/users/${u.id}` : '/api/admin/users', { method: u.id ? 'PUT' : 'POST', body: f });
       toast('Gebruiker opgeslagen'); renderSettings();
     },
   });
   if ($('#new-user')) $('#new-user').onclick = () => userForm();
+  if (isAdmin()) { renderGoLive(); renderIntegrations(); }
   view().querySelectorAll('[data-user]').forEach((b) => b.addEventListener('click', () => userForm(state.users.find((u) => u.id === Number(b.dataset.user)))));
   if ($('#show-audit')) $('#show-audit').onclick = async () => {
     const rows = await api('/api/admin/audit');

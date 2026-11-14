@@ -20,7 +20,7 @@ const MIME = {
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
 };
 
-const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html', '/login': 'login.html' };
+const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html', '/login': 'login.html', '/privacy': 'privacy.html' };
 
 function compile(routes) {
   return routes.map(([method, pattern, handler, guard]) => {
@@ -41,7 +41,10 @@ function readBody(req) {
     });
     req.on('end', () => {
       if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      const raw = Buffer.concat(chunks).toString('utf8');
+      // Webhooks van betaalproviders sturen een formulier (id=tr_…), geen JSON.
+      if ((req.headers['content-type'] || '').includes('application/x-www-form-urlencoded')) return resolve(Object.fromEntries(new URLSearchParams(raw)));
+      try { resolve(JSON.parse(raw)); }
       catch { reject(new AppError(400, 'Ongeldige JSON')); }
     });
     req.on('error', reject);
@@ -108,7 +111,8 @@ function createServer({ db, uploadDir = UPLOAD_DIR } = {}) {
         if (method !== 'GET' && method !== 'HEAD') {
           const ct = req.headers['content-type'] || '';
           // Eenvoudige CSRF-bescherming: mutaties alleen met JSON (geen cross-site formulier-posts).
-          if (!ct.includes('application/json')) throw new AppError(415, 'Content-Type moet application/json zijn');
+          // Uitzondering: webhooks (server-naar-server, geen cookies; de webhook controleert zelf bij de provider).
+          if (!ct.includes('application/json') && !pathname.startsWith('/api/webhooks/')) throw new AppError(415, 'Content-Type moet application/json zijn');
         }
         const ctx = {
           req, res, params, url,

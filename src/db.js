@@ -306,6 +306,16 @@ function migrate(db) {
   add('language', "TEXT NOT NULL DEFAULT ''");                // leest/schrijft in; leeg = afleiden uit land
   const donorCols = db.prepare('PRAGMA table_info(donors)').all().map((c) => c.name);
   if (!donorCols.includes('language')) db.exec("ALTER TABLE donors ADD COLUMN language TEXT NOT NULL DEFAULT 'nl'");
+  if (!donorCols.includes('mollie_customer_id')) db.exec('ALTER TABLE donors ADD COLUMN mollie_customer_id TEXT');
+  const addCol = (table, col, def) => {
+    if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  };
+  addCol('outbox', 'status', "TEXT NOT NULL DEFAULT 'gelogd'");      // gelogd | verzonden | mislukt
+  addCol('outbox', 'error', "TEXT NOT NULL DEFAULT ''");
+  addCol('outbox', 'provider_id', "TEXT NOT NULL DEFAULT ''");
+  addCol('donations', 'external_id', 'TEXT');                         // Mollie-betaling (tr_…)
+  addCol('donations', 'subscription_id', 'TEXT');                     // Mollie-abonnement (sub_…)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_donations_external ON donations(external_id)');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_recipients_username ON recipients(username COLLATE NOCASE)');
 
   const sessionCols = () => db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name);

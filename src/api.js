@@ -122,11 +122,79 @@ function donorJourney(db, donorId) {
 }
 
 function buildRoutes({ db, uploadDir }) {
+  // ------------------------------------------------------------ betalingen
+  const publicBase = (ctx) => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL
+    || `${ctx.secure ? 'https' : 'http'}://${ctx.req.headers.host}`).replace(/\/$/, '');
+
+  async function handlePayment(pay) {
+    const P = require('./payments');
+    const paid = pay.status === 'paid';
+    const failed = ['failed', 'canceled', 'expired'].includes(pay.status);
+    let donation = get(db, 'SELECT * FROM donations WHERE external_id = ?', pay.id);
+
+    // Vervolgbetaling van een abonnement: nieuwe donatie aanmaken.
+    if (!donation && pay.subscriptionId) {
+      const first = get(db, 'SELECT * FROM donations WHERE subscription_id = ? ORDER BY id LIMIT 1', pay.subscriptionId);
+      if (!first || !paid) return;
+      const d = S.createDonation(db, {
+        donor_id: first.donor_id, category_key: first.category_key, amount_cents: Math.round(Number(pay.amount.value) * 100),
+        frequency: first.frequency, method: 'incasso', campaign_id: first.campaign_id, reference: pay.id,
+      }, 'mollie');
+      run(db, 'UPDATE donations SET external_id = ?, subscription_id = ? WHERE id = ?', pay.id, pay.subscriptionId, d.id);
+      return;
+    }
+    if (!donation) return;
+    if (paid && donation.status === 'in_afwachting') {
+      S.updateDonation(db, donation.id, { status: 'ontvangen', method: pay.method || 'online' }, 'mollie');
+      const donor = get(db, 'SELECT * FROM donors WHERE id = ?', donation.donor_id);
+      const cat = S.getCategory(db, donation.category_key);
+      S.sendMail(db, donor, `Bedankt voor je donatie van ${S.euro(donation.amount_cents)}!`,
+        `Beste ${donor.first_name || S.donorFullName(donor)},\n\nHartelijk dank voor je donatie van ${S.euro(donation.amount_cents)} voor "${cat.name}". `
+        + 'Je geld staat veilig in een eigen cel tot het wordt uitgegeven. Zodra dat gebeurt, ontvang je een bericht van degene die ermee geholpen is.\n\nRobin Foundation', 'bedankt');
+      // Eerste betaling van een periodieke gift: abonnement starten.
+      if (donation.frequency !== 'eenmalig' && pay.customerId && !donation.subscription_id && P.INTERVALS[donation.frequency]) {
+        const start = new Date();
+        start.setMonth(start.getMonth() + ({ maandelijks: 1, kwartaal: 3, jaarlijks: 12 })[donation.frequency]);
+        try {
+          const sub = await P.createSubscription(pay.customerId, {
+            cents: donation.amount_cents, interval: P.INTERVALS[donation.frequency],
+            description: `Robin Foundation – ${cat.name} (${donation.frequency}) #${donation.id}`,
+            webhookUrl: pay.webhookUrl, startDate: start.toISOString().slice(0, 10), metadata: { donation_id: donation.id },
+          });
+          run(db, 'UPDATE donations SET subscription_id = ? WHERE id = ?', sub.id, donation.id);
+        } catch (err) { S.audit(db, 'mollie', 'abonnement_mislukt', 'donation', donation.id, err.message); }
+      }
+    } else if (failed && donation.status === 'in_afwachting') {
+      S.updateDonation(db, donation.id, { status: 'geannuleerd', note: `Betaling ${pay.status}` }, 'mollie');
+    }
+  }
+
+  // ------------------------------------------------------------ wachtwoorden & demo
+  const WEAK = ['robin', 'admin123', 'medewerker123', 'welkom123', 'wachtwoord', 'password', '12345678', 'robinfoundation'];
+  const isWeakStored = (hash) => WEAK.some((w) => auth.verifyPassword(w, hash));
+  function checkStrongPassword(pw, login = '') {
+    const p = String(pw || '');
+    if (p.length < 10) throw new AppError(400, 'Kies een wachtwoord van minimaal 10 tekens');
+    if (WEAK.includes(p.toLowerCase()) || (login && p.toLowerCase().includes(String(login).split('@')[0].toLowerCase()))) {
+      throw new AppError(400, 'Dit wachtwoord is te makkelijk te raden. Kies iets unieks, bijvoorbeeld een zin van een paar woorden.');
+    }
+  }
+  // Demomodus zolang er nog demo-accounts of voorbeelddonateurs in de database staan.
+  const isDemo = () => !!(get(db, "SELECT 1 AS x FROM users WHERE email IN ('robin', 'admin@robinfoundation.org', 'medewerker@robinfoundation.org') LIMIT 1")
+    || get(db, "SELECT 1 AS x FROM donors WHERE email LIKE '%@example.nl' LIMIT 1"));
   // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
   const setting = (k) => (get(db, 'SELECT value FROM settings WHERE key = ?', k) || {}).value || '';
   require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model'), workspace: setting('translate_workspace') });
+  require('./payments').configure({ apiKey: setting('mollie_api_key') });
+  require('./mailer').configure({ apiKey: setting('mail_api_key'), fromEmail: setting('mail_from_email'), fromName: setting('mail_from_name') });
   // Chatmoderatie: standaard UIT tijdens de testfase (zet aan in Instellingen of met CRM_CHAT_MODERATION=aan).
-  S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION === 'aan');
+  // Chatmoderatie staat standaard AAN (kinderen). Eenmalig na de testfase weer aanzetten.
+  if (!setting('chat_moderation_reset_v1')) {
+    for (const [k, v] of [['chat_moderation', 'aan'], ['chat_moderation_reset_v1', '1']]) {
+      run(db, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v);
+    }
+  }
+  S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION !== 'uit');
   // ------------------------------------------------------------ guards
   const staff = (ctx) => {
     const s = auth.getSession(db, ctx.cookies[STAFF_COOKIE]);
@@ -168,6 +236,8 @@ function buildRoutes({ db, uploadDir }) {
     if (!u || !u.active || u.role !== 'admin') throw new AppError(401, 'Sessie "inloggen als" is verlopen');
     ctx.impersonator = u;
     ctx.actor = `medewerker:${u.email} als ${ctx.actor}`;
+    // Alleen meekijken: een medewerker kan niets doen namens een donateur of ontvanger (bv. niet chatten met een kind).
+    if (ctx.req.method !== 'GET') throw new AppError(403, `Je kijkt mee als medewerker (alleen-lezen). Je kunt niets doen namens deze persoon.`);
   }
   const meWith = (ctx, obj) => (ctx.impersonator ? { ...obj, impersonated_by: ctx.impersonator.name } : obj);
 
@@ -238,7 +308,20 @@ function buildRoutes({ db, uploadDir }) {
       auth.destroySession(db, ctx.cookies[STAFF_COOKIE]);
       setCookie(ctx, STAFF_COOKIE, '');
     }],
-    ['GET', '/api/staff/me', (ctx) => ctx.user, staff],
+    ['GET', '/api/staff/me', (ctx) => {
+      const u = get(db, 'SELECT password_hash FROM users WHERE id = ?', ctx.user.id);
+      return { ...ctx.user, weak_password: isWeakStored(u.password_hash) };
+    }, staff],
+    ['POST', '/api/staff/password', (ctx) => {
+      const u = get(db, 'SELECT * FROM users WHERE id = ?', ctx.user.id);
+      if (!auth.verifyPassword(ctx.body.current || '', u.password_hash)) throw new AppError(400, 'Je huidige wachtwoord klopt niet');
+      checkStrongPassword(ctx.body.password, u.email);
+      run(db, 'UPDATE users SET password_hash = ? WHERE id = ?', auth.hashPassword(ctx.body.password), u.id);
+      // Andere sessies van deze gebruiker afmelden
+      run(db, "DELETE FROM sessions WHERE kind = 'staff' AND subject_id = ? AND token <> ?", u.id, ctx.cookies[STAFF_COOKIE] || '');
+      S.audit(db, ctx.actor, 'eigen_wachtwoord_gewijzigd', 'user', u.id);
+    }, staff],
+    ['GET', '/api/public/config', () => ({ demo: isDemo(), payments: require('./payments').isEnabled(), payments_mode: require('./payments').mode() })],
 
     // ================================================================ AUTH DONATEURS
     ['POST', '/api/donor/login', (ctx) => {
@@ -256,6 +339,7 @@ function buildRoutes({ db, uploadDir }) {
       if (!isEmail(email)) throw new AppError(400, 'Vul een geldig e-mailadres in');
       if (!b.password || String(b.password).length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
       if (!str(b.first_name)) throw new AppError(400, 'Voornaam is verplicht');
+      if (b.privacy !== true && b.privacy !== 'true' && b.privacy !== 'on') throw new AppError(400, 'Ga akkoord met de privacyverklaring om een account aan te maken');
       const existing = get(db, 'SELECT * FROM donors WHERE email = ?', email);
       if (existing && existing.password_hash) throw new AppError(409, 'Er bestaat al een account met dit e-mailadres');
       if (existing) {
@@ -320,19 +404,62 @@ function buildRoutes({ db, uploadDir }) {
       run(db, "UPDATE donor_messages SET read_at = COALESCE(read_at, datetime('now')) WHERE id = ? AND donor_id = ?",
         id(ctx.params.id), ctx.donor.id);
     }, donor],
-    ['POST', '/api/portal/donate', (ctx) => {
-      // Betaling is hier gesimuleerd; koppel in productie een betaalprovider (bv. Mollie) en
-      // maak de donatie pas 'ontvangen' na de betaal-webhook.
+    ['POST', '/api/portal/donate', async (ctx) => {
       const amount = Math.round(Number(ctx.body.amount_cents));
       if (!Number.isInteger(amount) || amount < 100) throw new AppError(400, 'Minimaal bedrag is € 1,00');
       if (amount > 10_000_000) throw new AppError(400, 'Neem voor grote giften contact met ons op');
+      const P = require('./payments');
+      const frequency = ['eenmalig', 'maandelijks', 'kwartaal', 'jaarlijks'].includes(ctx.body.frequency) ? ctx.body.frequency : 'eenmalig';
+      if (!P.isEnabled()) {
+        // Demo: zonder betaalprovider wordt de gift meteen als ontvangen geboekt.
+        return S.createDonation(db, {
+          donor_id: ctx.donor.id, category_key: ctx.body.category_key, amount_cents: amount, frequency, method: 'ideal',
+          campaign_id: ctx.body.campaign_id || null, reference: `DEMO-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+        }, ctx.actor);
+      }
+      // Echte betaling: donatie "in afwachting" tot Mollie meldt dat er betaald is (webhook).
       const donation = S.createDonation(db, {
-        donor_id: ctx.donor.id, category_key: ctx.body.category_key, amount_cents: amount,
-        frequency: ctx.body.frequency || 'eenmalig', method: 'ideal', campaign_id: ctx.body.campaign_id || null,
-        reference: `PORTAAL-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+        donor_id: ctx.donor.id, category_key: ctx.body.category_key, amount_cents: amount, frequency, method: 'online',
+        status: 'in_afwachting', campaign_id: ctx.body.campaign_id || null,
       }, ctx.actor);
-      return donation;
+      const cat = S.getCategory(db, donation.category_key);
+      const base = publicBase(ctx);
+      let customerId = ctx.donor.mollie_customer_id;
+      try {
+        if (frequency !== 'eenmalig' && !customerId) {
+          customerId = (await P.createCustomer(S.donorFullName(ctx.donor), ctx.donor.email)).id;
+          run(db, 'UPDATE donors SET mollie_customer_id = ? WHERE id = ?', customerId, ctx.donor.id);
+        }
+        const pay = await P.createPayment({
+          cents: amount,
+          description: `Robin Foundation – ${cat.name}${frequency !== 'eenmalig' ? ` (${frequency})` : ''}`,
+          redirectUrl: `${base}/portal#/doneren/klaar/${donation.id}`,
+          webhookUrl: `${base}/api/webhooks/mollie`,
+          metadata: { donation_id: donation.id },
+          ...(frequency !== 'eenmalig' ? { customerId, sequenceType: 'first' } : {}),
+        });
+        run(db, 'UPDATE donations SET external_id = ?, reference = ? WHERE id = ?', pay.id, pay.id, donation.id);
+        return { id: donation.id, checkout_url: pay._links && pay._links.checkout && pay._links.checkout.href };
+      } catch (err) {
+        S.updateDonation(db, donation.id, { status: 'geannuleerd', note: `Betaling kon niet starten: ${err.message}` }, ctx.actor);
+        throw new AppError(502, 'De betaling kon niet worden gestart. Probeer het later opnieuw.');
+      }
     }, donor],
+    ['GET', '/api/portal/donations/:id', (ctx) => {
+      const d = get(db, `SELECT dn.id, dn.status, dn.amount_cents, dn.frequency, dn.category_key, c.name AS category_name
+        FROM donations dn JOIN categories c ON c.key = dn.category_key WHERE dn.id = ? AND dn.donor_id = ?`, id(ctx.params.id), ctx.donor.id);
+      if (!d) throw new AppError(404, 'Donatie niet gevonden');
+      return d;
+    }, donor],
+    // Mollie meldt een statuswijziging. We vertrouwen de inhoud niet en halen de betaling zelf op.
+    ['POST', '/api/webhooks/mollie', async (ctx) => {
+      const P = require('./payments');
+      const payId = String(ctx.body.id || '');
+      if (!P.isEnabled() || !/^tr_\w+$/.test(payId)) return { ok: true };
+      const pay = await P.getPayment(payId);
+      await handlePayment(pay);
+      return { ok: true };
+    }],
     ['PUT', '/api/portal/profile', (ctx) => {
       const allowed = ['first_name', 'last_name', 'phone', 'street', 'postal_code', 'city', 'country',
         'anonymous', 'display_name', 'newsletter', 'preferred_channel', 'language'];
@@ -384,7 +511,7 @@ function buildRoutes({ db, uploadDir }) {
       const T = require('./translate');
       const r = get(db, 'SELECT * FROM recipients WHERE id = ?', rid);
       const mine = T.donorLanguage(ctx.donor);
-      const res = await S.withTranslations(db, S.chatThread(db, rid, ctx.donor.id, 'donor'), mine);
+      const res = await S.withTranslations(db, S.chatThread(db, rid, ctx.donor.id, 'donor', !ctx.impersonator), mine);
       return { ...res, my_language: mine, their_language: T.recipientLanguage(r), translation_enabled: T.isEnabled() };
     }, donor],
     ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
@@ -413,7 +540,7 @@ function buildRoutes({ db, uploadDir }) {
       const T = require('./translate');
       const d = get(db, 'SELECT * FROM donors WHERE id = ?', did);
       const mine = T.recipientLanguage(ctx.recipient);
-      const res = await S.withTranslations(db, S.chatThread(db, ctx.recipient.id, did, 'recipient'), mine);
+      const res = await S.withTranslations(db, S.chatThread(db, ctx.recipient.id, did, 'recipient', !ctx.impersonator), mine);
       return { ...res, my_language: mine, their_language: T.donorLanguage(d), translation_enabled: T.isEnabled() };
     }, recipient],
     ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
@@ -917,7 +1044,7 @@ function buildRoutes({ db, uploadDir }) {
       const b = ctx.body;
       const email = str(b.email, 200).toLowerCase();
       if (!isEmail(email)) throw new AppError(400, 'Ongeldig e-mailadres');
-      if (!b.password || String(b.password).length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
+      checkStrongPassword(b.password, email);
       if (get(db, 'SELECT id FROM users WHERE email = ?', email)) throw new AppError(409, 'Gebruiker bestaat al');
       const r = run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)',
         email, str(b.name, 100) || email, b.role === 'admin' ? 'admin' : 'medewerker', auth.hashPassword(b.password));
@@ -936,12 +1063,102 @@ function buildRoutes({ db, uploadDir }) {
         run(db, 'UPDATE users SET name=?, role=?, active=? WHERE id=?', str(b.name ?? u.name, 100),
           (b.role ?? u.role) === 'admin' ? 'admin' : 'medewerker', b.active === undefined ? u.active : bool(b.active), userId);
         if (b.password) {
-          if (String(b.password).length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
+          checkStrongPassword(b.password, u.email);
           run(db, 'UPDATE users SET password_hash = ? WHERE id = ?', auth.hashPassword(b.password), userId);
+        }
+        if (b.email !== undefined && str(b.email, 200).toLowerCase() !== u.email) {
+          const email = str(b.email, 200).toLowerCase();
+          if (!email) throw new AppError(400, 'Vul een e-mailadres of gebruikersnaam in');
+          if (get(db, 'SELECT id FROM users WHERE email = ? AND id <> ?', email, userId)) throw new AppError(409, 'Deze inlognaam is al in gebruik');
+          run(db, 'UPDATE users SET email = ? WHERE id = ?', email, userId);
         }
         if (b.active === false) run(db, "DELETE FROM sessions WHERE kind='staff' AND subject_id = ?", userId);
       });
       S.audit(db, ctx.actor, 'gebruiker_gewijzigd', 'user', userId);
+    }, admin],
+
+    // ================================================================ BEHEER: INTEGRATIES (betalingen, e-mail)
+    ['GET', '/api/admin/integrations', () => ({ payments: require('./payments').status(), email: require('./mailer').status() }), admin],
+    ['PUT', '/api/admin/integrations', (ctx) => {
+      const P = require('./payments'); const M = require('./mailer');
+      const b = ctx.body;
+      const save = (k, v) => run(db, `INSERT INTO settings (key, value, updated_at) VALUES (?,?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, k, v);
+      if (b.mollie_api_key) {
+        const k = String(b.mollie_api_key).trim();
+        if (!/^(test|live)_\w{20,}$/.test(k)) throw new AppError(400, 'Een Mollie API-sleutel begint met "test_" of "live_" (Mollie Dashboard → Ontwikkelaars → API-sleutels).');
+        save('mollie_api_key', k); P.configure({ apiKey: k });
+      }
+      if (b.remove_mollie) { save('mollie_api_key', ''); P.configure({ apiKey: '' }); }
+      if (b.mail_api_key) {
+        const k = String(b.mail_api_key).trim();
+        if (/\s/.test(k) || k.length < 20) throw new AppError(400, 'Dit lijkt geen Brevo API-sleutel (Brevo → SMTP & API → API Keys).');
+        save('mail_api_key', k); M.configure({ apiKey: k });
+      }
+      if (b.remove_mail) { save('mail_api_key', ''); M.configure({ apiKey: '' }); }
+      if (b.mail_from_email !== undefined) {
+        const e = str(b.mail_from_email, 200).toLowerCase();
+        if (e && !isEmail(e)) throw new AppError(400, 'Ongeldig afzenderadres');
+        save('mail_from_email', e); M.configure({ fromEmail: e });
+      }
+      if (b.mail_from_name !== undefined) { save('mail_from_name', str(b.mail_from_name, 100)); M.configure({ fromName: str(b.mail_from_name, 100) }); }
+      S.audit(db, ctx.actor, 'integraties_gewijzigd', 'settings', null,
+        { mollie: b.remove_mollie ? 'verwijderd' : b.mollie_api_key ? 'gewijzigd' : '-', mail: b.remove_mail ? 'verwijderd' : b.mail_api_key ? 'gewijzigd' : '-' });
+      return { payments: P.status(), email: M.status() };
+    }, admin],
+    ['POST', '/api/admin/integrations/test-mollie', async () => {
+      const P = require('./payments');
+      if (!P.isEnabled()) return { ok: false, error: 'Vul eerst een Mollie API-sleutel in.' };
+      try { const r = await P.checkKey(); return { ok: true, mode: P.mode(), methods: ((r._embedded && r._embedded.methods) || []).map((m) => m.description) }; }
+      catch (err) { return { ok: false, error: err.status === 401 ? 'Mollie accepteert deze sleutel niet.' : err.message }; }
+    }, admin],
+    ['POST', '/api/admin/integrations/test-mail', async (ctx) => {
+      const M = require('./mailer');
+      const to = str(ctx.body.to, 200).toLowerCase();
+      if (!isEmail(to)) throw new AppError(400, 'Vul een geldig e-mailadres in om de test naartoe te sturen');
+      if (!M.isEnabled()) return { ok: false, error: 'Vul eerst een Brevo API-sleutel en een afzenderadres in.' };
+      try {
+        await M.send({ to, subject: 'Test van het Robin Foundation CRM', text: 'Dit is een testbericht. Werkt! E-mails van het CRM worden nu echt verstuurd.\n\nRobin Foundation' });
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
+    }, admin],
+
+    // ================================================================ BEHEER: LIVEGANG
+    ['GET', '/api/admin/golive', (ctx) => {
+      const me = get(db, 'SELECT password_hash FROM users WHERE id = ?', ctx.user.id);
+      const T = require('./translate');
+      return {
+        demo: isDemo(),
+        weak_password: isWeakStored(me.password_hash),
+        weak_users: all(db, 'SELECT id, email, password_hash FROM users WHERE active = 1').filter((u) => isWeakStored(u.password_hash)).map((u) => u.email),
+        moderation: S.moderationEnabled(),
+        impersonation_read_only: true,
+        payments: require('./payments').isEnabled(),
+        email: require('./mailer').isEnabled(),
+        translation: T.isEnabled(),
+        counts: get(db, `SELECT (SELECT COUNT(*) FROM donors) AS donors, (SELECT COUNT(*) FROM donations) AS donations,
+          (SELECT COUNT(*) FROM recipients) AS recipients, (SELECT COUNT(*) FROM users) AS users`),
+      };
+    }, admin],
+    // Alle demodata wissen. Bewaart: de ingelogde beheerder, bestemmingen en instellingen (sleutels).
+    ['POST', '/api/admin/demo/wipe', (ctx) => {
+      if (ctx.body.confirm !== 'VERWIJDER') throw new AppError(400, 'Typ VERWIJDER om te bevestigen');
+      const me = get(db, 'SELECT * FROM users WHERE id = ?', ctx.user.id);
+      if (isWeakStored(me.password_hash)) throw new AppError(400, 'Wijzig eerst je eigen wachtwoord; anders kan na het wissen iedereen met het demo-wachtwoord inloggen.');
+      if (['robin', 'admin@robinfoundation.org'].includes(me.email)) throw new AppError(400, 'Geef je eigen account eerst een echte inlognaam (je e-mailadres) via Instellingen → Gebruikers.');
+      tx(db, () => {
+        db.exec(`DELETE FROM chat_translations; DELETE FROM chat_messages; DELETE FROM donor_messages; DELETE FROM impact_messages;
+          DELETE FROM allocations; DELETE FROM expenditures; DELETE FROM cells; DELETE FROM donations; DELETE FROM interactions;
+          DELETE FROM tasks; DELETE FROM campaigns; DELETE FROM recipients; DELETE FROM outbox; DELETE FROM donors;`);
+        run(db, 'DELETE FROM sessions WHERE NOT (kind = ? AND subject_id = ?)', 'staff', me.id);
+        run(db, 'DELETE FROM users WHERE id <> ?', me.id);
+        run(db, "DELETE FROM settings WHERE key = 'chat_moderation'");
+      });
+      S.setModeration(true);
+      // Geüploade bestanden hoorden bij de verwijderde berichten
+      for (const f of fs.readdirSync(uploadDir)) { try { fs.unlinkSync(path.join(uploadDir, f)); } catch { /* negeren */ } }
+      S.audit(db, ctx.actor, 'demodata_gewist', 'system', null);
+      return { ok: true };
     }, admin],
 
     // ================================================================ BEHEER: UPLOADS (brieven, foto's, filmpjes)
