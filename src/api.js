@@ -855,6 +855,21 @@ function buildRoutes({ db, uploadDir }) {
         /^#[0-9a-fA-F]{6}$/.test(b.color || '') ? b.color : cat.color, b.active === undefined ? cat.active : bool(b.active), cat.key);
       S.audit(db, ctx.actor, 'bestemming_gewijzigd', 'category', null, cat.key);
     }, admin],
+    ['GET', '/api/admin/translation/status', () => require('./translate').status(), admin],
+    ['POST', '/api/admin/translation/test', async () => {
+      const T = require('./translate');
+      const st = T.status();
+      if (!st.enabled) return { ok: false, ...st, error: 'Vertalen staat uit (zie hierboven wat ontbreekt).' };
+      const started = Date.now();
+      try {
+        const res = await T.translateBatch([{ id: 1, text: 'Bonjou! Mèsi anpil pou manje a, mwen kontan anpil.' }], 'nl');
+        const t = res.get(1);
+        return { ok: !!t, ...st, input: 'Bonjou! Mèsi anpil pou manje a, mwen kontan anpil.', output: t && t.text,
+          source_language: t && t.source_language, ms: Date.now() - started };
+      } catch (err) {
+        return { ok: false, ...st, error: err.message, detail: err.detail || '' };
+      }
+    }, admin],
     ['GET', '/api/admin/users', () => all(db, 'SELECT id, email, name, role, active, created_at FROM users ORDER BY name'), staff],
     ['POST', '/api/admin/users', (ctx) => {
       const b = ctx.body;

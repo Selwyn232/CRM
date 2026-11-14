@@ -112,7 +112,7 @@ async function translateBatch(items, target) {
     else if (err instanceof A.APIConnectionError) msg = 'Vertaaldienst niet bereikbaar';
     else if (err instanceof A.APIError) msg = `Vertalen mislukt (${err.status})`;
     console.error('[vertalen]', err.message);
-    throw Object.assign(new Error(msg), { status: 502 });
+    throw Object.assign(new Error(msg), { status: 502, detail: err.message });
   }
 
   if (response.stop_reason === 'refusal') throw Object.assign(new Error('Deze berichten konden niet worden vertaald'), { status: 502 });
@@ -130,4 +130,9 @@ async function translateBatch(items, target) {
   return out;
 }
 
-module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL, recipientLanguage, donorLanguage };
+// Diagnose voor beheerders: wat ontbreekt er?
+function status() {
+  return { sdk_installed: !!loadSdk(), api_key_set: !!process.env.ANTHROPIC_API_KEY, model: MODEL, enabled: isEnabled() };
+}
+
+module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL, recipientLanguage, donorLanguage, status };

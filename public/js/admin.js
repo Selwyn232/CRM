@@ -1141,6 +1141,8 @@ async function renderSettings() {
   await loadLookups();
   view().innerHTML = `
     <div class="page-head"><h1>Instellingen</h1></div>
+    ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2>🌐 Automatisch vertalen</h2>
+      <button class="btn btn-primary btn-sm" id="tr-test">Proefvertaling</button></div><div id="tr-status" class="muted">Laden…</div></div>` : ''}
     <div class="card"><div class="card-head"><h2>Bestemmingen & kosten per eenheid</h2></div>
       <p class="small muted">Bepaalt hoe donaties worden omgerekend naar impact (“€ 25 = 50 maaltijden”) en hoeveel er per eenheid uit de cellen wordt gehaald.</p>
       ${table([
@@ -1178,6 +1180,28 @@ async function renderSettings() {
       },
     });
   }));
+  if (isAdmin()) {
+    const line = (ok, okText, badText) => `<div>${ok ? '✅' : '❌'} ${ok ? okText : badText}</div>`;
+    const showStatus = (st) => {
+      $('#tr-status').innerHTML = `
+        ${line(st.sdk_installed, 'Vertaalpakket is geïnstalleerd', 'Vertaalpakket ontbreekt → zet in Render het <b>Build Command</b> op <code>npm install</code> en deploy opnieuw')}
+        ${line(st.api_key_set, 'API-sleutel is ingesteld', 'API-sleutel ontbreekt → voeg in Render bij <b>Environment</b> <code>ANTHROPIC_API_KEY</code> toe')}
+        <div class="small muted" style="margin-top:6px">Model: <code>${esc(st.model)}</code></div>`;
+    };
+    api('/api/admin/translation/status').then(showStatus).catch((e) => { $('#tr-status').textContent = e.message; });
+    $('#tr-test').onclick = async () => {
+      $('#tr-test').disabled = true;
+      $('#tr-status').innerHTML = 'Bezig met proefvertaling…';
+      try {
+        const r = await api('/api/admin/translation/test', { method: 'POST', body: {} });
+        showStatus(r);
+        $('#tr-status').innerHTML += r.ok
+          ? `<div style="margin-top:10px" class="impact-preview">✅ Het werkt! (${r.ms} ms)<br><span class="small">“${esc(r.input)}” (${esc(r.source_language)})<br>→ “${esc(r.output)}”</span></div>`
+          : `<div style="margin-top:10px" class="form-error" style="margin:10px 0 0">❌ ${esc(r.error)}${r.detail ? `<br><span class="small">${esc(r.detail)}</span>` : ''}</div>`;
+      } catch (e) { $('#tr-status').textContent = e.message; }
+      finally { $('#tr-test').disabled = false; }
+    };
+  }
   const userForm = (u = {}) => modal({
     title: u.id ? 'Gebruiker bewerken' : 'Nieuwe gebruiker',
     body: `<div class="field"><label>Naam</label><input type="text" name="name" value="${esc(u.name || '')}" required></div>
