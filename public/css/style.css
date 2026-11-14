@@ -867,3 +867,12 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
 .fund-balance { padding: 24px; }
 .fund-balance .label { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 13px; font-weight: 500; }
 .fund-balance .value { font-size: 36px; font-weight: 700; letter-spacing: -.03em; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+
+/* Face ID */
+.faceid-btn { margin-bottom: 4px; }
+.or-sep { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 12.5px; margin: 16px 0 14px; }
+.or-sep::before, .or-sep::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.faceid-offer { text-align: center; padding: 8px 0; }
+.faceid-offer h2 { font-size: 19px; margin: 12px 0 6px; }
+.faceid-icon { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.faceid-icon .icon { width: 28px; height: 28px; }

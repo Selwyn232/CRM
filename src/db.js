@@ -301,6 +301,32 @@ CREATE TABLE IF NOT EXISTS onboarding_files (
 );
 CREATE INDEX IF NOT EXISTS idx_onbf ON onboarding_files(onboarding_id);
 
+-- ======================= Passkeys (Face ID / vingerafdruk) =======================
+-- Alleen de publieke sleutel staat hier; het gezicht of de vingerafdruk verlaat het toestel nooit.
+CREATE TABLE IF NOT EXISTS passkeys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')),
+  subject_id INTEGER NOT NULL,
+  credential_id TEXT NOT NULL UNIQUE,          -- base64url
+  public_key TEXT NOT NULL,                    -- base64url (COSE)
+  counter INTEGER NOT NULL DEFAULT 0,
+  transports TEXT NOT NULL DEFAULT '',
+  device_name TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_subject ON passkeys(kind, subject_id);
+
+-- Eenmalige uitdagingen voor registreren/inloggen (5 minuten geldig).
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id TEXT PRIMARY KEY,
+  challenge TEXT NOT NULL,
+  purpose TEXT NOT NULL CHECK (purpose IN ('register','login')),
+  kind TEXT,
+  subject_id INTEGER,
+  expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT '',

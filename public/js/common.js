@@ -448,9 +448,75 @@ const RF = (() => {
     document.body.prepend(bar);
   }
 
+  // ------------------------------------------------------------------ Face ID / passkeys (WebAuthn)
+  const b64uToBuf = (s) => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer; };
+  const bufToB64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const passkeys = {
+    supported: () => !!(window.PublicKeyCredential && navigator.credentials),
+    // Heeft dit toestel Face ID / Touch ID / vingerafdruk / Windows Hello?
+    platform: async () => { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch { return false; } },
+    label: () => (/iPhone|iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && 'ontouchend' in document) ? 'Face ID'
+      : /Macintosh/.test(navigator.userAgent) ? 'Touch ID' : /Android/.test(navigator.userAgent) ? 'vingerafdruk of gezicht'
+        : /Windows/.test(navigator.userAgent) ? 'Windows Hello' : 'Face ID'),
+    async register(kind) {
+      const { challenge_id, options: o } = await api(`/api/passkeys/${kind}/options`, { method: 'POST', body: {} });
+      let cred;
+      try {
+        cred = await navigator.credentials.create({ publicKey: {
+          ...o, challenge: b64uToBuf(o.challenge), user: { ...o.user, id: b64uToBuf(o.user.id) },
+          excludeCredentials: (o.excludeCredentials || []).map((c) => ({ ...c, id: b64uToBuf(c.id) })),
+        } });
+      } catch (e) { throw new Error(e.name === 'InvalidStateError' ? 'Dit toestel is al gekoppeld.' : e.name === 'NotAllowedError' ? 'Geannuleerd.' : e.message); }
+      const r = cred.response;
+      return api(`/api/passkeys/${kind}/register`, { method: 'POST', body: { challenge_id, response: {
+        id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+        authenticatorAttachment: cred.authenticatorAttachment || undefined,
+        response: { clientDataJSON: bufToB64u(r.clientDataJSON), attestationObject: bufToB64u(r.attestationObject), transports: r.getTransports ? r.getTransports() : [] },
+      } } });
+    },
+    async login() {
+      const { challenge_id, options: o } = await api('/api/passkeys/login/options', { method: 'POST', body: {} });
+      let cred;
+      try {
+        cred = await navigator.credentials.get({ publicKey: { ...o, challenge: b64uToBuf(o.challenge),
+          allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: b64uToBuf(c.id) })) } });
+      } catch (e) { throw new Error(e.name === 'NotAllowedError' ? 'Geannuleerd, of er is op dit toestel nog geen Face ID ingesteld voor Robin Foundation.' : e.message); }
+      const r = cred.response;
+      return api('/api/passkeys/login/verify', { method: 'POST', body: { challenge_id, response: {
+        id: cred.id, rawId: bufToB64u(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+        response: { clientDataJSON: bufToB64u(r.clientDataJSON), authenticatorData: bufToB64u(r.authenticatorData), signature: bufToB64u(r.signature),
+          userHandle: r.userHandle ? bufToB64u(r.userHandle) : undefined },
+      } } });
+    },
+    // Kaartje "Inloggen met Face ID" met gekoppelde toestellen, voor profielpagina's.
+    async card(el, kind) {
+      const name = passkeys.label();
+      const draw = (items) => {
+        el.innerHTML = `<div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">${icon('scan-face')}Inloggen met ${esc(name)}</h2></div>
+          <p class="small muted" style="margin-top:0">Log voortaan in met je gezicht of vinger in plaats van je wachtwoord. Je gezicht of vingerafdruk verlaat je toestel nooit.</p>
+          ${items.length ? `<div class="list">${items.map((p) => `<div class="list-row"><span class="cat-ico sm" style="--c:var(--ok)">${icon('check')}</span>
+            <div class="grow"><div class="title">${esc(p.device_name || 'Toestel')}</div><div class="meta">Toegevoegd ${date(p.created_at)}${p.last_used_at ? ` · laatst gebruikt ${dateTime(p.last_used_at)}` : ''}</div></div>
+            <button type="button" class="icon-btn" data-rm="${p.id}" aria-label="Ontkoppelen" title="Ontkoppelen">${icon('trash-2')}</button></div>`).join('')}</div>` : ''}
+          ${passkeys.supported() ? `<button type="button" class="btn ${items.length ? 'btn-ghost' : 'btn-primary'} btn-sm" data-add style="margin-top:10px">${icon('scan-face')}<span>${items.length ? 'Nog een toestel koppelen' : `${esc(name)} instellen op dit toestel`}</span></button>`
+            : '<p class="small muted">Deze browser ondersteunt geen Face ID-inlog.</p>'}`;
+        const add = el.querySelector('[data-add]');
+        if (add) add.onclick = async () => {
+          add.disabled = true;
+          try { draw(await passkeys.register(kind)); toast(`${name} is ingesteld. Je kunt voortaan zonder wachtwoord inloggen.`); }
+          catch (e) { if (e.message !== 'Geannuleerd.') toast(e.message, 'error'); add.disabled = false; }
+        };
+        el.querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', async () => {
+          if (!await confirmDialog('Dit toestel ontkoppelen? Daarna kun je er niet meer mee inloggen met Face ID.', 'Ontkoppelen')) return;
+          try { draw(await api(`/api/passkeys/${kind}/${b.dataset.rm}`, { method: 'DELETE' })); } catch (e) { toast(e.message, 'error'); }
+        }));
+      };
+      try { draw(await api(`/api/passkeys/${kind}`)); } catch (e) { el.innerHTML = `<p class="small muted">${esc(e.message)}</p>`; }
+    },
+  };
+
   return {
     icon, catIcon, catColor, catLabel, avatar, skeleton, emptyState, menu, MESSAGE_ICONS, INTERACTION_ICONS, CAT_COLORS,
-    markLoggedIn,
+    markLoggedIn, passkeys,
     impersonationBanner,
     chatBox,
     api, esc, euro, euro0, num, date, dateTime, today, toCents, centsToInput, monthName, label, badge, LABELS,

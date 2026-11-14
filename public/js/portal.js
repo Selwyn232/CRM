@@ -388,6 +388,7 @@ async function renderProfile() {
           <p class="hint">Alleen voor Robin Foundation; nooit gedeeld met de kinderen of hun ouders.</p>
           <button class="btn btn-primary">Opslaan</button>
         </form>
+        <div class="card" id="pk-card"></div>
         <form class="card" id="pw">
           <h2>Wachtwoord wijzigen</h2>
           <div class="field"><label>Huidig wachtwoord</label><input type="password" name="current" required autocomplete="current-password"></div>
@@ -418,6 +419,7 @@ async function renderProfile() {
       catch (ex) { toast(ex.message, 'error'); }
     };
   };
+  RF.passkeys.card($('#pk-card'), 'donor');
   save(pf, '/api/portal/profile');
   save($('#details'), '/api/portal/profile');
   save($('#pw'), '/api/portal/password');

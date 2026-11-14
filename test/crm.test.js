@@ -777,3 +777,28 @@ test('Oude bestemmingen (vóór het sponsormodel) zijn verborgen in beheer, maar
   assert.equal(donors.find((d) => d.id === donor).total_cents, 5000);
   assert.equal(get(db, 'SELECT COUNT(*) AS n FROM donations').n, 2); // niets verwijderd
 });
+
+test('Face ID (passkeys): alleen voor ingelogde accounts, eenmalige uitdaging, onbekend toestel geweigerd', async (t) => {
+  const db = freshDb();
+  const donor = addDonor(db, { email: 'f@x.nl' });
+  run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', hashPassword('welkom123'), donor);
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  // Zonder inloggen geen toestel koppelen
+  assert.equal((await fetch(`${base}/api/passkeys/donor/options`, { method: 'POST', headers: json, body: '{}' })).status, 401);
+  assert.equal((await fetch(`${base}/api/passkeys/hacker/options`, { method: 'POST', headers: json, body: '{}' })).status, 404);
+  const cookie = (await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'f@x.nl', password: 'welkom123' }) })).headers.get('set-cookie').split(';')[0];
+  const reg = await (await fetch(`${base}/api/passkeys/donor/options`, { method: 'POST', headers: { ...json, cookie }, body: '{}' })).json();
+  assert.ok(reg.challenge_id && reg.options.challenge);
+  assert.equal(reg.options.rp.id, '127.0.0.1');
+  assert.equal(reg.options.authenticatorSelection.userVerification, 'required');
+  assert.deepEqual(await (await fetch(`${base}/api/passkeys/donor`, { headers: { cookie } })).json(), []);
+  // Inloggen: uitdaging is eenmalig, onbekend toestel wordt geweigerd
+  const lo = await (await fetch(`${base}/api/passkeys/login/options`, { method: 'POST', headers: json, body: '{}' })).json();
+  const bad = await fetch(`${base}/api/passkeys/login/verify`, { method: 'POST', headers: json, body: JSON.stringify({ challenge_id: lo.challenge_id, response: { id: 'onbekend' } }) });
+  assert.equal(bad.status, 401);
+  const again = await fetch(`${base}/api/passkeys/login/verify`, { method: 'POST', headers: json, body: JSON.stringify({ challenge_id: lo.challenge_id, response: { id: 'onbekend' } }) });
+  assert.equal(again.status, 400); // al gebruikt
+});

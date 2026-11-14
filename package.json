@@ -15,6 +15,7 @@
   },
   "license": "UNLICENSED",
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0"
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@simplewebauthn/server": "^13.3.3"
   }
 }
