@@ -75,7 +75,8 @@
         // Lukt automatisch starten niet (bv. browserbeleid), dan staan de gewone bedieningsknoppen klaar; bij een echte fout een melding.
         if (p && p.catch) p.catch((err) => { if (err && err.name !== 'NotAllowedError' && err.name !== 'AbortError') fail(); });
       };
-      v.addEventListener('error', fail, true);
+      // Alleen een fout van de video zelf of de bron telt; een ondertitelbestand dat niet laadt niet.
+      v.addEventListener('error', (e) => { if (e.target === v || e.target.tagName === 'SOURCE') fail(); }, true);
       v.querySelector('source').addEventListener('error', fail);
       if (v.networkState === NO_SOURCE) fail();
       v.addEventListener('play', () => { b.hidden = true; v.controls = true; });
