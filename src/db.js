@@ -194,6 +194,76 @@ CREATE TABLE IF NOT EXISTS outbox (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ======================= Sponsormodel =======================
+-- Kinderen (gezinnen zijn rijen in recipients met kind = 'gezin').
+CREATE TABLE IF NOT EXISTS children (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  family_id INTEGER REFERENCES recipients(id) ON DELETE SET NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL DEFAULT '',
+  birth_date TEXT,
+  gender TEXT NOT NULL DEFAULT '',
+  school TEXT NOT NULL DEFAULT '',
+  grade TEXT NOT NULL DEFAULT '',
+  story TEXT NOT NULL DEFAULT '',
+  photo_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'beschikbaar'
+    CHECK (status IN ('concept','te_beoordelen','beschikbaar','gesponsord','inactief','afgekeurd')),
+  reserved_until TEXT,
+  reserved_by INTEGER,
+  available_since TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_children_status ON children(status);
+
+CREATE TABLE IF NOT EXISTS sponsorships (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  donor_id INTEGER NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+  child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'actief' CHECK (status IN ('actief','betaling_gemist','beeindigd')),
+  monthly_cents INTEGER NOT NULL,
+  missed_months INTEGER NOT NULL DEFAULT 0,
+  subscription_id TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at TEXT,
+  end_reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_spons_donor ON sponsorships(donor_id);
+CREATE INDEX IF NOT EXISTS idx_spons_child ON sponsorships(child_id);
+CREATE INDEX IF NOT EXISTS idx_spons_sub ON sponsorships(subscription_id);
+
+-- Per sponsorschap per maand: wat er van die maand is betaald (verdeling bevroren op dat moment).
+CREATE TABLE IF NOT EXISTS sponsor_months (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sponsorship_id INTEGER NOT NULL REFERENCES sponsorships(id) ON DELETE CASCADE,
+  donor_id INTEGER NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+  child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  donation_id INTEGER REFERENCES donations(id) ON DELETE SET NULL,
+  month TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  lines TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (sponsorship_id, month)
+);
+CREATE INDEX IF NOT EXISTS idx_sm_child ON sponsor_months(child_id, month);
+
+-- Maandelijkse update (foto, brief, filmpje) per kind, bezorgd bij de sponsor van dat moment.
+CREATE TABLE IF NOT EXISTS child_updates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  donor_id INTEGER REFERENCES donors(id) ON DELETE SET NULL,
+  month TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'foto' CHECK (type IN ('brief','video','foto','tekst')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  media_url TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cu_child ON child_updates(child_id, month);
+CREATE INDEX IF NOT EXISTS idx_cu_donor ON child_updates(donor_id);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT '',
@@ -256,6 +326,11 @@ CREATE TABLE IF NOT EXISTS chat_translations (
 
 const DEFAULT_CATEGORIES = [
   {
+    key: 'sponsoring', name: 'Sponsoring kind', sort_order: 0, icon: '🧒', color: '#5b5bd6',
+    description: 'Maandelijkse sponsoring van een kind: maaltijden, school, verzorging en noodfonds.',
+    unit_label: 'kind', unit_label_plural: 'kinderen', unit_cost_cents: 5000,
+  },
+  {
     key: 'schoolmaaltijd', name: 'Schoolmaaltijd', sort_order: 1, icon: '🍲', color: '#dd6b20',
     description: 'Een voedzame maaltijd op school voor een kind.',
     unit_label: 'maaltijd', unit_label_plural: 'maaltijden', unit_cost_cents: 50,
@@ -290,6 +365,9 @@ function openDb(file) {
     insertCat.run(c.key, c.name, c.description, c.unit_label, c.unit_label_plural,
       c.unit_cost_cents, c.icon, c.color, c.sort_order);
   }
+  // Sponsormodel: alleen sponsoring en het noodfonds zijn nog te kiezen; de oude bestemmingen blijven voor de historie.
+  db.exec(`UPDATE categories SET active = 0 WHERE key IN ('schoolmaaltijd','schoolgeld','gezondheidspakket');
+    UPDATE categories SET name = 'Robin Noodfonds', description = 'Gezamenlijke pot voor noodsituaties zoals orkanen en overstromingen.' WHERE key = 'noodfonds' AND name = 'Noodfonds stormen & orkanen';`);
   return db;
 }
 
@@ -311,6 +389,8 @@ function migrate(db) {
     if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
   };
   addCol('users', 'nav_prefs', "TEXT NOT NULL DEFAULT ''");          // eigen menuvolgorde (JSON)
+  for (const c of ['street', 'barangay', 'province', 'phone']) addCol('recipients', c, "TEXT NOT NULL DEFAULT ''");
+  addCol('donations', 'meta', "TEXT NOT NULL DEFAULT ''");             // bv. gekozen kinderen bij een checkout
   addCol('outbox', 'status', "TEXT NOT NULL DEFAULT 'gelogd'");      // gelogd | verzonden | mislukt
   addCol('outbox', 'error', "TEXT NOT NULL DEFAULT ''");
   addCol('outbox', 'provider_id', "TEXT NOT NULL DEFAULT ''");

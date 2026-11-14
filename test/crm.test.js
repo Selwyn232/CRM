@@ -6,6 +6,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { openDb, get, all, run } = require('../src/db');
 const S = require('../src/services');
+const SP = require('../src/sponsoring');
 const { createServer } = require('../server');
 const { hashPassword } = require('../src/auth');
 
@@ -139,7 +140,8 @@ test('HTTP: publieke leaderboard lekt geen ids of namen, portaal & beheer vereis
   const donor = addDonor(db, { first_name: 'Geheim', email: 'g@x.nl', anonymous: 1 });
   run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', hashPassword('welkom123'), donor);
   run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'A', 'admin', hashPassword('admin123'));
-  S.createDonation(db, { donor_id: donor, category_key: 'schoolmaaltijd', amount_cents: 1000 });
+  const child = Number(run(db, "INSERT INTO children (first_name) VALUES ('Maria')").lastInsertRowid);
+  SP.startSponsorships(db, donor, [child]);
 
   const server = createServer({ db, uploadDir }).listen(0);
   t.after(() => server.close());
@@ -159,12 +161,85 @@ test('HTTP: publieke leaderboard lekt geen ids of namen, portaal & beheer vereis
   assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie').split(';')[0];
   const overview = await (await fetch(`${base}/api/portal/overview`, { headers: { cookie } })).json();
-  assert.equal(overview.totals.donated_cents, 1000);
-  assert.equal(overview.totals.waiting_cents, 1000);
+  assert.equal(overview.sponsor.children, 1);
+  assert.equal(overview.rank, 1);
   // Donateur-sessie geeft geen toegang tot beheer.
   assert.equal((await fetch(`${base}/api/admin/donors`, { headers: { cookie } })).status, 401);
   // Mutaties zonder JSON content-type worden geweigerd (CSRF).
-  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { cookie }, body: 'amount_cents=100' })).status, 415);
+  assert.equal((await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: { cookie }, body: 'child_ids=1' })).status, 415);
+});
+
+// ------------------------------------------------------------------ sponsormodel
+function sponsorSetup() {
+  const db = freshDb();
+  const donor = addDonor(db, { first_name: 'Sanne', anonymous: 0 });
+  const fam = Number(run(db, "INSERT INTO recipients (name, kind) VALUES ('Familie Santos', 'gezin')").lastInsertRowid);
+  const kids = ['Maria', 'Jose', 'Ana'].map((n) => Number(run(db, 'INSERT INTO children (first_name, family_id) VALUES (?,?)', n, fam).lastInsertRowid));
+  return { db, donor, fam, kids };
+}
+
+test('sponsoren: maand boeken verdeelt € 50 over de onderdelen en vult het noodfonds', () => {
+  const { db, donor, fam, kids } = sponsorSetup();
+  const sids = SP.startSponsorships(db, donor, kids.slice(0, 2));
+  assert.equal(sids.length, 2);
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM children WHERE status = 'gesponsord'").n, 2);
+  const res = SP.bookPayment(db, { donorId: donor, sponsorshipIds: sids });
+  assert.equal(get(db, 'SELECT amount_cents FROM donations WHERE id = ?', res.donation_id).amount_cents, 10000);
+  assert.equal(res.fund_cents, 1000);
+  assert.equal(get(db, "SELECT remaining_cents FROM cells WHERE category_key = 'noodfonds'").remaining_cents, 1000);
+  const lines = JSON.parse(get(db, 'SELECT lines FROM sponsor_months WHERE sponsorship_id = ?', sids[0]).lines);
+  assert.deepEqual(lines.map((l) => l.cents), [2300, 1700, 500, 500]);
+  // Dubbele boeking schuift door naar de volgende maand
+  SP.bookPayment(db, { donorId: donor, sponsorshipIds: [sids[0]] });
+  assert.equal(get(db, 'SELECT COUNT(DISTINCT month) AS n FROM sponsor_months WHERE sponsorship_id = ?', sids[0]).n, 2);
+  // Sponsor mag chatten met het gezin; leaderboard op aantal kinderen
+  assert.equal(S.hasFunded(db, donor, fam), true);
+  assert.equal(SP.leaderboard(db)[0].children, 2);
+  // Een kind kan maar één sponsor hebben
+  const other = addDonor(db);
+  assert.throws(() => SP.reserve(db, other, [kids[0]]), /gekozen/);
+});
+
+test('sponsoren: na 2 gemiste betalingen komt het kind weer vrij', () => {
+  const { db, donor, kids } = sponsorSetup();
+  const [sid] = SP.startSponsorships(db, donor, [kids[0]]);
+  SP.missedPayment(db, [sid]);
+  assert.equal(get(db, 'SELECT status FROM sponsorships WHERE id = ?', sid).status, 'betaling_gemist');
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM outbox WHERE kind = 'herinnering'").n, 1);
+  SP.missedPayment(db, [sid]);
+  assert.equal(get(db, 'SELECT status FROM sponsorships WHERE id = ?', sid).status, 'beeindigd');
+  assert.equal(get(db, 'SELECT status FROM children WHERE id = ?', kids[0]).status, 'beschikbaar');
+});
+
+test('sponsoren: verdeling instellen moet optellen tot het bedrag', () => {
+  const { db } = sponsorSetup();
+  const cfg = SP.getConfig(db);
+  assert.throws(() => SP.setConfig(db, { ...cfg, amount_cents: 6000 }, 't'), /tellen op/);
+  const parts = cfg.parts.map((p) => (p.key === 'maaltijden' ? { ...p, cents: 3300 } : p));
+  SP.setConfig(db, { amount_cents: 6000, parts }, 't');
+  assert.equal(SP.getConfig(db).amount_cents, 6000);
+});
+
+test('HTTP: donateur kiest kinderen in het portaal (demo zonder Mollie)', async (t) => {
+  const { db, donor, kids } = sponsorSetup();
+  run(db, 'UPDATE donors SET password_hash = ?, email = ? WHERE id = ?', hashPassword('welkom123'), 's@x.nl', donor);
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(`${base}/api/donor/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 's@x.nl', password: 'welkom123' }) });
+  const h = { cookie: login.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  assert.equal((await (await fetch(`${base}/api/portal/children`, { headers: h })).json()).length, 3);
+  const r = await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: h, body: JSON.stringify({ child_ids: [kids[1], kids[2]] }) });
+  assert.equal(r.status, 200);
+  const mine = await (await fetch(`${base}/api/portal/my-children`, { headers: h })).json();
+  assert.deepEqual(mine.map((c) => c.first_name).sort(), ['Ana', 'Jose']);
+  assert.equal(mine[0].months, 1);
+  assert.equal(mine[0].last_name, undefined); // geen achternaam naar donateurs
+  const detail = await (await fetch(`${base}/api/portal/my-children/${kids[1]}`, { headers: h })).json();
+  assert.equal(detail.totals.reduce((s, l) => s + l.cents, 0), 5000);
+  const stop = await fetch(`${base}/api/portal/my-children/${kids[1]}/stop`, { method: 'POST', headers: h, body: '{}' });
+  assert.equal(stop.status, 200);
+  assert.equal(get(db, 'SELECT status FROM children WHERE id = ?', kids[1]).status, 'beschikbaar');
 });
 
 // ------------------------------------------------------------------ chat
@@ -448,7 +523,7 @@ function fakeProvider(handler) {
   return { srv, calls, url: () => `http://127.0.0.1:${srv.address().port}` };
 }
 
-test('Mollie: betaling starten, webhook boekt de gift, maandelijks start een abonnement', async (t) => {
+test('Mollie: sponsorbetaling starten, webhook start sponsoring en abonnement, vervolg en mislukte incasso', async (t) => {
   const payments = {};
   let n = 0;
   const mollie = fakeProvider((c) => {
@@ -460,41 +535,52 @@ test('Mollie: betaling starten, webhook boekt de gift, maandelijks start een abo
     }
     if (c.method === 'GET' && c.url.startsWith('/payments/')) return [200, payments[c.url.split('/')[2]]];
     if (c.method === 'POST' && /\/subscriptions$/.test(c.url)) return [201, { id: 'sub_test1' }];
+    if (c.method === 'PATCH' && /\/subscriptions\//.test(c.url)) return [200, { id: 'sub_test1' }];
     return [404, {}];
   });
   process.env.MOLLIE_API_BASE = mollie.url();
   const P = require('../src/payments');
-  const db = freshDb();
-  const donor = addDonor(db, { email: 'p@x.nl' });
-  run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', hashPassword('welkom123'), donor);
+  const { db, donor, kids } = sponsorSetup();
+  run(db, 'UPDATE donors SET password_hash = ?, email = ? WHERE id = ?', hashPassword('welkom123'), 'p@x.nl', donor);
   const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
   P.configure({ apiKey: 'test_' + 'a'.repeat(30) });
   t.after(() => { server.close(); mollie.srv.close(); P.configure({ apiKey: '' }); delete process.env.MOLLIE_API_BASE; });
   const base = `http://127.0.0.1:${server.address().port}`;
   const json = { 'Content-Type': 'application/json' };
+  const form = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const cookie = (await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'p@x.nl', password: 'welkom123' }) })).headers.get('set-cookie').split(';')[0];
 
-  const res = await (await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie }, body: JSON.stringify({ category_key: 'schoolgeld', amount_cents: 2500, frequency: 'maandelijks' }) })).json();
+  const res = await (await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: { ...json, cookie }, body: JSON.stringify({ child_ids: [kids[0], kids[1]] }) })).json();
   assert.match(res.checkout_url, /checkout\/tr_test1/);
   assert.equal(get(db, 'SELECT status FROM donations WHERE id = ?', res.id).status, 'in_afwachting');
-  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM cells').n, 0);
-  assert.equal(mollie.calls.find((c) => c.url === '/payments').body.sequenceType, 'first');
+  const first = mollie.calls.find((c) => c.url === '/payments').body;
+  assert.equal(first.sequenceType, 'first');
+  assert.equal(first.amount.value, '100.00');
+  // Gereserveerd: een andere donateur kan deze kinderen nu niet kiezen
+  assert.equal(SP.availableChildren(db, addDonor(db)).length, 1);
 
-  // Mollie roept de webhook aan (formulier) nadat er betaald is
   payments.tr_test1.status = 'paid'; payments.tr_test1.method = 'ideal';
-  const wh = await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_test1' });
-  assert.equal(wh.status, 200);
-  const d = get(db, 'SELECT * FROM donations WHERE id = ?', res.id);
-  assert.equal(d.status, 'ontvangen');
-  assert.equal(d.subscription_id, 'sub_test1');
-  assert.equal(get(db, 'SELECT remaining_cents FROM cells WHERE donation_id = ?', res.id).remaining_cents, 2500);
+  assert.equal((await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: 'id=tr_test1' })).status, 200);
+  assert.equal(get(db, 'SELECT status FROM donations WHERE id = ?', res.id).status, 'ontvangen');
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM sponsorships WHERE subscription_id = 'sub_test1'").n, 2);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM sponsor_months').n, 2);
+  assert.equal(mollie.calls.find((c) => /\/subscriptions$/.test(c.url)).body.amount.value, '100.00');
   // Tweede keer dezelfde webhook: niets dubbel
-  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_test1' });
-  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM cells').n, 1);
-  // Vervolgbetaling vanuit het abonnement
-  payments.tr_sub2 = { id: 'tr_sub2', status: 'paid', subscriptionId: 'sub_test1', amount: { value: '25.00' } };
-  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_sub2' });
-  assert.equal(get(db, "SELECT COUNT(*) AS n FROM donations WHERE status = 'ontvangen'").n, 2);
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: 'id=tr_test1' });
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM sponsorships').n, 2);
+  // Vervolgbetaling vanuit het abonnement boekt de volgende maand
+  payments.tr_sub2 = { id: 'tr_sub2', status: 'paid', subscriptionId: 'sub_test1', amount: { value: '100.00' } };
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: 'id=tr_sub2' });
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: 'id=tr_sub2' });
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM sponsor_months').n, 4);
+  // Twee mislukte incasso's: kinderen komen vrij
+  for (const id of ['tr_f1', 'tr_f2']) {
+    payments[id] = { id, status: 'failed', subscriptionId: 'sub_test1', amount: { value: '100.00' } };
+    await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: `id=${id}` });
+    await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: form, body: `id=${id}` }); // dubbel telt niet
+  }
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM sponsorships WHERE status = 'beeindigd'").n, 2);
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM children WHERE status = 'beschikbaar'").n, 3);
 });
 
 test('Brevo: e-mails worden echt verstuurd en de status komt in de log', async (t) => {
@@ -538,7 +624,8 @@ test('Livegang: sterke wachtwoorden verplicht en demodata wissen met waarborgen'
   assert.equal((await fetch(`${base}/api/admin/demo/wipe`, { method: 'POST', headers: h, body: JSON.stringify({ confirm: 'VERWIJDER' }) })).status, 200);
   assert.equal(get(db, 'SELECT COUNT(*) AS n FROM donors').n, 0);
   assert.equal(get(db, 'SELECT COUNT(*) AS n FROM users').n, 1);
-  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM categories').n, 4);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM categories').n, 5);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM children').n, 0);
   assert.equal((await (await fetch(`${base}/api/public/config`)).json()).demo, false);
   assert.equal((await fetch(`${base}/api/staff/me`, { headers: h })).status, 200); // nog steeds ingelogd
 });

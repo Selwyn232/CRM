@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { all, get, run, tx } = require('./db');
 const auth = require('./auth');
 const S = require('./services');
+const SP = require('./sponsoring');
 const { AppError } = S;
 
 const STAFF_COOKIE = 'rf_staff';
@@ -126,7 +127,9 @@ function buildRoutes({ db, uploadDir }) {
   const publicBase = (ctx) => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL
     || `${ctx.secure ? 'https' : 'http'}://${ctx.req.headers.host}`).replace(/\/$/, '');
 
+  let sponsor = null;
   async function handlePayment(pay) {
+    if (await sponsor.handleSponsorPayment(pay)) return;
     const P = require('./payments');
     const paid = pay.status === 'paid';
     const failed = ['failed', 'canceled', 'expired'].includes(pay.status);
@@ -194,6 +197,15 @@ function buildRoutes({ db, uploadDir }) {
       run(db, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v);
     }
   }
+  // Sponsormodel: in een demo-omgeving zonder kinderen eenmalig voorbeeldgezinnen en -kinderen toevoegen om mee te testen.
+  if (!setting('sponsor_demo_v1') && isDemo() && !get(db, 'SELECT 1 AS x FROM children LIMIT 1')) {
+    try {
+      const admin = get(db, 'SELECT id FROM users ORDER BY id LIMIT 1');
+      require('./seed').seedSponsoring(db, { donorIds: all(db, 'SELECT id FROM donors ORDER BY id').map((d) => d.id), adminId: admin ? admin.id : null,
+        portalHash: auth.hashPassword('welkom123') });
+    } catch (err) { console.error('Voorbeeldkinderen toevoegen mislukt:', err.message); }
+    run(db, "INSERT INTO settings (key, value) VALUES ('sponsor_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
+  }
   S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION !== 'uit');
   // ------------------------------------------------------------ guards
   const staff = (ctx) => {
@@ -251,17 +263,18 @@ function buildRoutes({ db, uploadDir }) {
   const supportersOf = (recipientId) => {
     let anon = 0;
     return all(db, `SELECT d.id, d.anonymous, d.display_name, d.first_name, d.last_name, d.company_name, d.donor_type,
-        (SELECT GROUP_CONCAT(DISTINCT c.name) FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
-          JOIN categories c ON c.key = e.category_key WHERE a.donor_id = d.id AND e.recipient_id = ?) AS categories,
-        (SELECT MIN(e.spent_at) FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
-          WHERE a.donor_id = d.id AND e.recipient_id = ?) AS since,
+        COALESCE((SELECT 'Sponsor van ' || GROUP_CONCAT(ch.first_name, ', ') FROM sponsorships s JOIN children ch ON ch.id = s.child_id
+          WHERE s.donor_id = d.id AND ch.family_id = ? AND s.status <> 'beeindigd'), '') AS categories,
+        COALESCE((SELECT MIN(s.started_at) FROM sponsorships s JOIN children ch ON ch.id = s.child_id WHERE s.donor_id = d.id AND ch.family_id = ?),
+          (SELECT MIN(e.spent_at) FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = d.id AND e.recipient_id = ?)) AS since,
         (SELECT body FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ? AND (m.status='goedgekeurd' OR m.sender='recipient')
           ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
         (SELECT MAX(created_at) FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ?) AS last_at,
         (SELECT COUNT(*) FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ? AND m.sender='donor'
           AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
       FROM donors d WHERE d.id IN (SELECT a.donor_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE e.recipient_id = ?)
-      ORDER BY last_at IS NULL, last_at DESC, d.id`, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId)
+        OR d.id IN (SELECT s.donor_id FROM sponsorships s JOIN children ch ON ch.id = s.child_id WHERE ch.family_id = ? AND s.status <> 'beeindigd')
+      ORDER BY last_at IS NULL, last_at DESC, d.id`, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId)
       .map((d) => ({
         id: d.id,
         name: d.anonymous ? `Anonieme donateur ${++anon}` : S.donorPublicName(d),
@@ -273,8 +286,10 @@ function buildRoutes({ db, uploadDir }) {
   const setCookie = (ctx, name, token) => { ctx.headers = { 'Set-Cookie': auth.sessionCookie(name, token, ctx.secure) }; };
 
   const categories = () => all(db, 'SELECT * FROM categories ORDER BY sort_order');
+  sponsor = require('./api-sponsor').buildSponsorRoutes({ db, guards: { staff, admin, donor, recipient }, publicBase });
 
   return [
+    ...sponsor.routes,
     // ================================================================ PUBLIEK
     ['GET', '/api/public/translation', () => {
       const T = require('./translate');
@@ -291,8 +306,6 @@ function buildRoutes({ db, uploadDir }) {
       return { ...t, categories: S.categoryBalances(db).map(({ key, name, icon, color, unit_label_plural, received_cents, spent_cents, units_spent }) =>
         ({ key, name, icon, color, unit_label_plural, received_cents, spent_cents, units_spent })) };
     }],
-    ['GET', '/api/public/leaderboard', (ctx) => S.leaderboard(db, ctx.query)
-      .map(({ donor_id, ...rest }) => rest)],
 
     // ================================================================ AUTH MEDEWERKERS
     ['POST', '/api/staff/login', (ctx) => {
@@ -384,7 +397,10 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/portal/overview', (ctx) => {
       const d = ctx.donor;
       const impact = S.donorImpact(db, d.id);
-      const board = S.leaderboard(db, { limit: 500 });
+      const board = SP.leaderboard(db, { limit: 500 });
+      const kids = get(db, `SELECT COUNT(*) AS children, COALESCE(SUM(monthly_cents),0) AS monthly_cents FROM sponsorships
+        WHERE donor_id = ? AND status <> 'beeindigd'`, d.id);
+      const months = get(db, 'SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents),0) AS cents FROM sponsor_months WHERE donor_id = ?', d.id);
       const me = board.find((r) => r.donor_id === d.id);
       const unread = get(db, 'SELECT COUNT(*) AS n FROM donor_messages WHERE donor_id = ? AND read_at IS NULL', d.id).n;
       const recipients = get(db, `SELECT COUNT(DISTINCT e.recipient_id) AS n FROM allocations a
@@ -398,6 +414,8 @@ function buildRoutes({ db, uploadDir }) {
           spent_cents: impact.reduce((s, r) => s + r.spent_cents, 0),
           recipients,
         },
+        sponsor: { children: kids.children, monthly_cents: kids.monthly_cents, months: months.n, sponsored_cents: months.cents,
+          unread_updates: get(db, 'SELECT COUNT(*) AS n FROM child_updates WHERE donor_id = ? AND read_at IS NULL', d.id).n },
         rank: me ? me.rank : null,
         ranked_donors: board.length,
         unread,
@@ -421,47 +439,6 @@ function buildRoutes({ db, uploadDir }) {
     ['POST', '/api/portal/messages/:id/read', (ctx) => {
       run(db, "UPDATE donor_messages SET read_at = COALESCE(read_at, datetime('now')) WHERE id = ? AND donor_id = ?",
         id(ctx.params.id), ctx.donor.id);
-    }, donor],
-    ['POST', '/api/portal/donate', async (ctx) => {
-      const amount = Math.round(Number(ctx.body.amount_cents));
-      if (!Number.isInteger(amount) || amount < 100) throw new AppError(400, 'Minimaal bedrag is € 1,00');
-      if (amount > 10_000_000) throw new AppError(400, 'Neem voor grote giften contact met ons op');
-      const P = require('./payments');
-      const frequency = ['eenmalig', 'maandelijks', 'kwartaal', 'jaarlijks'].includes(ctx.body.frequency) ? ctx.body.frequency : 'eenmalig';
-      if (!P.isEnabled()) {
-        // Demo: zonder betaalprovider wordt de gift meteen als ontvangen geboekt.
-        return S.createDonation(db, {
-          donor_id: ctx.donor.id, category_key: ctx.body.category_key, amount_cents: amount, frequency, method: 'ideal',
-          campaign_id: ctx.body.campaign_id || null, reference: `DEMO-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
-        }, ctx.actor);
-      }
-      // Echte betaling: donatie "in afwachting" tot Mollie meldt dat er betaald is (webhook).
-      const donation = S.createDonation(db, {
-        donor_id: ctx.donor.id, category_key: ctx.body.category_key, amount_cents: amount, frequency, method: 'online',
-        status: 'in_afwachting', campaign_id: ctx.body.campaign_id || null,
-      }, ctx.actor);
-      const cat = S.getCategory(db, donation.category_key);
-      const base = publicBase(ctx);
-      let customerId = ctx.donor.mollie_customer_id;
-      try {
-        if (frequency !== 'eenmalig' && !customerId) {
-          customerId = (await P.createCustomer(S.donorFullName(ctx.donor), ctx.donor.email)).id;
-          run(db, 'UPDATE donors SET mollie_customer_id = ? WHERE id = ?', customerId, ctx.donor.id);
-        }
-        const pay = await P.createPayment({
-          cents: amount,
-          description: `Robin Foundation – ${cat.name}${frequency !== 'eenmalig' ? ` (${frequency})` : ''}`,
-          redirectUrl: `${base}/portal#/doneren/klaar/${donation.id}`,
-          webhookUrl: `${base}/api/webhooks/mollie`,
-          metadata: { donation_id: donation.id },
-          ...(frequency !== 'eenmalig' ? { customerId, sequenceType: 'first' } : {}),
-        });
-        run(db, 'UPDATE donations SET external_id = ?, reference = ? WHERE id = ?', pay.id, pay.id, donation.id);
-        return { id: donation.id, checkout_url: pay._links && pay._links.checkout && pay._links.checkout.href };
-      } catch (err) {
-        S.updateDonation(db, donation.id, { status: 'geannuleerd', note: `Betaling kon niet starten: ${err.message}` }, ctx.actor);
-        throw new AppError(502, 'De betaling kon niet worden gestart. Probeer het later opnieuw.');
-      }
     }, donor],
     ['GET', '/api/portal/donations/:id', (ctx) => {
       const d = get(db, `SELECT dn.id, dn.status, dn.amount_cents, dn.frequency, dn.category_key, c.name AS category_name
@@ -501,7 +478,7 @@ function buildRoutes({ db, uploadDir }) {
       if (!ctx.body.password || String(ctx.body.password).length < 8) throw new AppError(400, 'Nieuw wachtwoord moet minimaal 8 tekens zijn');
       run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', auth.hashPassword(ctx.body.password), ctx.donor.id);
     }, donor],
-    ['GET', '/api/portal/leaderboard', (ctx) => S.leaderboard(db, ctx.query)
+    ['GET', '/api/portal/leaderboard', (ctx) => SP.leaderboard(db, ctx.query)
       .map(({ donor_id, ...rest }) => ({ ...rest, is_me: donor_id === ctx.donor.id })), donor],
     ['GET', '/api/portal/annual', (ctx) => annualStatement(db, ctx.donor.id, ctx.query.year), donor],
     ['GET', '/api/portal/campaigns', () => all(db, `SELECT cp.*,
@@ -520,8 +497,9 @@ function buildRoutes({ db, uploadDir }) {
           AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
       FROM recipients r
       WHERE r.active = 1 AND r.chat_enabled = 1
-        AND r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
-      ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
+        AND (r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
+          OR r.id IN (SELECT ch.family_id FROM sponsorships s JOIN children ch ON ch.id = s.child_id WHERE s.donor_id = ? AND s.status <> 'beeindigd'))
+      ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
       .map((r) => ({ ...r, chat_moderated: S.isModerated(r) ? 1 : 0 })), donor],
     ['GET', '/api/portal/conversations/:id', async (ctx) => {
       const rid = id(ctx.params.id);
@@ -689,7 +667,7 @@ function buildRoutes({ db, uploadDir }) {
         tasks: all(db, `SELECT t.*, u.name AS assigned_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to
           WHERE t.donor_id = ? ORDER BY t.status, t.due_date`, donorId),
         emails: all(db, 'SELECT * FROM outbox WHERE donor_id = ? ORDER BY id DESC LIMIT 50', donorId),
-        rank: (S.leaderboard(db, { limit: 500 }).find((r) => r.donor_id === donorId) || {}).rank || null,
+        rank: (SP.leaderboard(db, { limit: 500 }).find((r) => r.donor_id === donorId) || {}).rank || null,
       };
     }, staff],
     ['PUT', '/api/admin/donors/:id', (ctx) => {
@@ -852,18 +830,23 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/admin/recipients', () => all(db, `SELECT r.*,
         (SELECT COUNT(*) FROM expenditures WHERE recipient_id = r.id) AS expenditure_count,
         COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE recipient_id = r.id),0) AS received_cents,
-        (SELECT COUNT(*) FROM chat_messages WHERE recipient_id = r.id) AS chat_count
+        (SELECT COUNT(*) FROM chat_messages WHERE recipient_id = r.id) AS chat_count,
+        (SELECT COUNT(*) FROM children WHERE family_id = r.id) AS children_count,
+        (SELECT GROUP_CONCAT(first_name, ', ') FROM children WHERE family_id = r.id) AS children_names
       FROM recipients r ORDER BY r.active DESC, r.name COLLATE NOCASE`).map(publicRecipient), staff],
     ['POST', '/api/admin/recipients', (ctx) => {
       const b = recipientInput(ctx.body);
-      const r = run(db, `INSERT INTO recipients (name, kind, age, school, location, country, story, photo_url, consent, active)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`, b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active);
+      const r = run(db, `INSERT INTO recipients (name, kind, age, school, location, country, story, photo_url, consent, active, street, barangay, province, phone)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active,
+      b.street, b.barangay, b.province, b.phone);
       return publicRecipient(get(db, 'SELECT * FROM recipients WHERE id = ?', Number(r.lastInsertRowid)));
     }, staff],
     ['PUT', '/api/admin/recipients/:id', (ctx) => {
       const b = recipientInput(ctx.body);
-      run(db, `UPDATE recipients SET name=?, kind=?, age=?, school=?, location=?, country=?, story=?, photo_url=?, consent=?, active=? WHERE id=?`,
-        b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active, id(ctx.params.id));
+      run(db, `UPDATE recipients SET name=?, kind=?, age=?, school=?, location=?, country=?, story=?, photo_url=?, consent=?, active=?,
+        street=?, barangay=?, province=?, phone=? WHERE id=?`,
+      b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active,
+      b.street, b.barangay, b.province, b.phone, id(ctx.params.id));
       return publicRecipient(get(db, 'SELECT * FROM recipients WHERE id = ?', id(ctx.params.id)));
     }, staff],
     // Inlog & chatinstellingen van een ontvanger.
@@ -982,10 +965,6 @@ function buildRoutes({ db, uploadDir }) {
     }, staff],
 
     // ================================================================ BEHEER: LEADERBOARD (met echte namen)
-    ['GET', '/api/admin/leaderboard', (ctx) => S.leaderboard(db, ctx.query).map((r) => {
-      const d = get(db, 'SELECT * FROM donors WHERE id = ?', r.donor_id);
-      return { ...r, full_name: S.donorFullName(d) };
-    }), staff],
 
     // ================================================================ BEHEER: E-MAIL LOG, AUDIT
     ['GET', '/api/admin/outbox', (ctx) => all(db, `SELECT o.* FROM outbox o
@@ -1165,7 +1144,8 @@ function buildRoutes({ db, uploadDir }) {
       if (isWeakStored(me.password_hash)) throw new AppError(400, 'Wijzig eerst je eigen wachtwoord; anders kan na het wissen iedereen met het demo-wachtwoord inloggen.');
       if (['robin', 'admin@robinfoundation.org'].includes(me.email)) throw new AppError(400, 'Geef je eigen account eerst een echte inlognaam (je e-mailadres) via Instellingen → Gebruikers.');
       tx(db, () => {
-        db.exec(`DELETE FROM chat_translations; DELETE FROM chat_messages; DELETE FROM donor_messages; DELETE FROM impact_messages;
+        db.exec(`DELETE FROM child_updates; DELETE FROM sponsor_months; DELETE FROM sponsorships; DELETE FROM children;
+          DELETE FROM chat_translations; DELETE FROM chat_messages; DELETE FROM donor_messages; DELETE FROM impact_messages;
           DELETE FROM allocations; DELETE FROM expenditures; DELETE FROM cells; DELETE FROM donations; DELETE FROM interactions;
           DELETE FROM tasks; DELETE FROM campaigns; DELETE FROM recipients; DELETE FROM outbox; DELETE FROM donors;`);
         run(db, 'DELETE FROM sessions WHERE NOT (kind = ? AND subject_id = ?)', 'staff', me.id);
@@ -1198,12 +1178,13 @@ function buildRoutes({ db, uploadDir }) {
 function recipientInput(b) {
   const name = str(b.name, 200);
   if (!name) throw new AppError(400, 'Naam is verplicht');
-  const kind = ['kind', 'gezin', 'school', 'gemeenschap', 'organisatie'].includes(b.kind) ? b.kind : 'kind';
+  const kind = ['kind', 'gezin', 'school', 'gemeenschap', 'organisatie'].includes(b.kind) ? b.kind : 'gezin';
   const age = b.age === '' || b.age == null ? null : Number(b.age);
   return {
     name, kind, age: Number.isFinite(age) ? age : null, school: str(b.school, 200), location: str(b.location, 200),
     country: str(b.country, 100), story: str(b.story, 5000), photo_url: str(b.photo_url, 500), consent: bool(b.consent),
     active: b.active === undefined ? 1 : bool(b.active),
+    street: str(b.street, 200), barangay: str(b.barangay, 120), province: str(b.province, 120), phone: str(b.phone, 40),
   };
 }
 
