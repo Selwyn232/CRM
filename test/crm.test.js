@@ -736,3 +736,26 @@ test('Veriff: webhook alleen met geldige handtekening; uitslag komt bij de aanme
   assert.equal(JSON.parse(o.id_result).document_last4, '4567');
   assert.ok(!o.id_result.includes('P1234567')); // geen volledig paspoortnummer bewaard
 });
+
+test('Noodfonds: inzet verlaagt het saldo, zonder mail aan donateurs; terugdraaien zet het terug', async (t) => {
+  const { db, donor, fam, kids } = sponsorSetup();
+  const sids = SP.startSponsorships(db, donor, kids);
+  SP.bookPayment(db, { donorId: donor, sponsorshipIds: sids }); // 3 x € 5 = € 15 in het noodfonds
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('b@rf.org','B','admin',?)", hashPassword('Sterk wachtwoord 1'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const h = { 'Content-Type': 'application/json', cookie: (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'b@rf.org', password: 'Sterk wachtwoord 1' }) })).headers.get('set-cookie').split(';')[0] };
+  assert.equal((await (await fetch(`${base}/api/admin/noodfonds`, { headers: h })).json()).balance_cents, 1500);
+  const mails = get(db, 'SELECT COUNT(*) AS n FROM outbox').n;
+  const r = await fetch(`${base}/api/admin/noodfonds`, { method: 'POST', headers: h, body: JSON.stringify({ amount_cents: 1000, recipient_id: fam, description: 'Zeil en rijst na de tyfoon' }) });
+  assert.equal(r.status, 200);
+  const nf = await (await fetch(`${base}/api/admin/noodfonds`, { headers: h })).json();
+  assert.equal(nf.balance_cents, 500);
+  assert.equal(nf.deployments, 1);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM outbox').n, mails);
+  assert.equal((await fetch(`${base}/api/admin/noodfonds`, { method: 'POST', headers: h, body: JSON.stringify({ amount_cents: 1000, description: 'te veel' }) })).status, 409);
+  const depId = get(db, "SELECT id FROM expenditures WHERE category_key = 'noodfonds'").id;
+  assert.equal((await fetch(`${base}/api/admin/noodfonds/${depId}`, { method: 'DELETE', headers: h })).status, 200);
+  assert.equal((await (await fetch(`${base}/api/admin/noodfonds`, { headers: h })).json()).balance_cents, 1500);
+});

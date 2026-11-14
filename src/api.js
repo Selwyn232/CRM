@@ -610,7 +610,7 @@ function buildRoutes({ db, uploadDir }) {
       }[sort] || 'd.last_name';
       return all(db, `SELECT d.*,
           COALESCE((SELECT SUM(amount_cents) FROM donations WHERE donor_id=d.id AND status='ontvangen'),0) AS total_cents,
-          COALESCE((SELECT SUM(remaining_cents) FROM cells WHERE donor_id=d.id),0) AS waiting_cents,
+          (SELECT COUNT(*) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd') AS children,
           (SELECT COUNT(*) FROM donations WHERE donor_id=d.id AND status='ontvangen') AS donation_count,
           (SELECT MAX(received_at) FROM donations WHERE donor_id=d.id AND status='ontvangen') AS last_donation,
           (SELECT COUNT(*) FROM donations WHERE donor_id=d.id AND frequency<>'eenmalig' AND status='ontvangen') AS recurring
@@ -643,12 +643,11 @@ function buildRoutes({ db, uploadDir }) {
       if (!d) throw new AppError(404, 'Donateur niet gevonden');
       return {
         donor: publicDonor(d),
-        impact: S.donorImpact(db, donorId),
-        donations: all(db, `SELECT dn.*, c.name AS category_name, c.icon, cp.name AS campaign_name, ce.id AS cell_id,
-            ce.remaining_cents, ce.status AS cell_status
+        sponsor: get(db, `SELECT COUNT(*) AS children, COALESCE(SUM(monthly_cents),0) AS monthly_cents,
+          (SELECT COUNT(*) FROM sponsor_months WHERE donor_id = ?) AS months FROM sponsorships WHERE donor_id = ? AND status <> 'beeindigd'`, donorId, donorId),
+        donations: all(db, `SELECT dn.*, c.name AS category_name, c.icon, cp.name AS campaign_name
           FROM donations dn JOIN categories c ON c.key = dn.category_key LEFT JOIN campaigns cp ON cp.id = dn.campaign_id
-          LEFT JOIN cells ce ON ce.donation_id = dn.id WHERE dn.donor_id = ? ORDER BY dn.received_at DESC, dn.id DESC`, donorId),
-        journey: donorJourney(db, donorId),
+          WHERE dn.donor_id = ? ORDER BY dn.received_at DESC, dn.id DESC`, donorId),
         interactions: all(db, `SELECT i.*, u.name AS user_name FROM interactions i LEFT JOIN users u ON u.id = i.user_id
           WHERE i.donor_id = ? ORDER BY i.occurred_at DESC, i.id DESC`, donorId),
         tasks: all(db, `SELECT t.*, u.name AS assigned_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to
@@ -761,57 +760,6 @@ function buildRoutes({ db, uploadDir }) {
     ['POST', '/api/admin/donations', (ctx) => S.createDonation(db, ctx.body, ctx.actor), staff],
     ['PUT', '/api/admin/donations/:id', (ctx) => S.updateDonation(db, id(ctx.params.id), ctx.body, ctx.actor), staff],
     ['DELETE', '/api/admin/donations/:id', (ctx) => S.deleteDonation(db, id(ctx.params.id), ctx.actor), admin],
-
-    // ================================================================ BEHEER: CELLEN
-    ['GET', '/api/admin/cells', (ctx) => {
-      const { category = '', status = '', donor_id = '' } = ctx.query;
-      const where = ['1=1'];
-      const p = [];
-      if (category) { where.push('ce.category_key = ?'); p.push(category); }
-      if (status === 'open') where.push('ce.remaining_cents > 0');
-      else if (status) { where.push('ce.status = ?'); p.push(status); }
-      if (donor_id) { where.push('ce.donor_id = ?'); p.push(Number(donor_id)); }
-      return all(db, `SELECT ce.*, c.name AS category_name, c.icon, c.color, dn.received_at, dn.frequency,
-          d.first_name, d.last_name, d.company_name, d.donor_type,
-          CAST(julianday('now') - julianday(ce.created_at) AS INTEGER) AS age_days
-        FROM cells ce JOIN categories c ON c.key = ce.category_key JOIN donations dn ON dn.id = ce.donation_id
-        JOIN donors d ON d.id = ce.donor_id WHERE ${where.join(' AND ')}
-        ORDER BY ce.remaining_cents = 0, ce.created_at ASC, ce.id ASC LIMIT 2000`, ...p)
-        .map((r) => ({ ...r, donor_name: S.donorFullName(r) }));
-    }, staff],
-
-    // ================================================================ BEHEER: BESTEDINGEN
-    ['GET', '/api/admin/expenditures', (ctx) => {
-      const { category = '' } = ctx.query;
-      return all(db, `SELECT e.*, c.name AS category_name, c.icon, c.unit_label, c.unit_label_plural,
-          r.name AS recipient_name, u.name AS created_by_name,
-          (SELECT COUNT(DISTINCT donor_id) FROM allocations WHERE expenditure_id = e.id) AS donor_count,
-          (SELECT COUNT(*) FROM impact_messages WHERE expenditure_id = e.id) AS message_count
-        FROM expenditures e JOIN categories c ON c.key = e.category_key LEFT JOIN recipients r ON r.id = e.recipient_id
-        LEFT JOIN users u ON u.id = e.created_by ${category ? 'WHERE e.category_key = ?' : ''}
-        ORDER BY e.spent_at DESC, e.id DESC LIMIT 2000`, ...(category ? [category] : []));
-    }, staff],
-    ['POST', '/api/admin/expenditures', (ctx) => S.spend(db, ctx.body, ctx.actor, ctx.user.id), staff],
-    ['GET', '/api/admin/expenditures/:id', (ctx) => {
-      const expId = id(ctx.params.id);
-      const e = get(db, `SELECT e.*, c.name AS category_name, c.icon, c.unit_label, c.unit_label_plural, r.name AS recipient_name
-        FROM expenditures e JOIN categories c ON c.key = e.category_key LEFT JOIN recipients r ON r.id = e.recipient_id WHERE e.id = ?`, expId);
-      if (!e) throw new AppError(404, 'Besteding niet gevonden');
-      e.allocations = all(db, `SELECT a.*, d.first_name, d.last_name, d.company_name, d.donor_type, d.email, ce.amount_cents AS cell_amount_cents,
-          dn.received_at FROM allocations a JOIN donors d ON d.id = a.donor_id JOIN cells ce ON ce.id = a.cell_id
-          JOIN donations dn ON dn.id = ce.donation_id WHERE a.expenditure_id = ? ORDER BY a.amount_cents DESC`, expId)
-        .map((r) => ({ ...r, donor_name: S.donorFullName(r) }));
-      e.messages = all(db, `SELECT im.*, (SELECT COUNT(*) FROM donor_messages WHERE impact_message_id = im.id) AS delivered,
-          (SELECT COUNT(*) FROM donor_messages WHERE impact_message_id = im.id AND read_at IS NOT NULL) AS read_count
-        FROM impact_messages im WHERE im.expenditure_id = ? ORDER BY im.id`, expId);
-      return e;
-    }, staff],
-    ['DELETE', '/api/admin/expenditures/:id', (ctx) => S.reverseExpenditure(db, id(ctx.params.id), ctx.actor), admin],
-    ['POST', '/api/admin/expenditures/:id/messages', (ctx) => S.addImpactMessage(db, id(ctx.params.id), ctx.body, ctx.actor), staff],
-    ['DELETE', '/api/admin/messages/:id', (ctx) => {
-      run(db, 'DELETE FROM impact_messages WHERE id = ?', id(ctx.params.id));
-      S.audit(db, ctx.actor, 'impactbericht_verwijderd', 'impact_message', id(ctx.params.id));
-    }, staff],
 
     // ================================================================ BEHEER: ONTVANGERS
     ['GET', '/api/admin/recipients', () => all(db, `SELECT r.*,
@@ -946,8 +894,8 @@ function buildRoutes({ db, uploadDir }) {
           const d = get(db, 'SELECT * FROM donors WHERE id = ?', r.donor_id);
           return { ...r, full_name: S.donorFullName(d) };
         }),
-        messageStats: get(db, `SELECT (SELECT COUNT(*) FROM donor_messages) AS delivered,
-          (SELECT COUNT(*) FROM donor_messages WHERE read_at IS NOT NULL) AS read`),
+        messageStats: get(db, `SELECT (SELECT COUNT(*) FROM child_updates WHERE donor_id IS NOT NULL AND strftime('%Y', created_at) = ?) AS delivered,
+          (SELECT COUNT(*) FROM child_updates WHERE donor_id IS NOT NULL AND read_at IS NOT NULL AND strftime('%Y', created_at) = ?) AS read`, year, year),
       };
     }, staff],
 

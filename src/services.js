@@ -239,7 +239,7 @@ function spend(db, input, actor, userId = null) {
     }
 
     const recipient = input.recipient_id ? get(db, 'SELECT * FROM recipients WHERE id = ?', input.recipient_id) : null;
-    for (const [donorId, cents] of perDonor) {
+    for (const [donorId, cents] of input.notify === false ? [] : perDonor) {
       const donor = get(db, 'SELECT * FROM donors WHERE id = ?', donorId);
       sendMail(db, donor, `Je donatie is besteed: ${cat.name}`,
         `Beste ${donor.first_name || donorFullName(donor)},\n\n${euro(cents)} uit jouw cel is zojuist besteed aan ` +

@@ -375,6 +375,55 @@ async function renderSponsorConfig() {
   };
 }
 
+// ======================================================================= NOODFONDS
+async function renderNoodfonds() {
+  const d = await api('/api/admin/noodfonds');
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
+  }
+  const byMonth = Object.fromEntries(d.monthly.map((r) => [r.month, r.cents]));
+  view().innerHTML = `
+    ${pageHead('Noodfonds', { sub: 'Gezamenlijke pot voor orkanen en overstromingen, gevuld met het noodfondsdeel van elke sponsorbetaling.',
+    actions: btn('deploy', 'Noodhulp inzetten', { icon: 'cloud-lightning', kind: 'primary' }) })}
+    <div class="kpis">
+      <div class="kpi"><div class="label">${RF.icon('cloud-lightning')}Beschikbaar</div><div class="value">${euro0(d.balance_cents)}</div><div class="sub">direct inzetbaar</div></div>
+      <div class="kpi"><div class="label">${RF.icon('trending-up')}Totaal ingelegd</div><div class="value">${euro0(d.in_cents)}</div><div class="sub">sinds de start</div></div>
+      <div class="kpi"><div class="label">${RF.icon('hand-heart')}Totaal ingezet</div><div class="value">${euro0(d.out_cents)}</div><div class="sub">noodhulp verleend</div></div>
+      <div class="kpi"><div class="label">${RF.icon('house')}Inzetten</div><div class="value">${num(d.deployments)}</div><div class="sub">keer noodhulp</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Inleg per maand</h2><div class="small muted">Laatste 12 maanden</div></div></div>
+      ${RF.barChart(months.map((m) => RF.monthName(m.slice(5))), [{ label: 'Inleg', values: months.map((m) => byMonth[m] || 0), color: 'var(--accent)' }], { legend: false })}</div>
+    <div class="card flush" style="margin-top:16px"><div class="card-head"><h2>Ingezette noodhulp</h2></div>
+      ${table([
+        { label: 'Datum', render: (e) => `<span class="muted">${date(e.spent_at)}</span>` },
+        { label: 'Gezin', render: (e) => (e.family_name ? `<b>${esc(e.family_name)}</b><span class="sub">${esc([e.location, e.province].filter(Boolean).join(', '))}</span>` : '<span class="muted">Meerdere gezinnen</span>') },
+        { label: 'Omschrijving', render: (e) => `<span class="muted">${esc(e.description)}</span>` },
+        { label: 'Door', render: (e) => `<span class="muted">${esc(e.created_by_name || '')}</span>` },
+        { label: 'Bedrag', num: true, render: (e) => `<b style="font-weight:600">${euro(e.amount_cents)}</b>` },
+        { label: '', render: (e) => (isAdmin() ? `<button class="icon-btn" data-undo="${e.id}" aria-label="Terugdraaien" title="Terugdraaien">${RF.icon('undo-2')}</button>` : '') },
+      ], d.items, { empty: 'Nog geen noodhulp ingezet', emptyIcon: 'cloud-lightning' })}</div>`;
+  $('#deploy').onclick = () => modal({
+    title: 'Noodhulp inzetten', submitLabel: 'Vastleggen',
+    body: `<div class="impact-preview">${RF.icon('cloud-lightning')}<span>Beschikbaar in het noodfonds: <b>${euro(d.balance_cents)}</b></span></div>
+      <div class="field-row"><div class="field"><label>Bedrag (€)</label><input type="text" name="amount" inputmode="decimal" required></div>
+        <div class="field"><label>Datum</label><input type="date" name="spent_at" value="${today()}"></div></div>
+      <div class="field"><label>Gezin (optioneel)</label><select name="recipient_id">${opt('', '— meerdere gezinnen / algemeen —', '')}${families().map((f) => opt(f.id, `${f.name}${f.location ? ` (${f.location})` : ''}`, '')).join('')}</select></div>
+      <div class="field"><label>Omschrijving</label><textarea name="description" rows="3" required placeholder="bv. Tyfoon: rijst, drinkwater en zeil voor 40 gezinnen in Borongan"></textarea></div>`,
+    onSubmit: async (f) => {
+      await api('/api/admin/noodfonds', { method: 'POST', body: { amount_cents: toCents(f.amount), spent_at: f.spent_at, recipient_id: f.recipient_id || null, description: f.description } });
+      toast('Noodhulp vastgelegd'); renderNoodfonds();
+    },
+  });
+  view().querySelectorAll('[data-undo]').forEach((b) => b.addEventListener('click', async () => {
+    if (!await confirmDialog('Deze inzet terugdraaien? Het bedrag gaat terug in het noodfonds.', 'Terugdraaien')) return;
+    try { await api(`/api/admin/noodfonds/${b.dataset.undo}`, { method: 'DELETE' }); toast('Teruggedraaid'); renderNoodfonds(); }
+    catch (ex) { toast(ex.message, 'error'); }
+  }));
+}
+
 // ======================================================================= registreren in admin.js
 Object.assign(ROUTES, {
   dashboard: renderSponsorDashboard,
@@ -382,6 +431,7 @@ Object.assign(ROUTES, {
   sponsorschappen: renderSponsorships,
   updates: renderUpdates,
   leaderboard: renderSponsorLeaderboard,
+  noodfonds: renderNoodfonds,
 });
 {
   const donors = ROUTES.donateurs;
@@ -389,7 +439,8 @@ Object.assign(ROUTES, {
     await donors(id);
     if (!id) return;
     const rows = await api(`/api/admin/sponsorships?donor_id=${id}`);
-    const host = view().querySelector('.grid.grid-1-2 > .stack:last-child') || view();
+    const host = view().querySelector('.grid.grid-1-2 > .stack');
+    if (!host) return;
     host.insertAdjacentHTML('afterbegin', `<div class="card"><div class="card-head"><h2>Sponsorkinderen</h2><span class="small muted">${rows.length ? `${euro(rows.reduce((t, s) => t + s.monthly_cents, 0))} per maand` : ''}</span></div>
       ${rows.length ? `<div class="list">${rows.map((s) => `<a class="list-row" href="#/kinderen/${s.child_id}">${childThumb(s)}<div class="grow"><div class="title">${esc(s.child_name)}</div>
         <div class="meta">Sinds ${date(s.started_at)} · ${s.months} ${s.months === 1 ? 'maand' : 'maanden'}</div></div>${badge('sponsorship', s.status)}</a>`).join('')}</div>`

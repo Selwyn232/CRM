@@ -348,6 +348,30 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
       run(db, 'DELETE FROM child_updates WHERE id = ?', id(ctx.params.id));
       S.audit(db, ctx.actor, 'kindupdate_verwijderd', 'child_update', id(ctx.params.id));
     }, staff],
+    // Noodfonds: één gezamenlijke pot (gevuld met het noodfondsdeel van elke sponsorbetaling).
+    ['GET', '/api/admin/noodfonds', () => {
+      const t = get(db, `SELECT
+        COALESCE((SELECT SUM(remaining_cents) FROM cells WHERE category_key = 'noodfonds'),0) AS balance_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM cells WHERE category_key = 'noodfonds'),0) AS in_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE category_key = 'noodfonds'),0) AS out_cents,
+        (SELECT COUNT(*) FROM expenditures WHERE category_key = 'noodfonds') AS deployments`);
+      const monthly = all(db, `SELECT strftime('%Y-%m', created_at) AS month, SUM(amount_cents) AS cents FROM cells
+        WHERE category_key = 'noodfonds' AND created_at >= date('now','start of month','-11 months') GROUP BY month ORDER BY month`);
+      const items = all(db, `SELECT e.id, e.amount_cents, e.description, e.spent_at, e.created_at, r.id AS family_id, r.name AS family_name,
+          r.location, r.province, u.name AS created_by_name
+        FROM expenditures e LEFT JOIN recipients r ON r.id = e.recipient_id LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.category_key = 'noodfonds' ORDER BY e.spent_at DESC, e.id DESC LIMIT 500`);
+      return { ...t, monthly, items };
+    }, staff],
+    ['POST', '/api/admin/noodfonds', (ctx) => S.spend(db, {
+      category_key: 'noodfonds', amount_cents: ctx.body.amount_cents, recipient_id: ctx.body.recipient_id || null,
+      description: str(ctx.body.description, 2000), spent_at: /^\d{4}-\d{2}-\d{2}$/.test(ctx.body.spent_at || '') ? ctx.body.spent_at : null, notify: false,
+    }, ctx.actor, ctx.user.id), staff],
+    ['DELETE', '/api/admin/noodfonds/:id', (ctx) => {
+      const e = get(db, "SELECT id FROM expenditures WHERE id = ? AND category_key = 'noodfonds'", id(ctx.params.id));
+      if (!e) throw new AppError(404, 'Inzet niet gevonden');
+      return S.reverseExpenditure(db, e.id, ctx.actor);
+    }, admin],
     ['GET', '/api/admin/leaderboard', () => SP.leaderboard(db, { limit: 500 })
       .map((r) => ({ ...r, full_name: S.donorFullName(get(db, 'SELECT * FROM donors WHERE id = ?', r.donor_id)) })), staff],
   ];

@@ -38,8 +38,7 @@ const NAV = [
     { route: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   ] },
   { group: 'Noodfonds', items: [
-    { route: 'cellen', label: 'Noodfonds', icon: 'cloud-lightning', count: 'cells' },
-    { route: 'bestedingen', label: 'Bestedingen', icon: 'hand-coins' },
+    { route: 'noodfonds', label: 'Noodfonds', icon: 'cloud-lightning' },
   ] },
   { group: 'Werk', items: [
     { route: 'taken', label: 'Taken', icon: 'list-checks', count: 'tasks' },
@@ -228,7 +227,7 @@ async function refreshNavCounts() {
   try {
     const d = await api('/api/admin/dashboard');
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || ''; };
-    set('nav-cells', d.totals.open_cells); set('nav-tasks', d.totals.open_tasks); set('nav-chat', d.totals.pending_chats);
+    set('nav-tasks', d.totals.open_tasks); set('nav-chat', d.totals.pending_chats);
     api('/api/onboarding?status=ingediend').then((r) => set('nav-onb', r.length)).catch(() => {});
   } catch { /* stil */ }
 }
@@ -237,16 +236,12 @@ const catByKey = (k) => state.categories.find((c) => c.key === k) || { name: k, 
 const isAdmin = () => state.user && state.user.role === 'admin';
 
 const ROUTES = {
-  dashboard: renderDashboard,
   donateurs: (id) => (id ? renderDonor(id) : renderDonors()),
   donaties: renderDonations,
-  cellen: renderCells,
-  bestedingen: (id) => (id ? renderExpenditure(id) : renderExpenditures()),
   ontvangers: renderRecipients,
   chat: renderChatModeration,
   taken: renderTasks,
   campagnes: renderCampaigns,
-  leaderboard: renderLeaderboard,
   rapportages: renderReports,
   emails: renderOutbox,
   instellingen: renderSettings,
@@ -320,7 +315,7 @@ function openCommandPalette() {
   const actions = [
     { label: 'Nieuwe donateur', icon: 'user-plus', run: () => donorForm({}, (d) => go(`#/donateurs/${d.id}`)) },
     { label: 'Donatie registreren', icon: 'plus', run: () => donationForm({}, () => route()) },
-    { label: 'Geld besteden', icon: 'hand-coins', run: () => spendForm({}, (r) => go(`#/bestedingen/${r.id}`)) },
+    { label: 'Noodhulp inzetten', icon: 'cloud-lightning', run: () => go('#/noodfonds') },
     { label: 'Nieuwe taak', icon: 'list-checks', run: () => taskForm({}, () => route()) },
     { label: 'Menu aanpassen', icon: 'arrow-down-up', run: editNav },
   ];
@@ -378,7 +373,7 @@ const searchInput = (id, placeholder, value = '') => `<span class="input-icon">$
 // ------------------------------------------------------------------ helpers
 const opt = (value, text, selected) => `<option value="${esc(value)}" ${String(selected) === String(value) ? 'selected' : ''}>${esc(text)}</option>`;
 const catOptions = (sel, withAll = false) => (withAll ? opt('', 'Alle bestemmingen', sel) : '') +
-  state.categories.map((c) => opt(c.key, c.name, sel)).join('');
+  state.categories.filter((c) => c.active).map((c) => opt(c.key, c.name, sel)).join('');
 const labelOptions = (group, sel, withAll) => (withAll ? opt('', withAll, sel) : '') +
   Object.entries(RF.LABELS[group]).map(([k, v]) => opt(k, v, sel)).join('');
 const userOptions = (sel) => opt('', '— niemand —', sel) + state.users.filter((u) => u.active).map((u) => opt(u.id, u.name, sel)).join('');
@@ -409,103 +404,9 @@ const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Goede
 const firstName = (n) => String(n || '').split(' ')[0];
 const ago = (days) => (days <= 0 ? 'vandaag' : days === 1 ? '1 dag' : `${days} dagen`);
 
-async function renderDashboard() {
-  const d = await api('/api/admin/dashboard');
-  const t = d.totals;
-  const months = [];
-  const now = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
-  }
-  const byMonth = Object.fromEntries(d.monthly.map((r) => [r.month, r.cents]));
-  const spentByMonth = Object.fromEntries(d.monthlySpent.map((r) => [r.month, r.cents]));
-  const thisM = byMonth[months[11]] || 0;
-  const lastM = byMonth[months[10]] || 0;
-  const delta = lastM ? Math.round(((thisM - lastM) / lastM) * 100) : null;
-  const spentShare = t.raised_cents ? Math.round((t.spent_cents / t.raised_cents) * 100) : 0;
-  const todayLabel = now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
-
-  view().innerHTML = `
-    ${pageHead(`${greeting()}, ${esc(firstName(state.user.name))}`, {
-      sub: `${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)} · zo staat Robin Foundation ervoor`,
-      actions: btn('q-donation', 'Donatie', { icon: 'plus' }) + btn('q-spend', 'Geld besteden', { icon: 'hand-coins', kind: 'primary' }),
-    })}
-    <div class="kpis">
-      <div class="kpi"><div class="label">${RF.icon('banknote')}Totaal opgehaald</div><div class="value">${euro0(t.raised_cents)}</div>
-        <div class="sub">${euro0(t.raised_ytd_cents)} dit jaar</div></div>
-      <div class="kpi"><div class="label">${RF.icon('piggy-bank')}In cellen</div><div class="value">${euro0(t.waiting_cents)}</div>
-        <div class="sub">${num(t.open_cells)} open cellen wachten op besteding</div></div>
-      <div class="kpi"><div class="label">${RF.icon('hand-coins')}Besteed</div><div class="value">${euro0(t.spent_cents)}</div>
-        <div class="sub">${spentShare}% van alle giften</div></div>
-      <div class="kpi"><div class="label">${RF.icon('users')}Donateurs</div><div class="value">${num(t.donors)}</div>
-        <div class="sub">${t.active_donors} actief · ${t.recurring_donors} terugkerend</div></div>
-    </div>
-
-    <div class="grid grid-2-1" style="margin-top:16px">
-      <div class="card">
-        <div class="card-head"><div><h2>Inkomsten en bestedingen</h2>
-          <div class="small muted">Laatste 12 maanden · deze maand ${euro0(thisM)}${delta != null ? ` <span style="font-weight:500;color:var(--${delta >= 0 ? 'ok' : 'bad'})">${delta >= 0 ? '↑' : '↓'} ${Math.abs(delta)}% t.o.v. vorige maand</span>` : ''}</div></div>
-          <div class="legend"><span><i style="background:var(--accent)"></i>Ontvangen</span><span><i style="background:var(--accent-muted)"></i>Besteed</span></div></div>
-        ${RF.barChart(months.map((m) => RF.monthName(m.slice(5))), [
-          { label: 'Ontvangen', values: months.map((m) => byMonth[m] || 0), color: 'var(--accent)' },
-          { label: 'Besteed', values: months.map((m) => spentByMonth[m] || 0), color: 'var(--accent-muted)' },
-        ], { legend: false })}
-      </div>
-      <div class="card">
-        <div class="card-head"><h2>Aandacht nodig</h2></div>
-        <div class="list">
-          ${attentionRow('#/cellen', 'piggy-bank', `${num(t.open_cells)} open cellen`, `${euro0(t.waiting_cents)} wacht op besteding`)}
-          ${attentionRow('#/bestedingen', 'mail-open', `${t.expenditures_without_message} ${t.expenditures_without_message === 1 ? 'besteding' : 'bestedingen'} zonder bericht`, 'Koppel een brief, foto of filmpje', t.expenditures_without_message)}
-          ${attentionRow('#/chat', 'messages-square', `${t.pending_chats} ${t.pending_chats === 1 ? 'chatbericht' : 'chatberichten'}`, 'Wachten op controle', t.pending_chats)}
-          ${attentionRow('#/taken', 'list-checks', `${t.open_tasks} open ${t.open_tasks === 1 ? 'taak' : 'taken'}`, t.overdue_tasks ? `${t.overdue_tasks} te laat` : 'Niets te laat', t.overdue_tasks)}
-          ${attentionRow('#/donaties', 'clock', `${euro0(t.pending_cents)} in afwachting`, 'Donaties die nog niet binnen zijn', t.pending_cents)}
-        </div>
-      </div>
-    </div>
-
-    <div class="card flush" style="margin-top:16px">
-      <div class="card-head"><h2>Saldo per bestemming</h2><a href="#/cellen">Alle cellen ${RF.icon('arrow-right', 'icon-sm')}</a></div>
-      ${table([
-        { label: 'Bestemming', render: (c) => `<span class="cat-name">${RF.catIcon(c)}<span><b style="font-weight:500">${esc(c.name)}</b><span class="sub">${c.unit_cost_cents ? `${euro(c.unit_cost_cents)} per ${esc(c.unit_label)}` : 'Vrij bedrag'}</span></span></span>` },
-        { label: 'Verdeling', width: '28%', render: (c) => `<div style="min-width:120px">${RF.splitBar(c.spent_cents, c.waiting_cents)}</div>` },
-        { label: 'Impact', render: (c) => `<span class="muted">${c.unit_cost_cents ? `${num(c.units_spent)} ${esc(c.unit_label_plural)}` : `${euro0(c.spent_cents)} noodhulp`}</span>` },
-        { label: 'Besteed', num: true, render: (c) => euro0(c.spent_cents) },
-        { label: 'In cel', num: true, render: (c) => `<b style="font-weight:600">${euro0(c.waiting_cents)}</b>` },
-      ], d.categories)}
-    </div>
-
-    <div class="grid grid-3" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h2>Recente donaties</h2><a href="#/donaties">Alles</a></div>
-        <div class="list">${d.recent.slice(0, 6).map((r) => `<a class="list-row" href="#/donateurs/${r.donor_id}">${RF.catIcon(r, 'sm')}
-          <div class="grow"><div class="title">${esc(r.donor_name)}</div><div class="meta">${esc(r.category_name)} · ${date(r.received_at)}</div></div>
-          <div class="end">${euro(r.amount_cents)}</div></a>`).join('') || RF.emptyState({ icon: 'banknote', title: 'Nog geen donaties' })}</div></div>
-      <div class="card"><div class="card-head"><h2>Langst wachtende cellen</h2><a href="#/cellen">Alles</a></div>
-        <div class="list">${d.oldestCells.map((r) => `<a class="list-row" href="#/donateurs/${r.donor_id}">${RF.catIcon(r, 'sm')}
-          <div class="grow"><div class="title">${esc(r.donor_name)}</div><div class="meta">${esc(r.category_name)} · wacht ${ago(r.age_days)}</div></div>
-          <div class="end">${euro(r.remaining_cents)}</div></a>`).join('') || RF.emptyState({ icon: 'check-check', title: 'Alles is besteed' })}</div></div>
-      <div class="card"><div class="card-head"><h2>Open taken</h2><a href="#/taken">Alles</a></div>
-        <div class="list">${d.tasks.slice(0, 6).map((r) => `<a class="list-row" href="${r.donor_id ? `#/donateurs/${r.donor_id}` : '#/taken'}">
-          <span style="color:${r.due_date && r.due_date < today() ? 'var(--bad)' : 'var(--text-4)'}">${RF.icon('circle')}</span>
-          <div class="grow"><div class="title">${esc(r.title)}</div><div class="meta">${r.donor_name ? `${esc(r.donor_name)} · ` : ''}${r.due_date ? date(r.due_date) : 'Geen deadline'}</div></div>
-          ${r.priority === 'hoog' ? '<span class="badge badge-hoog">Hoog</span>' : ''}</a>`).join('') || RF.emptyState({ icon: 'check-check', title: 'Geen open taken' })}</div></div>
-    </div>`;
-  $('#q-donation').onclick = () => donationForm({}, () => renderDashboard());
-  $('#q-spend').onclick = () => spendForm({}, () => renderDashboard());
-}
-
 function attentionRow(href, ic, title, meta, highlight = true) {
   return `<a class="list-row" href="${href}"><span class="cat-ico sm" style="--c:${highlight ? 'var(--accent)' : 'var(--text-4)'}">${RF.icon(ic)}</span>
     <div class="grow"><div class="title">${title}</div><div class="meta">${meta}</div></div><span class="muted">${RF.icon('chevron-right', 'icon-sm')}</span></a>`;
-}
-
-function catTile(c) {
-  const units = c.unit_cost_cents ? `${num(c.units_spent)} ${c.unit_label_plural} gefinancierd` : `${euro0(c.spent_cents)} noodhulp verleend`;
-  return `<div class="card cat-tile"><div class="top">${RF.catIcon(c, 'lg')}<div><div class="name">${esc(c.name)}</div>
-      <div class="small muted">${c.unit_cost_cents ? `${euro(c.unit_cost_cents)} per ${esc(c.unit_label)}` : 'Vrij bedrag'}</div></div></div>
-    ${RF.splitBar(c.spent_cents, c.waiting_cents)}
-    <div class="nums"><span>Besteed ${euro0(c.spent_cents)}</span><span>In cel ${euro0(c.waiting_cents)}</span></div>
-    <div class="small muted">${units}</div></div>`;
 }
 
 // ======================================================================= DONATEURS
@@ -541,7 +442,7 @@ async function renderDonors() {
         r.anonymous ? `<span class="tag" title="Anoniem op het leaderboard">${RF.icon('eye-off', 'icon-sm')}&nbsp;Anoniem</span>` : '',
       ].join('') || '<span class="muted">—</span>' },
       { label: 'Laatste gift', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
-      { label: 'In cel', num: true, render: (r) => `<span class="muted">${euro(r.waiting_cents)}</span>` },
+      { label: 'Kinderen', num: true, render: (r) => `<span class="muted">${r.children || '—'}</span>` },
       { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
     ], rows, { empty: 'Geen donateurs gevonden', emptyIcon: 'users', onRow: true }) +
       `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'donateur' : 'donateurs'}</span><span>Samen ${euro(total)} gedoneerd</span></div>`;
@@ -609,10 +510,9 @@ function donorForm(d, done) {
 async function renderDonor(donorId) {
   const data = await api(`/api/admin/donors/${donorId}`);
   const d = data.donor;
-  const totals = data.impact.reduce((a, r) => ({ donated: a.donated + r.donated_cents, waiting: a.waiting + r.waiting_cents, spent: a.spent + r.spent_cents }), { donated: 0, waiting: 0, spent: 0 });
+  const totals = { donated: data.donations.filter((x) => x.status === 'ontvangen').reduce((a, x) => a + x.amount_cents, 0) };
   const year = new Date().getFullYear();
 
-  const messages = new Set(data.journey.flatMap((j) => j.messages.map((m) => m.id))).size;
   const addr = [d.street, `${d.postal_code || ''} ${d.city || ''}`.trim(), d.country].filter(Boolean).join(', ');
   const prop = (ic, k, v) => `<dt>${RF.icon(ic)}${k}</dt><dd>${v || '<span class="muted">—</span>'}</dd>`;
   const openTasks = data.tasks.filter((t) => t.status !== 'afgerond').length;
@@ -628,16 +528,15 @@ async function renderDonor(donorId) {
             ${tags(d.tags)}</div></div></div>
       <div class="toolbar">
         ${btn('edit', 'Bewerken', { icon: 'pencil' })}
-        ${btn('spend-donor', 'Geld besteden', { icon: 'hand-coins' })}
-        ${btn('add-donation', 'Donatie', { icon: 'plus', kind: 'primary' })}
+        ${btn('add-donation', 'Losse gift', { icon: 'plus' })}
         <button class="btn btn-ghost" id="more" aria-label="Meer acties" aria-haspopup="menu" style="padding:0 8px">${RF.icon('ellipsis')}</button>
       </div>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="label">Totaal gedoneerd</div><div class="value">${euro(totals.donated)}</div><div class="sub">${data.donations.length} ${data.donations.length === 1 ? 'gift' : 'giften'}</div></div>
-      <div class="kpi"><div class="label">Besteed</div><div class="value">${euro(totals.spent)}</div><div class="sub">${totals.donated ? Math.round((totals.spent / totals.donated) * 100) : 0}% van het totaal</div></div>
-      <div class="kpi"><div class="label">Nog in cellen</div><div class="value">${euro(totals.waiting)}</div><div class="sub">Wacht op besteding</div></div>
-      <div class="kpi"><div class="label">Berichten ontvangen</div><div class="value">${messages}</div><div class="sub">Brieven, foto's en filmpjes</div></div>
+      <div class="kpi"><div class="label">Sponsorkinderen</div><div class="value">${data.sponsor.children}</div><div class="sub">${euro(data.sponsor.monthly_cents)} per maand</div></div>
+      <div class="kpi"><div class="label">Maanden gesponsord</div><div class="value">${data.sponsor.months}</div><div class="sub">alle kinderen samen</div></div>
+      <div class="kpi"><div class="label">Totaal betaald</div><div class="value">${euro(totals.donated)}</div><div class="sub">${data.donations.length} ${data.donations.length === 1 ? 'betaling' : 'betalingen'}</div></div>
+      <div class="kpi"><div class="label">Leaderboard</div><div class="value">${data.rank ? `#${data.rank}` : '—'}</div><div class="sub">${d.anonymous ? 'anoniem' : 'met naam'}</div></div>
     </div>
     <div class="grid grid-1-2" style="margin-top:16px">
       <div class="stack">
@@ -655,13 +554,6 @@ async function renderDonor(donorId) {
           </dl>
           ${d.notes ? `<hr><div class="small muted" style="margin-bottom:4px">Notities</div><p style="white-space:pre-line;margin:0">${esc(d.notes)}</p>` : ''}
         </div>
-        <div class="card"><div class="card-head"><h2>Impact per bestemming</h2></div>
-          ${data.impact.filter((r) => r.donated_cents).map((r) => `<div style="margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${RF.catLabel(r, r.name)}<b class="num" style="font-weight:600">${euro(r.donated_cents)}</b></div>
-            ${RF.splitBar(r.spent_cents, r.waiting_cents)}
-            <div class="small muted" style="margin-top:6px">${r.units_funded ? `${esc(RF.unitsText(r, r.units_funded))} gefinancierd · ` : ''}${euro(r.waiting_cents)} in cel</div></div>`).join('')
-            || '<p class="muted small" style="margin:0">Nog geen donaties.</p>'}
-        </div>
         <div class="card"><div class="card-head"><h2>Taken${openTasks ? ` <span class="tab-count" style="font-size:12px;color:var(--text-3)">${openTasks}</span>` : ''}</h2>${btn('add-task', '', { icon: 'plus', size: 'sm' })}</div>
           ${data.tasks.length ? data.tasks.map((t) => `<label class="check" style="margin-bottom:10px">
             <input type="checkbox" data-task="${t.id}" ${t.status === 'afgerond' ? 'checked' : ''}>
@@ -672,18 +564,15 @@ async function renderDonor(donorId) {
       </div>
       <div class="card">
         <div class="tabs" id="tabs" role="tablist">
-          <button data-tab="journey" class="active" role="tab">Geldstroom</button>
-          <button data-tab="donations" role="tab">Donaties <span class="tab-count">${data.donations.length}</span></button>
+          <button data-tab="donations" class="active" role="tab">Betalingen <span class="tab-count">${data.donations.length}</span></button>
           <button data-tab="interactions" role="tab">Contactmomenten <span class="tab-count">${data.interactions.length}</span></button>
           <button data-tab="emails" role="tab">E-mails <span class="tab-count">${data.emails.length}</span></button>
         </div>
-        <div id="tab-journey">${journeyHtml(data.journey)}</div>
-        <div id="tab-donations" class="hidden">
+        <div id="tab-donations">
           ${table([
             { label: 'Datum', render: (r) => `<span class="muted">${date(r.received_at)}</span>` },
             { label: 'Bestemming', render: (r) => `${RF.catLabel(r)}${r.campaign_name ? `<span class="sub">${esc(r.campaign_name)}</span>` : ''}` },
             { label: 'Status', render: (r) => badge('donation', r.status) },
-            { label: 'Cel', render: (r) => (r.cell_id ? `${badge('cell', r.cell_status)}<span class="sub">${euro(r.remaining_cents)} over</span>` : '<span class="muted">—</span>') },
             { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b><span class="sub">${esc(label('frequency', r.frequency))}</span>` },
             { label: '', render: (r) => `<button class="icon-btn" data-edit-donation="${r.id}" aria-label="Donatie bewerken" title="Bewerken">${RF.icon('pencil')}</button>` },
           ], data.donations, { empty: 'Nog geen donaties', emptyIcon: 'banknote' })}
@@ -710,16 +599,11 @@ async function renderDonor(donorId) {
     const b = e.target.closest('button[data-tab]');
     if (!b) return;
     tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-    ['journey', 'donations', 'interactions', 'emails'].forEach((t) => $(`#tab-${t}`).classList.toggle('hidden', t !== b.dataset.tab));
+    ['donations', 'interactions', 'emails'].forEach((t) => $(`#tab-${t}`).classList.toggle('hidden', t !== b.dataset.tab));
   });
   const reload = () => renderDonor(donorId);
   $('#edit').onclick = () => donorForm(d, reload);
   $('#add-donation').onclick = () => donationForm({ donor_id: d.id }, reload);
-  $('#spend-donor').onclick = () => {
-    const withMoney = data.impact.find((r) => r.waiting_cents > 0);
-    if (!withMoney) { toast('Deze donateur heeft geen geld meer in de cellen', 'error'); return; }
-    spendForm({ donor_id: d.id, category_key: withMoney.key }, reload);
-  };
   $('#add-task').onclick = () => taskForm({ donor_id: d.id }, reload);
   $('#add-interaction').onclick = () => interactionForm(d.id, reload);
   const annual = () => annualModal(`/api/admin/donors/${d.id}/annual`, year);
@@ -765,19 +649,6 @@ async function renderDonor(donorId) {
   ]);
 }
 
-function journeyHtml(journey) {
-  if (!journey.length) return RF.emptyState({ icon: 'piggy-bank', title: 'Nog niets besteed', text: 'Het geld van deze donateur staat veilig in de cellen tot het wordt uitgegeven.' });
-  return `<ul class="timeline">${journey.map((j) => `<li>
-    <div class="when">${date(j.spent_at)} · gedoneerd ${date(j.donated_at)} · cel #${j.cell_id}</div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b class="num" style="font-weight:600">${euro(j.amount_cents)}</b>
-      <span class="muted">${RF.icon('arrow-right', 'icon-sm')}</span>${RF.catLabel(j)}${j.recipient_name ? `<span class="muted">voor</span><b style="font-weight:500">${esc(j.recipient_name)}</b>` : ''}
-      <a class="small" href="#/bestedingen/${j.expenditure_id}" style="margin-left:auto">Besteding #${j.expenditure_id}</a></div>
-    <div class="small muted" style="margin-top:2px">${esc(j.description)}${j.units ? ` · ${Math.round(j.share * 100)}% van ${esc(RF.unitsText(j, j.units))}` : ''}</div>
-    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${j.messages.length ? j.messages.map((m) => `<span class="tag">${RF.icon(RF.MESSAGE_ICONS[m.type] || 'mail', 'icon-sm')}&nbsp;${esc(m.title)}&nbsp;·&nbsp;${m.read_at ? 'gelezen' : 'ongelezen'}</span>`).join('')
-      : '<span class="badge badge-wachtend">Wacht op bericht van ontvanger</span>'}</div>
-  </li>`).join('')}</ul>`;
-}
-
 function interactionForm(donorId, done) {
   modal({
     title: 'Contactmoment vastleggen',
@@ -820,12 +691,12 @@ async function annualModal(url, year) {
 function donationForm(d, done) {
   const isNew = !d.id;
   modal({
-    title: isNew ? 'Donatie registreren' : `Donatie #${d.id} bewerken`, wide: true,
+    title: isNew ? 'Losse gift aan het noodfonds' : `Betaling #${d.id} bewerken`, wide: true,
     body: `
       ${isNew && !d.donor_id ? `<div class="field"><label>Donateur</label><input type="search" id="donor-search" placeholder="Zoek donateur…" autocomplete="off">
         <input type="hidden" name="donor_id"><div id="donor-results" class="small"></div></div>` : `<input type="hidden" name="donor_id" value="${esc(d.donor_id)}">`}
       <div class="field-row">
-        <div class="field"><label>Bestemming</label><select name="category_key">${catOptions(d.category_key)}</select></div>
+        <input type="hidden" name="category_key" value="${esc(d.category_key || 'noodfonds')}">
         <div class="field"><label>Bedrag (€)</label><input type="text" name="amount" inputmode="decimal" required value="${d.amount_cents ? centsToInput(d.amount_cents) : ''}"></div>
         <div class="field"><label>Datum ontvangen</label><input type="date" name="received_at" value="${esc(d.received_at || today())}"></div>
       </div>
@@ -834,12 +705,9 @@ function donationForm(d, done) {
         <div class="field"><label>Frequentie</label><select name="frequency">${labelOptions('frequency', d.frequency || 'eenmalig')}</select></div>
         <div class="field"><label>Status</label><select name="status">${labelOptions('donation', d.status || 'ontvangen')}</select></div>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Campagne</label><select name="campaign_id">${campaignOptions(d.campaign_id)}</select></div>
-        <div class="field"><label>Referentie / kenmerk</label><input type="text" name="reference" value="${esc(d.reference || '')}"></div>
-      </div>
+      <div class="field"><label>Referentie / kenmerk</label><input type="text" name="reference" value="${esc(d.reference || '')}"></div>
       <div class="field"><label>Notitie</label><input type="text" name="note" value="${esc(d.note || '')}"></div>
-      <p class="hint">Bij status <b>Ontvangen</b> wordt het geld automatisch in een eigen cel gezet tot het wordt besteed, en krijgt de donateur een bedankmail.</p>
+      <p class="hint">${(d.category_key || 'noodfonds') === 'noodfonds' ? 'Een losse gift gaat naar het noodfonds; de donateur krijgt een bedankmail.' : 'Sponsorbetalingen beheer je bij Sponsorschappen.'}</p>
       ${!isNew && isAdmin() ? '<button type="button" class="btn btn-danger btn-sm" id="del-donation">Donatie verwijderen</button>' : ''}`,
     onOpen: (form, close) => {
       const search = $('#donor-search', form);
@@ -867,10 +735,10 @@ function donationForm(d, done) {
     },
     onSubmit: async (f) => {
       if (!f.donor_id) throw new Error('Kies een donateur');
-      const body = { ...f, amount_cents: toCents(f.amount), campaign_id: f.campaign_id || null };
+      const body = { ...f, amount_cents: toCents(f.amount) };
       delete body.amount;
       await api(isNew ? '/api/admin/donations' : `/api/admin/donations/${d.id}`, { method: isNew ? 'POST' : 'PUT', body });
-      toast(isNew ? 'Donatie geregistreerd en in cel gezet' : 'Donatie bijgewerkt');
+      toast(isNew ? 'Gift geregistreerd' : 'Betaling bijgewerkt');
       done(); refreshNavCounts();
     },
   });
@@ -878,7 +746,7 @@ function donationForm(d, done) {
 
 async function renderDonations() {
   view().innerHTML = `
-    ${pageHead('Donaties', { sub: 'Alle giften, met de status van hun cel', actions: btn('export', 'Exporteren', { icon: 'download' }) + btn('new', 'Donatie registreren', { icon: 'plus', kind: 'primary' }) })}
+    ${pageHead('Betalingen', { sub: 'Alle sponsorbetalingen en losse giften aan het noodfonds', actions: btn('export', 'Exporteren', { icon: 'download' }) + btn('new', 'Losse gift', { icon: 'plus', kind: 'primary' }) })}
     <div class="card flush">
       <div class="filters">
         ${searchInput('f-q', 'Zoek donateur of referentie')}
@@ -886,13 +754,12 @@ async function renderDonations() {
         <select id="f-status">${labelOptions('donation', '', 'Alle statussen')}</select>
         <select id="f-method">${labelOptions('method', '', 'Alle betaalwijzen')}</select>
         <select id="f-freq">${labelOptions('frequency', '', 'Alle frequenties')}</select>
-        <select id="f-camp">${opt('', 'Alle campagnes', '')}${state.campaigns.map((c) => opt(c.id, c.name)).join('')}</select>
         <input type="date" id="f-from" title="Vanaf" aria-label="Vanaf"><input type="date" id="f-to" title="Tot en met" aria-label="Tot en met">
       </div>
       <div id="tbl">${RF.skeleton('rows')}</div>
     </div>`;
   const qs = () => new URLSearchParams({ q: $('#f-q').value, category: $('#f-cat').value, status: $('#f-status').value, method: $('#f-method').value,
-    frequency: $('#f-freq').value, campaign: $('#f-camp').value, from: $('#f-from').value, to: $('#f-to').value });
+    frequency: $('#f-freq').value, from: $('#f-from').value, to: $('#f-to').value });
   const load = async () => {
     const rows = await api(`/api/admin/donations?${qs()}`);
     const sum = rows.filter((r) => r.status === 'ontvangen').reduce((x, r) => x + r.amount_cents, 0);
@@ -902,10 +769,9 @@ async function renderDonations() {
       { label: 'Bestemming', render: (r) => `${RF.catLabel(r)}${r.campaign_name ? `<span class="sub">${esc(r.campaign_name)}</span>` : ''}` },
       { label: 'Betaling', render: (r) => `${esc(label('method', r.method))}<span class="sub">${esc(label('frequency', r.frequency))}</span>` },
       { label: 'Status', render: (r) => badge('donation', r.status) },
-      { label: 'Cel', render: (r) => (r.cell_id ? badge('cell', r.cell_status) : '<span class="muted">—</span>') },
       { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b>` },
     ], rows, { empty: 'Geen donaties gevonden', emptyIcon: 'banknote', onRow: true }) +
-      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'donatie' : 'donaties'}</span><span>Ontvangen: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'betaling' : 'betalingen'}</span><span>Ontvangen: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
     bindRows($('#tbl'), rows, (r) => donationForm(r, load));
   };
   $('#f-q').addEventListener('input', RF.debounce(load));
@@ -915,80 +781,7 @@ async function renderDonations() {
   await load();
 }
 
-// ======================================================================= CELLEN
-async function renderCells() {
-  view().innerHTML = `
-    ${pageHead('Cellen', { sub: 'Elke donatie staat in een eigen cel tot het geld echt wordt uitgegeven',
-      actions: `<span class="small muted" id="sel-info"></span>${btn('trigger', 'Selectie besteden', { icon: 'hand-coins', kind: 'primary' })}` })}
-    <div class="kpis" id="cat-summary"></div>
-    <div class="card flush" style="margin-top:16px">
-      <div class="filters">
-        <div class="seg" id="f-cat-seg" role="tablist" aria-label="Bestemming"></div>
-        <select id="f-status" style="margin-left:auto">${opt('open', 'Open (saldo over)', 'open')}${opt('', 'Alle cellen', '')}${labelOptions('cell', '')}</select>
-        <input type="hidden" id="f-cat" value="">
-      </div>
-      <div id="tbl">${RF.skeleton('rows')}</div>
-    </div>`;
-  $('#trigger').disabled = true;
-  const selected = new Map();
-  $('#cat-summary').innerHTML = state.categories.map((c) => `<div class="kpi">
-    <div class="label">${RF.catIcon(c, 'sm')}${esc(c.name)}</div><div class="value">${euro0(c.waiting_cents)}</div>
-    <div class="sub">${c.open_cells} open${c.unit_cost_cents ? ` · ruimte voor ${num(Math.floor(c.waiting_cents / c.unit_cost_cents))} ${esc(c.unit_label_plural)}` : ''}</div></div>`).join('');
-  const seg = $('#f-cat-seg');
-  seg.innerHTML = [`<button class="active" data-k="">Alle</button>`, ...state.categories.map((c) => `<button data-k="${esc(c.key)}">${esc(c.name.split(' ')[0])}</button>`)].join('');
-  seg.onclick = (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    seg.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-    $('#f-cat').value = b.dataset.k; load();
-  };
-
-  const updateSel = () => {
-    const cells = [...selected.values()];
-    const sum = cells.reduce((x, c) => x + c.remaining_cents, 0);
-    const cats = new Set(cells.map((c) => c.category_key));
-    $('#sel-info').innerHTML = cells.length ? `${cells.length} geselecteerd · <b style="color:var(--text)">${euro(sum)}</b>${cats.size > 1 ? ' · <span style="color:var(--bad)">kies één bestemming</span>' : ''}` : 'Selecteer cellen om te besteden';
-    $('#trigger').disabled = !cells.length || cats.size > 1;
-  };
-  const load = async () => {
-    const rows = await api(`/api/admin/cells?category=${$('#f-cat').value}&status=${$('#f-status').value}`);
-    selected.clear(); updateSel();
-    $('#tbl').innerHTML = table([
-      { label: '', width: '36px', render: (r) => (r.remaining_cents > 0 ? `<input type="checkbox" data-cell="${r.id}" aria-label="Selecteer cel ${r.id}">` : '') },
-      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.donor_name, 'sm')}<div class="grow">${donorLink(r.donor_id, r.donor_name)}<span class="sub">Cel #${r.id} · ${date(r.received_at)}</span></div></div>` },
-      { label: 'Bestemming', render: (r) => RF.catLabel(r) },
-      { label: 'Status', render: (r) => badge('cell', r.status) },
-      { label: 'Gebruikt', width: '16%', render: (r) => `<div style="min-width:90px">${RF.splitBar(r.amount_cents - r.remaining_cents, r.remaining_cents)}</div>` },
-      { label: 'Wacht', num: true, render: (r) => `<span class="muted">${r.remaining_cents > 0 ? ago(r.age_days) : '—'}</span>` },
-      { label: 'Saldo', num: true, render: (r) => `<b style="font-weight:600">${euro(r.remaining_cents)}</b><span class="sub">van ${euro(r.amount_cents)}</span>` },
-    ], rows, { empty: 'Geen cellen in deze selectie', emptyIcon: 'piggy-bank' });
-    $('#tbl').querySelectorAll('[data-cell]').forEach((cb) => cb.addEventListener('change', () => {
-      const cell = rows.find((r) => r.id === Number(cb.dataset.cell));
-      if (cb.checked) selected.set(cell.id, cell); else selected.delete(cell.id);
-      cb.closest('tr').style.background = cb.checked ? 'var(--accent-soft)' : '';
-      updateSel();
-    }));
-  };
-  $('#f-status').onchange = load;
-  $('#trigger').onclick = () => {
-    const cells = [...selected.values()];
-    spendForm({ category_key: cells[0].category_key, cells }, async () => { await loadLookups(); renderCells(); });
-  };
-  await load();
-}
-
-// ======================================================================= BESTEDINGEN
-function messageFields(prefix = '') {
-  return `
-    <div class="field-row">
-      <div class="field"><label>Type</label><select name="${prefix}type">${labelOptions('message', 'brief')}</select></div>
-      <div class="field" style="grid-column: span 2"><label>Titel</label><input type="text" name="${prefix}title" placeholder="bv. Een brief van Amara"></div>
-    </div>
-    <div class="field"><label>Tekst / transcriptie van de brief</label><textarea name="${prefix}body"></textarea></div>
-    <div class="field"><label>Media (foto, scan van brief, filmpje of PDF)</label>
-      <input type="file" data-upload="${prefix}media_url" accept="image/*,video/*,application/pdf">
-      <input type="url" name="${prefix}media_url" placeholder="…of plak een URL (bv. https://www.youtube.com/embed/…)" style="margin-top:6px">
-      <div class="hint" data-upload-status="${prefix}media_url"></div></div>`;
-}
+// ======================================================================= UPLOADS
 function bindUploads(form) {
   form.querySelectorAll('[data-upload]').forEach((input) => input.addEventListener('change', async () => {
     const file = input.files[0];
@@ -1002,180 +795,6 @@ function bindUploads(form) {
       status.textContent = `Geüpload (${Math.round(r.size / 1024)} kB)`;
     } catch (e) { status.textContent = `Uploaden mislukt: ${e.message}`; }
   }));
-}
-
-function spendForm(pre, done) {
-  const cells = pre.cells || [];
-  const fromCells = cells.length > 0;
-  const cellSum = cells.reduce((s, c) => s + c.remaining_cents, 0);
-  modal({
-    title: fromCells ? `${cells.length} cel(len) besteden` : 'Geld besteden', wide: true, submitLabel: 'Besteding vastleggen',
-    body: `
-      ${fromCells ? `<div class="impact-preview">Geselecteerd: ${cells.length} cellen van ${esc(catByKey(pre.category_key).name)} · totaal ${euro(cellSum)}</div>
-        <input type="hidden" name="category_key" value="${esc(pre.category_key)}">`
-        : `<div class="field-row">
-            <div class="field"><label>Bestemming</label><select name="category_key">${catOptions(pre.category_key)}</select></div>
-            <div class="field"><label>Uit cellen van</label><select name="donor_id"><option value="">Oudste cellen eerst (alle donateurs)</option></select>
-              <div class="hint">Kies een donateur om precies diens geld aan deze ontvanger te besteden.</div></div></div>`}
-      <div class="field-row">
-        <div class="field" data-units><label>Aantal <span data-unit-label></span></label><input type="number" name="units" min="1" step="1"></div>
-        <div class="field"><label>Bedrag (€)</label><input type="text" name="amount" inputmode="decimal" placeholder="${fromCells ? centsToInput(cellSum) : ''}"></div>
-        <div class="field"><label>Datum besteding</label><input type="date" name="spent_at" value="${today()}"></div>
-      </div>
-      <div class="impact-preview" id="spend-preview"></div>
-      <div class="small" id="spend-sources" style="margin:-6px 0 12px"></div>
-      <div class="field"><label>Ontvanger</label><select name="recipient_id">${recipientOptions(pre.recipient_id)}</select></div>
-      <div class="field"><label>Omschrijving</label><input type="text" name="description" placeholder="bv. 400 schoolmaaltijden voor Escuela Esperanza (week 46)"></div>
-      <details style="margin:8px 0 12px" ${pre.withMessage ? 'open' : ''}><summary><b>Bericht van de ontvanger direct meesturen</b> (brief, filmpje, foto…)</summary>
-        <div style="margin-top:10px">${messageFields('msg_')}</div></details>
-      <p class="hint">${fromCells ? 'Het bedrag wordt uit precies deze cellen gehaald (in volgorde van selectie).' : 'Het geld wordt uit de oudste cellen van deze bestemming gehaald (first in, first out).'}
-        Elke betrokken donateur krijgt automatisch een e-mail, ziet de besteding in zijn portaal en kan daarna chatten met de ontvanger.</p>`,
-    onOpen: (form) => {
-      bindUploads(form);
-      let openCells = cells;
-      const loadCells = async () => {
-        if (fromCells) return;
-        const cat = form.elements.category_key.value;
-        openCells = await api(`/api/admin/cells?category=${encodeURIComponent(cat)}&status=open`);
-        const sel = form.elements.donor_id;
-        const prev = sel.value || (pre.donor_id ? String(pre.donor_id) : '');
-        const donors = new Map();
-        for (const c of openCells) {
-          const d = donors.get(c.donor_id) || { name: c.donor_name, cents: 0 };
-          d.cents += c.remaining_cents;
-          donors.set(c.donor_id, d);
-        }
-        sel.innerHTML = '<option value="">Oudste cellen eerst (alle donateurs)</option>' +
-          [...donors.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
-            .map(([id, d]) => `<option value="${id}" ${String(id) === prev ? 'selected' : ''}>${esc(d.name)} — ${euro(d.cents)} in cel</option>`).join('');
-        update();
-      };
-      const update = () => {
-        const cat = catByKey(form.elements.category_key.value);
-        const unitField = form.querySelector('[data-units]');
-        unitField.classList.toggle('hidden', !cat.unit_cost_cents);
-        form.querySelector('[data-unit-label]').textContent = cat.unit_label_plural || '';
-        const units = Number(form.elements.units.value);
-        let amount = form.elements.amount.value ? toCents(form.elements.amount.value) : null;
-        if (!amount && units && cat.unit_cost_cents) amount = units * cat.unit_cost_cents;
-        if (!amount && fromCells) amount = cellSum;
-        const donorId = !fromCells && form.elements.donor_id.value ? Number(form.elements.donor_id.value) : null;
-        const pool = donorId ? openCells.filter((c) => c.donor_id === donorId) : openCells;
-        const avail = pool.reduce((s, c) => s + c.remaining_cents, 0);
-        // Voorbeeld: welke donateurs worden aangesproken (zelfde volgorde als de server)
-        const per = new Map();
-        let left = amount || 0;
-        for (const c of pool) {
-          if (left <= 0) break;
-          const take = Math.min(c.remaining_cents, left);
-          per.set(c.donor_name, (per.get(c.donor_name) || 0) + take);
-          left -= take;
-        }
-        $('#spend-sources', form).innerHTML = per.size
-          ? `Geld komt uit de cellen van: ${[...per.entries()].map(([n, v]) => `<b>${esc(n)}</b> (${euro(v)})`).join(', ')}` : '';
-        $('#spend-preview', form).innerHTML = amount
-          ? `${euro(amount)} wordt besteed ${cat.unit_cost_cents ? `(≈ ${num(Math.floor(amount / cat.unit_cost_cents))} ${esc(cat.unit_label_plural)})` : ''} · beschikbaar ${euro(avail)}
-             ${amount > avail ? '<br><span style="color:var(--bad)">Onvoldoende saldo!</span>' : ''}`
-          : `Beschikbaar in cellen: ${euro(avail)}${cat.unit_cost_cents ? ` (≈ ${num(Math.floor(avail / cat.unit_cost_cents))} ${esc(cat.unit_label_plural)})` : ''}`;
-      };
-      form.addEventListener('input', update);
-      form.addEventListener('change', (e) => { if (e.target.name === 'category_key') loadCells(); else update(); });
-      update();
-      loadCells();
-    },
-    onSubmit: async (f) => {
-      const body = {
-        category_key: f.category_key, units: f.units || null, amount_cents: f.amount ? toCents(f.amount) : null,
-        spent_at: f.spent_at, recipient_id: f.recipient_id || null, description: f.description,
-        cell_ids: cells.map((c) => c.id), donor_id: f.donor_id || null,
-      };
-      if (f.msg_title) body.message = { type: f.msg_type, title: f.msg_title, body: f.msg_body, media_url: f.msg_media_url };
-      const r = await api('/api/admin/expenditures', { method: 'POST', body });
-      toast(`Besteding vastgelegd: ${euro(r.amount_cents)} uit cellen van ${r.donors} donateur(s)`);
-      await loadLookups();
-      done(r);
-    },
-  });
-}
-
-async function renderExpenditures() {
-  view().innerHTML = `
-    ${pageHead('Bestedingen', { sub: 'Wanneer geld uit de cellen wordt uitgegeven, en aan wie', actions: btn('new', 'Geld besteden', { icon: 'hand-coins', kind: 'primary' }) })}
-    <div class="card flush">
-      <div class="filters"><select id="f-cat">${catOptions('', true)}</select></div>
-      <div id="tbl">${RF.skeleton('rows')}</div>
-    </div>`;
-  const load = async () => {
-    const rows = await api(`/api/admin/expenditures?category=${$('#f-cat').value}`);
-    const sum = rows.reduce((x, r) => x + r.amount_cents, 0);
-    $('#tbl').innerHTML = table([
-      { label: 'Besteding', render: (r) => `<span class="cat-name">${RF.catIcon(r)}<span><b style="font-weight:500">${esc(r.recipient_name || r.category_name)}</b><span class="sub">${esc(r.category_name)} · ${date(r.spent_at)}</span></span></span>` },
-      { label: 'Omschrijving', render: (r) => `<span class="muted" style="display:block;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.description) || '—'}</span>` },
-      { label: 'Aantal', num: true, render: (r) => (r.units ? `${num(r.units)} ${esc(r.units === 1 ? r.unit_label : r.unit_label_plural)}` : '<span class="muted">—</span>') },
-      { label: 'Donateurs', num: true, render: (r) => `<span class="muted">${r.donor_count}</span>` },
-      { label: 'Bericht', render: (r) => (r.message_count ? `<span class="badge badge-goedgekeurd">${r.message_count} verstuurd</span>` : '<span class="badge badge-wachtend">Ontbreekt</span>') },
-      { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b>` },
-    ], rows, { empty: 'Nog geen bestedingen', emptyIcon: 'hand-coins', onRow: true }) +
-      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'besteding' : 'bestedingen'}</span><span>Totaal: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
-    bindRows($('#tbl'), rows, (r) => go(`#/bestedingen/${r.id}`));
-  };
-  $('#f-cat').onchange = load;
-  $('#new').onclick = () => spendForm({}, (r) => go(`#/bestedingen/${r.id}`));
-  await load();
-}
-
-async function renderExpenditure(expId) {
-  const e = await api(`/api/admin/expenditures/${expId}`);
-  const donors = new Set(e.allocations.map((x) => x.donor_id)).size;
-  view().innerHTML = `
-    <div class="crumbs"><a href="#/bestedingen">Bestedingen</a>${RF.icon('chevron-right', 'icon-sm')}<span>#${e.id}</span></div>
-    <div class="page-head" style="align-items:center"><div class="profile-head">${RF.catIcon(e, 'lg')}
-        <div><h1>${esc(e.recipient_name || e.category_name)}</h1>
-        <div class="profile-meta"><span>${esc(e.category_name)}</span><span class="dot-sep">${date(e.spent_at)}</span><span class="dot-sep">Besteding #${e.id}</span></div></div></div>
-      <div class="toolbar">${isAdmin() ? btn('reverse', 'Terugdraaien', { icon: 'undo-2', kind: 'danger' }) : ''}
-        ${btn('add-msg', 'Bericht koppelen', { icon: 'mail-open', kind: 'primary' })}</div></div>
-    <div class="kpis cols-3">
-      <div class="kpi"><div class="label">Bedrag</div><div class="value">${euro(e.amount_cents)}</div><div class="sub">${e.units ? `${num(e.units)} ${esc(e.unit_label_plural)}` : 'Vrij bedrag'}</div></div>
-      <div class="kpi"><div class="label">Gefinancierd door</div><div class="value">${donors} ${donors === 1 ? 'donateur' : 'donateurs'}</div><div class="sub">uit ${e.allocations.length} ${e.allocations.length === 1 ? 'cel' : 'cellen'}</div></div>
-      <div class="kpi"><div class="label">Berichten</div><div class="value">${e.messages.length}</div><div class="sub">${e.messages.length ? 'verstuurd naar donateurs' : 'Nog geen bericht van de ontvanger'}</div></div>
-    </div>
-    ${e.description ? `<div class="callout neutral" style="margin-top:16px">${RF.icon('info')}<span>${esc(e.description)}</span></div>` : ''}
-    <div class="grid grid-2" style="margin-top:16px">
-      <div class="card flush"><div class="card-head"><h2>Herkomst van het geld</h2></div>
-        ${table([
-          { label: 'Donateur', render: (x) => `<div class="cell-person">${RF.avatar(x.donor_name, 'sm')}<div class="grow">${donorLink(x.donor_id, x.donor_name)}<span class="sub">Cel #${x.cell_id} · ${date(x.received_at)}</span></div></div>` },
-          { label: 'Celbedrag', num: true, render: (x) => `<span class="muted">${euro(x.cell_amount_cents)}</span>` },
-          { label: 'Gebruikt', num: true, render: (x) => `<b style="font-weight:600">${euro(x.amount_cents)}</b>` },
-        ], e.allocations)}</div>
-      <div class="card"><div class="card-head"><h2>Berichten van de ontvanger</h2></div>
-        ${e.messages.length ? e.messages.map((m) => `<div class="message-card" style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="cat-name"><span class="cat-ico sm" style="--c:var(--accent)">${RF.icon(RF.MESSAGE_ICONS[m.type] || 'mail')}</span><b style="font-weight:600">${esc(m.title)}</b></span>
-          <button class="icon-btn" data-del-msg="${m.id}" title="Verwijderen" aria-label="Bericht verwijderen">${RF.icon('trash-2')}</button></div>
-          <div class="small muted" style="margin-top:4px">${esc(label('message', m.type))} · bezorgd bij ${m.delivered} · ${m.read_count} gelezen</div>
-          ${RF.mediaHtml(m.type, m.media_url, m.title)}
-          ${m.body ? `<div class="${m.type === 'brief' ? 'letter' : ''}" style="white-space:pre-line;margin-top:8px">${esc(m.body)}</div>` : ''}</div>`).join('').replace('border-top:1px solid var(--border);padding-top:14px;margin-top:14px', '')
-          : RF.emptyState({ icon: 'mail-open', title: 'Nog geen bericht', text: 'Koppel een brief, foto of filmpje van de ontvanger. Alle donateurs hiernaast krijgen het in hun portaal.' })}
-      </div>
-    </div>`;
-  const reload = () => renderExpenditure(expId);
-  $('#add-msg').onclick = () => modal({
-    title: 'Bericht van ontvanger koppelen', wide: true, submitLabel: 'Versturen naar donateurs',
-    body: `<div class="field"><label>Van ontvanger</label><select name="recipient_id">${recipientOptions(e.recipient_id)}</select></div>${messageFields()}`,
-    onOpen: bindUploads,
-    onSubmit: async (f) => {
-      const r = await api(`/api/admin/expenditures/${expId}/messages`, { method: 'POST', body: f });
-      toast(`Bericht bezorgd bij ${r.delivered_to} donateur(s)`); reload();
-    },
-  });
-  view().querySelectorAll('[data-del-msg]').forEach((b) => b.addEventListener('click', async () => {
-    if (!(await confirmDialog('Dit bericht verwijderen? Het verdwijnt ook uit de portalen van donateurs.', 'Verwijderen'))) return;
-    await api(`/api/admin/messages/${b.dataset.delMsg}`, { method: 'DELETE', body: {} }); reload();
-  }));
-  if (isAdmin()) $('#reverse').onclick = async () => {
-    if (!(await confirmDialog('Besteding terugdraaien? Het geld gaat terug in de cellen en gekoppelde berichten worden verwijderd.', 'Terugdraaien'))) return;
-    await api(`/api/admin/expenditures/${expId}`, { method: 'DELETE', body: {} });
-    await loadLookups(); toast('Besteding teruggedraaid'); go('#/bestedingen');
-  };
 }
 
 // ======================================================================= ONTVANGERS
@@ -1435,30 +1054,6 @@ async function renderCampaigns() {
   view().querySelectorAll('[data-c]').forEach((el) => el.addEventListener('click', () => form(rows.find((c) => c.id === Number(el.dataset.c)))));
 }
 
-// ======================================================================= LEADERBOARD
-async function renderLeaderboard() {
-  view().innerHTML = `
-    <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Intern overzicht met echte namen</div></div>
-      <div class="toolbar"><select id="f-period">${opt('all', 'Altijd')}${opt('year', 'Dit jaar')}${opt('month', 'Deze maand')}</select>
-        <select id="f-cat">${catOptions('', true)}</select><a class="btn btn-ghost" href="/leaderboard" target="_blank" rel="noopener">${RF.icon('arrow-up-right')}<span>Publieke versie</span></a></div></div>
-    <div class="callout neutral">${RF.icon('info')}<span>Op het publieke leaderboard en in het portaal zien bezoekers alleen de publieke naam. Anonieme donateurs verschijnen als “Anonieme donateur”.</span></div>
-    <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
-  const load = async () => {
-    const rows = await api(`/api/admin/leaderboard?period=${$('#f-period').value}&category=${$('#f-cat').value}&limit=100`);
-    $('#tbl').innerHTML = table([
-      { label: '#', render: (r) => (r.rank <= 3 ? `<span class="medal m${r.rank}" style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:99px;font-size:12px;font-weight:700">${r.rank}</span>` : `<span class="muted num" style="display:inline-block;width:24px;text-align:center">${r.rank}</span>`) },
-      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}${donorLink(r.donor_id, r.full_name)}</div>` },
-      { label: 'Publiek zichtbaar als', render: (r) => (r.anonymous ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px">${RF.icon('eye-off', 'icon-sm')}Anonieme donateur</span>` : esc(r.name)) },
-      { label: 'Giften', num: true, render: (r) => `<span class="muted">${r.donation_count}</span>` },
-      { label: 'Besteed', num: true, render: (r) => `<span class="muted">${euro(r.spent_cents)}</span>` },
-      { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
-    ], rows, { empty: 'Nog geen donaties in deze periode', emptyIcon: 'trophy' });
-  };
-  $('#f-period').onchange = load;
-  $('#f-cat').onchange = load;
-  await load();
-}
-
 // ======================================================================= RAPPORTAGES
 async function renderReports(year) {
   const r = await api(`/api/admin/reports${year ? `?year=${year}` : ''}`);
@@ -1484,7 +1079,7 @@ async function renderReports(year) {
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card"><div class="card-head"><h2>Per maand</h2><span class="small muted">Ontvangen giften</span></div>${RF.barChart(months.map(RF.monthName), [{ label: 'Ontvangen', values: months.map((m) => bm[m] || 0), color: 'var(--accent)' }])}</div>
       <div class="card"><div class="card-head"><h2>Per bestemming</h2><span class="small muted">Ontvangen · besteed</span></div>
-        ${r.byCategory.map((c) => `<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${RF.catLabel(c, c.name)}<span class="num small"><b style="font-weight:600">${euro0(c.raised_cents)}</b> <span class="muted">· ${euro0(c.spent_cents)}</span></span></div>
+        ${r.byCategory.filter((c) => c.raised_cents || c.spent_cents).map((c) => `<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${RF.catLabel(c, c.name)}<span class="num small"><b style="font-weight:600">${euro0(c.raised_cents)}</b> <span class="muted">· ${euro0(c.spent_cents)}</span></span></div>
           <div class="meter"><span style="width:${(c.raised_cents / max) * 100}%;background:${RF.catColor(c)}"></span></div>
           ${c.units ? `<div class="small muted" style="margin-top:6px">${num(c.units)} ${esc(c.unit_label_plural)} gefinancierd</div>` : ''}</div>`).join('')}</div>
       <div class="card"><div class="card-head"><h2>Betaalwijze</h2></div>${hbars(r.byMethod, 'method', (k) => label('method', k))}</div>
@@ -1493,10 +1088,10 @@ async function renderReports(year) {
       <div class="card flush"><div class="card-head"><h2>Top 10 donateurs ${esc(r.year)}</h2></div>${table([
         { label: '#', render: (x) => `<span class="muted num">${x.rank}</span>` }, { label: 'Donateur', render: (x) => `<div class="cell-person">${RF.avatar(x.full_name, 'sm')}${donorLink(x.donor_id, x.full_name)}</div>` },
         { label: 'Totaal', num: true, render: (x) => `<b style="font-weight:600">${euro(x.total_cents)}</b>` }], r.topDonors, { empty: 'Geen donaties dit jaar', emptyIcon: 'trophy' })}</div>
-      <div class="card"><div class="card-head"><h2>Impactberichten</h2></div>
+      <div class="card"><div class="card-head"><h2>Maandupdates</h2></div>
         <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:28px;font-weight:600;letter-spacing:-.02em" class="num">${r.messageStats.delivered ? Math.round((r.messageStats.read / r.messageStats.delivered) * 100) : 0}%</span><span class="muted">gelezen</span></div>
         <div class="meter" style="margin:10px 0"><span style="width:${r.messageStats.delivered ? (r.messageStats.read / r.messageStats.delivered) * 100 : 0}%"></span></div>
-        <p class="small muted" style="margin:0">${num(r.messageStats.read)} van ${num(r.messageStats.delivered)} brieven, foto’s en filmpjes zijn geopend door donateurs.</p></div>
+        <p class="small muted" style="margin:0">${num(r.messageStats.read)} van ${num(r.messageStats.delivered)} updates (foto’s, brieven, filmpjes) zijn bekeken door sponsors.</p></div>
     </div>`;
   $('#f-year').onchange = (e) => renderReports(e.target.value);
 }
