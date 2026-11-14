@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leaderboard — Robin Foundation</title>
+  <link rel="icon" href="/img/logo.svg">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/"><img src="/img/logo.svg" alt=""><div>Robin Foundation<small>Leaderboard</small></div></a>
+      <nav class="topnav"></nav>
+      <a class="btn btn-ghost" href="/portal">Mijn donaties</a>
+      <a class="btn btn-primary" href="/portal#/doneren">💛 Doneer</a>
+    </div>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <h1>🏆 Samen maken we het verschil</h1>
+      <p>Dank aan alle donateurs! Wie liever anoniem blijft, verschijnt als “Anonieme donateur” — hun giften tellen natuurlijk gewoon mee.</p>
+      <div class="hero-stats" id="stats"></div>
+    </section>
+    <div class="grid grid-4" id="cats" style="margin-bottom:20px"></div>
+    <div class="card">
+      <div class="card-head"><h2>Top donateurs</h2>
+        <div class="toolbar">
+          <select id="f-period"><option value="all">Altijd</option><option value="year">Dit jaar</option><option value="month">Deze maand</option></select>
+          <select id="f-cat"><option value="">Alle bestemmingen</option></select>
+        </div>
+      </div>
+      <div id="podium"></div>
+      <div id="lb"></div>
+    </div>
+  </main>
+  <script src="/js/common.js"></script>
+  <script>
+    (async () => {
+      const { api, esc, euro0, num } = RF;
+      const [stats, cats] = await Promise.all([api('/api/public/stats'), api('/api/public/categories')]);
+      document.getElementById('stats').innerHTML = `
+        <div><div class="label">Opgehaald</div><div class="value">${euro0(stats.raised_cents)}</div></div>
+        <div><div class="label">Al besteed</div><div class="value">${euro0(stats.spent_cents)}</div></div>
+        <div><div class="label">Donateurs</div><div class="value">${num(stats.donors)}</div></div>
+        <div><div class="label">Berichten van ontvangers</div><div class="value">${num(stats.messages)}</div></div>`;
+      document.getElementById('cats').innerHTML = stats.categories.map((c) => `<div class="card kpi" style="border-top:3px solid ${esc(c.color)}">
+        <div class="label">${esc(c.icon)} ${esc(c.name)}</div>
+        <div class="value">${c.unit_label_plural ? num(c.units_spent) : euro0(c.spent_cents)}</div>
+        <div class="sub">${c.unit_label_plural ? esc(c.unit_label_plural) + ' gefinancierd' : 'noodhulp verleend'}</div></div>`).join('');
+      const sel = document.getElementById('f-cat');
+      sel.innerHTML += cats.map((c) => `<option value="${esc(c.key)}">${esc(c.icon)} ${esc(c.name)}</option>`).join('');
+      const nameHtml = (r) => (r.anonymous ? `<span class="anon">🕶️ ${esc(r.name)}</span>` : esc(r.name));
+      const load = async () => {
+        const rows = await api(`/api/public/leaderboard?period=${document.getElementById('f-period').value}&category=${sel.value}&limit=50`);
+        const top = rows.slice(0, 3);
+        const order = [top[1], top[0], top[2]];
+        document.getElementById('podium').innerHTML = top.length >= 3 ? `<div class="podium">${order.map((r, i) => `<div class="p ${i === 1 ? 'first' : ''}">
+          <div class="medal">${['🥈', '🥇', '🥉'][i]}</div><div class="n lb-name">${nameHtml(r)}</div><div class="a">${euro0(r.total_cents)}</div></div>`).join('')}</div>` : '';
+        document.getElementById('lb').innerHTML = rows.length ? rows.map((r) => `<div class="lb-row ${r.rank <= 3 ? 'top' + r.rank : ''}">
+          <div class="lb-rank">${r.rank <= 3 ? ['🥇', '🥈', '🥉'][r.rank - 1] : r.rank}</div>
+          <div><div class="lb-name">${nameHtml(r)}</div><div class="lb-meta">${r.donation_count} ${r.donation_count === 1 ? 'gift' : 'giften'}${r.city ? ' · ' + esc(r.city) : ''}${r.messages ? ` · 💌 ${r.messages} berichten ontvangen` : ''}</div></div>
+          <div class="lb-amount">${euro0(r.total_cents)}</div></div>`).join('') : '<p class="empty">Nog geen donaties in deze periode.</p>';
+      };
+      document.getElementById('f-period').onchange = load;
+      sel.onchange = load;
+      load();
+    })();
+  </script>
+</body>
+</html>

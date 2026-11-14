@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robin Foundation</title>
+  <link rel="icon" href="/img/logo.svg">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/"><img src="/img/logo.svg" alt=""><div>Robin Foundation<small>Elke euro zichtbaar</small></div></a>
+      <nav class="topnav"><a href="/leaderboard">Leaderboard</a></nav>
+      <a class="btn btn-ghost" href="/admin">Medewerkers</a>
+      <a class="btn btn-primary" href="/portal">Mijn donaties</a>
+    </div>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <h1>Zie precies waar jouw geld heen gaat</h1>
+      <p>Bij Robin Foundation komt elke donatie in een eigen cel. Pas wanneer het geld echt wordt uitgegeven — aan een schoolmaaltijd, schoolgeld, noodhulp of een gezondheidspakket — zie je waar het heen ging. En je krijgt een brief, foto of filmpje van wie je hebt geholpen.</p>
+      <p style="margin-top:16px"><a class="btn btn-ghost" href="/portal#/doneren">💛 Doneer nu</a> <a class="btn btn-ghost" href="/leaderboard">🏆 Leaderboard</a></p>
+    </section>
+    <div class="grid grid-4" id="cats"></div>
+  </main>
+  <script src="/js/common.js"></script>
+  <script>
+    RF.api('/api/public/stats').then((s) => {
+      document.getElementById('cats').innerHTML = s.categories.map((c) => `<div class="card cat-tile" style="--c:${RF.esc(c.color)}">
+        <div class="top"><div class="cat-icon">${RF.esc(c.icon)}</div><div class="name">${RF.esc(c.name)}</div></div>
+        <div class="kpi" style="padding:0"><div class="value">${c.unit_label_plural ? RF.num(c.units_spent) : RF.euro0(c.spent_cents)}</div>
+        <div class="sub">${c.unit_label_plural ? RF.esc(c.unit_label_plural) + ' gefinancierd' : 'noodhulp verleend'}</div></div></div>`).join('');
+    });
+  </script>
+</body>
+</html>

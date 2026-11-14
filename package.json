@@ -1,0 +1,16 @@
+{
+  "name": "robin-foundation-crm",
+  "version": "1.0.0",
+  "description": "CRM voor Robin Foundation: donateurs, donatiecellen, bestedingen, impactberichten en leaderboard",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "UNLICENSED"
+}
