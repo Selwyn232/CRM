@@ -28,13 +28,13 @@
       <h1 style="font-size:34px;line-height:40px">Voor <span id="amount">€ 50</span> per maand weet je precies welk kind je helpt</h1>
       <p style="font-size:15.5px">Je kiest zelf een kind. Je geld gaat elke maand naar een dagelijkse schoolmaaltijd, schoolgeld, basisverzorging en het Robin Noodfonds voor orkanen en overstromingen. Elke maand krijg je een update, en je kunt met het gezin chatten, automatisch vertaald.</p>
       <div class="toolbar" style="margin-top:24px">
-        <a class="btn btn-primary btn-lg" href="/portal#/sponsoren" data-ic="heart">Kies een kind</a>
+        <a class="btn btn-primary btn-lg" href="/aanmelden" data-ic="heart">Kies een kind</a>
         <a class="btn btn-ghost btn-lg" href="/leaderboard" data-ic="trophy">Leaderboard</a>
       </div>
     </section>
     <div class="grid grid-2">
       <div class="card"><div class="card-head"><h2>Waar gaat je geld heen?</h2></div><div class="breakdown" id="bd"></div></div>
-      <div class="card"><div class="card-head"><h2>Zij wachten op een sponsor</h2><a href="/portal#/sponsoren">Alle kinderen</a></div><div class="child-grid" id="kids"></div></div>
+      <div class="card"><div class="card-head"><h2>Zij wachten op een sponsor</h2><a href="/aanmelden">Alle kinderen</a></div><div class="child-grid" id="kids"></div></div>
     </div>
   </main>
   <script src="/js/icons.js"></script>
@@ -50,7 +50,7 @@
         + `<div class="bd-row total"><div class="grow">Per kind per maand</div><b class="num">${euro(cfg.amount_cents)}</b></div>`;
       const withPhoto = s.available.filter((c) => c.photo_url);
       document.getElementById('hero-photos').innerHTML = withPhoto.slice(0, 3).map((c) => `<img src="${esc(c.photo_url)}" alt="">`).join('');
-      document.getElementById('kids').innerHTML = s.available.slice(0, 4).map((c) => `<a class="card child-card" href="/portal#/sponsoren">
+      document.getElementById('kids').innerHTML = s.available.slice(0, 4).map((c) => `<a class="card child-card" href="/aanmelden?kind=${c.id}">
         ${c.photo_url ? `<img class="child-photo" src="${esc(c.photo_url)}" alt="${esc(c.first_name)}" loading="lazy">` : `<div class="child-photo ph">${esc(c.first_name.slice(0, 1))}</div>`}
         <div class="child-body"><div class="child-name">${esc(c.first_name)}</div><div class="small muted">${c.age != null ? `${c.age} jaar · ` : ''}${esc(c.province || c.country)}</div></div></a>`).join('')
         || '<p class="muted">Op dit moment heeft elk kind een sponsor. Dank je wel!</p>';

@@ -122,7 +122,7 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     ['GET', '/api/public/sponsor', () => {
       const cfg = SP.getConfig(db);
       // Publiek (zonder inloggen): voornaam, leeftijd, provincie en foto. Verhaal, school en gezin pas na inloggen.
-      const available = SP.availableChildren(db).slice(0, 8).map((c) => ({ first_name: c.first_name, age: c.age, province: c.province, country: c.country, photo_url: c.photo_url }));
+      const available = SP.availableChildren(db).slice(0, 8).map((c) => ({ id: c.id, first_name: c.first_name, age: c.age, province: c.province, country: c.country, photo_url: c.photo_url }));
       return { config: cfg, available, counts: get(db, `SELECT
         (SELECT COUNT(*) FROM children WHERE status = 'beschikbaar') AS available,
         (SELECT COUNT(*) FROM children WHERE status = 'gesponsord') AS sponsored,
@@ -164,6 +164,9 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
       run(db, 'DELETE FROM sponsor_labels WHERE id = ?', l.id);
       S.audit(db, ctx.actor, 'label_verwijderd', 'label', l.id, l.name);
     }, admin],
+    // Kinderen om uit te kiezen bij het aanmelden (zonder achternaam, adres of gezin).
+    ['GET', '/api/public/children', () => SP.availableChildren(db).slice(0, 60)
+      .map(({ family_id, family_story, family_photo, ...c }) => c)],
     ['GET', '/api/public/leaderboard', (ctx) => SP.leaderboard(db, ctx.query).map(({ donor_id, ...r }) => r)],
 
     // ------------------------------------------------------------------ sponsorportaal
@@ -172,6 +175,10 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     ['POST', '/api/portal/sponsor', async (ctx) => {
       const P = require('./payments');
       const cfg = SP.getConfig(db);
+      // Eerst beveiligen (Face ID of wachtwoord), anders kan de sponsor later niet meer inloggen.
+      if (!ctx.donor.password_hash && !get(db, "SELECT 1 AS x FROM passkeys WHERE kind = 'donor' AND subject_id = ?", ctx.donor.id)) {
+        throw new AppError(400, 'Beveilig eerst je account met Face ID of een wachtwoord');
+      }
       const ids = SP.reserve(db, ctx.donor.id, Array.isArray(ctx.body.child_ids) ? ctx.body.child_ids : []);
       const total = ids.length * cfg.amount_cents;
       if (!P.isEnabled()) {

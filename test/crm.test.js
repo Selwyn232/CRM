@@ -844,3 +844,41 @@ test('Sponsorlabels: standaard Particulieren en Bedrijven, eigen labels, ranglij
   const labels = await (await fetch(`${base}/api/public/labels`)).json();
   assert.deepEqual(labels.map((l) => l.name), ['Particulieren', 'Bedrijven', 'Scholen']);
 });
+
+test('Aanmelden als sponsor: gegevens → beveiligen → kind sponsoren', async (t) => {
+  const { db, kids } = sponsorSetup();
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  // Kinderen kiezen kan zonder in te loggen (zonder achternaam of gezin)
+  const pub = await (await fetch(`${base}/api/public/children`)).json();
+  assert.equal(pub.length, 3);
+  assert.equal(pub[0].last_name, undefined);
+  assert.equal(pub[0].family_id, undefined);
+  // Zonder privacy-akkoord geen account
+  assert.equal((await fetch(`${base}/api/donor/signup`, { method: 'POST', headers: json, body: JSON.stringify({ first_name: 'Eva', email: 'eva@x.nl' }) })).status, 400);
+  const body = { first_name: 'Eva', last_name: 'Kok', email: 'Eva@x.nl', privacy: true, donor_type: 'bedrijf', company_name: 'Kok BV' };
+  const r = await fetch(`${base}/api/donor/signup`, { method: 'POST', headers: json, body: JSON.stringify(body) });
+  assert.equal(r.status, 200);
+  const me = await r.json();
+  assert.equal(me.needs_credential, true);
+  assert.equal(get(db, 'SELECT l.name FROM donors d JOIN sponsor_labels l ON l.id = d.label_id WHERE d.email = ?', 'eva@x.nl').name, 'Bedrijven');
+  const h = { ...json, cookie: r.headers.get('set-cookie').split(';')[0] };
+  // Nog niet beveiligd: sponsoren geweigerd
+  assert.equal((await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: h, body: JSON.stringify({ child_ids: [kids[0]] }) })).status, 400);
+  // Halverwege gestopt: opnieuw aanmelden met hetzelfde e-mailadres mag
+  assert.equal((await fetch(`${base}/api/donor/signup`, { method: 'POST', headers: json, body: JSON.stringify(body) })).status, 200);
+  // Wachtwoord instellen (één keer), daarna sponsoren
+  assert.equal((await fetch(`${base}/api/portal/set-password`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'kort' }) })).status, 400);
+  const sp = await (await fetch(`${base}/api/portal/set-password`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'een goed wachtwoord' }) })).json();
+  assert.equal(sp.needs_credential, false);
+  assert.equal((await fetch(`${base}/api/portal/set-password`, { method: 'POST', headers: h, body: JSON.stringify({ password: 'nog een wachtwoord' }) })).status, 409);
+  assert.equal((await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: h, body: JSON.stringify({ child_ids: [kids[0]] }) })).status, 200);
+  // Bestaand account: niet opnieuw aanmelden, maar inloggen
+  const again = await fetch(`${base}/api/donor/signup`, { method: 'POST', headers: json, body: JSON.stringify(body) });
+  assert.equal(again.status, 409);
+  assert.match((await again.json()).error, /Log in/);
+  // Inloggen met het nieuwe wachtwoord werkt
+  assert.equal((await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'eva@x.nl', password: 'een goed wachtwoord' }) })).status, 200);
+});
