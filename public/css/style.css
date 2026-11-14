@@ -941,3 +941,5 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
   .explainer { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
   .explainer-video { order: -1; }
 }
+.explainer-video video::cue { background: rgba(20, 24, 20, .72); color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 0.95em; line-height: 1.35; }
+.explainer-play[hidden] { display: none; }
