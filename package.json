@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
+    "build": "echo \"Geen build nodig: de app heeft geen dependencies.\"",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
