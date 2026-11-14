@@ -208,6 +208,13 @@ function buildRoutes({ db, uploadDir }) {
     } catch (err) { console.error('Voorbeeldkinderen toevoegen mislukt:', err.message); }
     run(db, "INSERT INTO settings (key, value) VALUES ('sponsor_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
   }
+  // Demokinderen: tekeningen vervangen door foto's van Filipijnse kinderen (eenmalig).
+  if (!setting('demo_photos_v1')) {
+    const { demoPhoto } = require('./seed');
+    all(db, "SELECT id, gender FROM children WHERE photo_url LIKE '/img/kind_.svg' ORDER BY id")
+      .forEach((c, i) => run(db, 'UPDATE children SET photo_url = ? WHERE id = ?', demoPhoto(c.gender, i), c.id));
+    run(db, "INSERT INTO settings (key, value) VALUES ('demo_photos_v1', '1') ON CONFLICT(key) DO NOTHING");
+  }
   // Onboarding: in een demo-omgeving eenmalig een veldmedewerker (veld / veld) om het vier-ogenprincipe te testen.
   if (!setting('veld_demo_v1') && isDemo() && !get(db, "SELECT 1 AS x FROM users WHERE role = 'veldmedewerker'")) {
     run(db, "INSERT OR IGNORE INTO users (email, name, role, password_hash) VALUES ('veld', 'Joy Veldwerker', 'veldmedewerker', ?)", auth.hashPassword('veld'));

@@ -783,7 +783,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .child-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; text-decoration: none; color: inherit; position: relative; transition: border-color .15s, box-shadow .15s, transform .15s; }
 a.child-card:hover, .child-card.pick:hover { border-color: var(--border-strong, var(--accent-muted)); box-shadow: var(--shadow-sm, var(--shadow-xs)); }
 .child-card .child-photo { width: 100%; aspect-ratio: 4 / 3; height: auto; border-radius: 0; }
-.child-photo { object-fit: cover; background: var(--surface-2); display: block; }
+.child-photo { object-fit: cover; object-position: center 30%; background: var(--surface-2); display: block; }
 .child-photo.ph { display: grid; place-items: center; font-size: 40px; font-weight: 600; color: var(--accent-text); background: var(--accent-soft); }
 .child-photo.xl { width: 160px; height: 160px; aspect-ratio: auto; border-radius: 16px; flex: none; }
 .child-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 2px; flex: 1; }

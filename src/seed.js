@@ -76,6 +76,9 @@ const UPDATES = [
   ['tekst', 'Rapport van dit kwartaal', 'De juf schrijft: goede vooruitgang in lezen en rekenen, altijd aanwezig en vrolijk in de klas.', ''],
 ];
 
+// Demofoto's van Filipijnse kinderen (3 jongens, 3 meisjes), per geslacht afwisselend gebruikt.
+const demoPhoto = (gender, i) => `/img/kinderen/${gender === 'jongen' ? 'jongen' : 'meisje'}-${(i % 3) + 1}.jpg`;
+
 const isoMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 // Sponsormodel: gezinnen, kinderen, sponsorschappen met betaalde maanden, updates, noodfonds en chats.
@@ -89,7 +92,7 @@ function seedSponsoring(db, { donorIds, adminId, portalHash }) {
     kids.forEach(([fn, ln, birth, gender, school, grade, kstory], ki) => {
       childIds.push(Number(run(db, `INSERT INTO children (family_id, first_name, last_name, birth_date, gender, school, grade, story, photo_url, status, available_since)
         VALUES (?,?,?,?,?,?,?,?,?, 'beschikbaar', datetime('now', ?))`, fid, fn, ln, birth, gender, school, grade, kstory,
-      `/img/kind${((fi + ki) % 3) + 1}.svg`, `-${between(20, 200)} days`).lastInsertRowid));
+      demoPhoto(gender, childIds.length), `-${between(20, 200)} days`).lastInsertRowid));
     });
   });
   // Eén aanmelding die nog beoordeeld moet worden.
@@ -248,4 +251,4 @@ if (require.main === module) {
   console.log('Gezinnen: santos / welkom123 · reyes / welkom123');
 }
 
-module.exports = { seed, seedSponsoring };
+module.exports = { seed, seedSponsoring, demoPhoto };
