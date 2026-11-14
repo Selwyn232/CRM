@@ -32,7 +32,9 @@ Iedereen logt in via **één inlogpagina: `/login`**. Je kiest daar of je inlogt
 
 Ontvangers kunnen inloggen op `/ontvanger` en chatten met de donateurs van wie geld aan hen is besteed. Donateurs chatten via het tabblad **Chat** in hun portaal. Een medewerker zet de inlog aan bij *Ontvangers → 🔑 Inlog & chat*.
 
-Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
+> ⚠️ **Testfase: chatmoderatie staat standaard UIT.** Alle berichten worden direct afgeleverd; berichten met contactgegevens e.d. worden alleen gemarkeerd. Zet de moderatie aan via *Chatmoderatie → Moderatie aanzetten* (of `CRM_CHAT_MODERATION=aan`) **voordat je met echte kinderen werkt.**
+
+Met moderatie aan geldt, omdat veel ontvangers kinderen zijn:
 - Je kunt alleen chatten met een donateur of ontvanger als er echt geld van die donateur aan die ontvanger is besteed.
 - Berichten van en naar **kinderen** worden altijd eerst door een medewerker goedgekeurd (*Chatmoderatie*). Bij een kind is een **begeleider** verplicht.
 - Voor scholen en organisaties kan de moderatie uit. Berichten met **telefoonnummers, e-mailadressen, links, social media, adressen of geldverzoeken** worden altijd eerst tegengehouden.

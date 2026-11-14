@@ -920,9 +920,24 @@ async function renderChatModeration() {
   view().innerHTML = `
     <div class="page-head"><h1>Chatmoderatie</h1>
       <div class="toolbar"><select id="f-status">${opt('in_behandeling', 'Wacht op controle', 'in_behandeling')}${opt('goedgekeurd', 'Goedgekeurd')}${opt('afgewezen', 'Afgewezen')}${opt('', 'Alle')}</select></div></div>
-    <p class="muted" style="max-width:820px">Berichten tussen donateurs en kinderen (en berichten met contactgegevens, links of geldverzoeken) worden pas afgeleverd na goedkeuring.
-      Controleer of er geen persoonlijke gegevens worden gedeeld en of de toon passend is.</p>
+    <div class="card" id="mod-card" style="margin-bottom:14px"></div>
     <div id="list"></div>`;
+  const drawSwitch = (on) => {
+    $('#mod-card').innerHTML = `<div class="card-head" style="margin:0"><div>
+        <h3 style="margin:0">${on ? '🛡️ Moderatie staat AAN' : '⚠️ Moderatie staat UIT'}</h3>
+        <p class="small muted" style="margin:4px 0 0;max-width:720px">${on
+          ? 'Berichten met kinderen (en berichten met contactgegevens, links of geldverzoeken) worden pas afgeleverd na goedkeuring.'
+          : 'Alle berichten worden direct afgeleverd, ook die met kinderen. Berichten met contactgegevens, links of geldverzoeken krijgen wel een ⚠️-markering zodat je ze hier achteraf kunt zien (kies "Alle"). Zet dit weer aan voordat je met echte kinderen werkt.'}</p></div>
+      ${isAdmin() ? `<button class="btn ${on ? 'btn-ghost' : 'btn-primary'}" id="mod-toggle">${on ? 'Moderatie uitzetten' : 'Moderatie aanzetten'}</button>` : ''}</div>`;
+    const b = $('#mod-toggle');
+    if (b) b.onclick = async () => {
+      if (on && !(await confirmDialog('Moderatie uitzetten? Alle berichten, ook met kinderen, worden dan direct afgeleverd.', 'Uitzetten'))) return;
+      const r = await api('/api/admin/chat/moderation', { method: 'PUT', body: { enabled: !on } });
+      toast(r.enabled ? 'Moderatie staat aan' : 'Moderatie staat uit');
+      drawSwitch(r.enabled);
+    };
+  };
+  drawSwitch((await api('/api/admin/chat/moderation')).enabled);
   const load = async () => {
     const rows = await api(`/api/admin/chat?status=${$('#f-status').value}`);
     $('#list').innerHTML = rows.length ? rows.map((m) => `<div class="card" style="margin-bottom:12px">

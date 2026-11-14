@@ -370,7 +370,12 @@ function hasFunded(db, donorId, recipientId) {
     WHERE a.donor_id = ? AND e.recipient_id = ? LIMIT 1`, donorId, recipientId);
 }
 
-const isModerated = (r) => !!r.chat_moderated || r.kind === 'kind';
+// Algemene schakelaar (Instellingen). Staat de moderatie uit, dan wordt alles direct afgeleverd;
+// berichten met contactgegevens e.d. worden dan nog wel gemarkeerd (flag_reason) voor controle achteraf.
+let moderationOn = false;
+const setModeration = (on) => { moderationOn = !!on; };
+const moderationEnabled = () => moderationOn;
+const isModerated = (r) => moderationOn && (!!r.chat_moderated || r.kind === 'kind');
 
 function notifyChat(db, msg, recipient) {
   if (msg.sender !== 'recipient') return; // ontvangers krijgen geen e-mail; zij zien het bij inloggen
@@ -387,7 +392,7 @@ function sendChat(db, { recipientId, donorId, sender, body }, actor) {
   const recipient = chatRecipient(db, recipientId);
   if (!hasFunded(db, donorId, recipientId)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
   const flags = chatFlags(text);
-  const status = isModerated(recipient) || flags.length ? 'in_behandeling' : 'goedgekeurd';
+  const status = moderationOn && (isModerated(recipient) || flags.length) ? 'in_behandeling' : 'goedgekeurd';
   const r = run(db, `INSERT INTO chat_messages (recipient_id, donor_id, sender, body, status, flag_reason) VALUES (?,?,?,?,?,?)`,
     recipientId, donorId, sender, text, status, flags.join(', '));
   const msg = get(db, 'SELECT * FROM chat_messages WHERE id = ?', Number(r.lastInsertRowid));
@@ -458,7 +463,7 @@ async function withTranslations(db, msgs, lang) {
 
 module.exports = {
   withTranslations,
-  chatFlags, hasFunded, isModerated, sendChat, moderateChat, chatThread,
+  chatFlags, hasFunded, isModerated, setModeration, moderationEnabled, sendChat, moderateChat, chatThread,
   AppError, euro, audit, getCategory, donorFullName, donorPublicName, sendMail,
   createDonation, updateDonation, deleteDonation, spend, reverseExpenditure, addImpactMessage,
   categoryBalances, donorImpact, leaderboard,

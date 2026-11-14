@@ -169,6 +169,7 @@ test('HTTP: publieke leaderboard lekt geen ids of namen, portaal & beheer vereis
 
 // ------------------------------------------------------------------ chat
 function chatSetup(kind = 'kind', moderated = 1) {
+  S.setModeration(true);
   const db = freshDb();
   const donor = addDonor(db, { first_name: 'Sanne', last_name: 'V', anonymous: 0 });
   const other = addDonor(db);
@@ -247,6 +248,7 @@ test('besteding uit cellen van één gekozen donateur (niet FIFO over iedereen)'
 });
 
 test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)', () => {
+  S.setModeration(true);
   const db = freshDb();
   const selwyn = addDonor(db);
   S.createDonation(db, { donor_id: selwyn, category_key: 'schoolgeld', amount_cents: 15000 });
@@ -378,4 +380,17 @@ test('vertaalsleutel in het CRM instellen (alleen beheerder), wordt nooit terugg
   assert.equal(get(db, "SELECT value FROM settings WHERE key = 'translate_model'").value, 'claude-haiku-5-5');
   assert.equal(require('../src/translate').isEnabled(), true);
   assert.equal((await fetch(`${base}/api/admin/translation/status`)).status, 401);
+});
+
+test('chatmoderatie uit: alles direct afgeleverd, contactgegevens wel gemarkeerd', () => {
+  const { db, donor, rid } = chatSetup('kind', 1);
+  S.setModeration(false);
+  try {
+    const m1 = S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Hoi Grace!' });
+    assert.equal(m1.status, 'goedgekeurd');
+    const m2 = S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Bel me: 06-12345678' });
+    assert.equal(m2.status, 'goedgekeurd');
+    assert.match(m2.flag_reason, /telefoonnummer/);
+    assert.equal(S.chatThread(db, rid, donor, 'recipient').length, 2);
+  } finally { S.setModeration(true); }
 });

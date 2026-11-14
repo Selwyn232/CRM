@@ -125,6 +125,8 @@ function buildRoutes({ db, uploadDir }) {
   // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
   const setting = (k) => (get(db, 'SELECT value FROM settings WHERE key = ?', k) || {}).value || '';
   require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model') });
+  // Chatmoderatie: standaard UIT tijdens de testfase (zet aan in Instellingen of met CRM_CHAT_MODERATION=aan).
+  S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION === 'aan');
   // ------------------------------------------------------------ guards
   const staff = (ctx) => {
     const s = auth.getSession(db, ctx.cookies[STAFF_COOKIE]);
@@ -859,6 +861,15 @@ function buildRoutes({ db, uploadDir }) {
       S.audit(db, ctx.actor, 'bestemming_gewijzigd', 'category', null, cat.key);
     }, admin],
     ['GET', '/api/admin/translation/status', () => require('./translate').status(), admin],
+    ['GET', '/api/admin/chat/moderation', () => ({ enabled: S.moderationEnabled() }), staff],
+    ['PUT', '/api/admin/chat/moderation', (ctx) => {
+      const on = !!ctx.body.enabled;
+      run(db, `INSERT INTO settings (key, value, updated_at) VALUES ('chat_moderation', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, on ? 'aan' : 'uit');
+      S.setModeration(on);
+      S.audit(db, ctx.actor, on ? 'chatmoderatie_aan' : 'chatmoderatie_uit', 'settings', null);
+      return { enabled: on };
+    }, admin],
     ['PUT', '/api/admin/translation/settings', (ctx) => {
       const T = require('./translate');
       const save = (k, v) => run(db, `INSERT INTO settings (key, value, updated_at) VALUES (?,?, datetime('now'))
