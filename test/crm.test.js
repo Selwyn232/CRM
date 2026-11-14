@@ -359,7 +359,7 @@ test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', asyn
   assert.equal(get(db, 'SELECT read_at FROM chat_messages').read_at, null); // meekijken markeert niets als gelezen
   const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
   assert.equal(post.status, 403);
-  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 403);
+  assert.equal((await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ child_ids: [1] }) })).status, 403);
   assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'ingelogd_als'").n, 1);
 
   // ontvanger zonder eigen wachtwoord kan ook bekeken worden
