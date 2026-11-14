@@ -53,8 +53,10 @@ Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
 
 ## Automatisch vertalen in de chat
 
-In elk chatvenster staat de knop **🌐 Automatisch vertalen**. Zet je die aan, dan worden de berichten van de ander vertaald naar de taal die je kiest. Ondersteund zijn Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees, Papiaments en Tagalog. Met "origineel" zie je de oorspronkelijke tekst. Je keuze wordt per apparaat onthouden.
+Iedereen kiest in het chatvenster **🌐 Mijn taal**: de taal waarin je leest en schrijft. Donateurs kunnen dit ook onder *Profiel & privacy* instellen, medewerkers bij de donateur of bij *Ontvangers → Inlog & chat*. De taal van elk bericht wordt **automatisch herkend**, en berichten in een andere taal worden vertaald naar jouw taal. Je schrijft gewoon in je eigen taal, en de ander leest het in de zijne. Onder het venster staat in welke taal de ander leest. Met "origineel" zie je de oorspronkelijke tekst.
 
+- Donateurs: standaard Nederlands. Ontvangers: standaard afgeleid uit het land (Haïti → Kreyòl ayisyen, Honduras → Español, Filipijnen → Tagalog, Curaçao/Aruba/Bonaire → Papiamentu, anders English).
+- Talen: Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees, Papiaments en Tagalog.
 - Vertalen gebeurt met Claude (Anthropic). Stel daarvoor de omgevingsvariabele **`ANTHROPIC_API_KEY`** in, in Render via *Environment*. Zonder sleutel is de knop uitgeschakeld.
 - Standaardmodel is `claude-opus-5-5` met lage *effort*. Met **`CRM_TRANSLATE_MODEL`** kies je een ander model, bijvoorbeeld `claude-haiku-5-5` (veel goedkoper).
 - Elk bericht wordt per taal maar één keer vertaald en daarna uit de database gehaald.

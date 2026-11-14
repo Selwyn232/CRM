@@ -315,8 +315,8 @@ async function renderChat(openId) {
     notice: noLogin + (c.chat_moderated
       ? '🛡️ Berichten worden eerst door een begeleider gelezen voordat ze worden afgeleverd. Deel geen contactgegevens en vraag niet om die van de ontvanger.'
       : '🛡️ Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.'),
-    scope: 'donor', defaultLang: 'nl',
-    load: (lang) => api(`/api/portal/conversations/${c.id}${lang ? `?vertaal=${lang}` : ''}`),
+    load: () => api(`/api/portal/conversations/${c.id}`),
+    setLanguage: async (language) => { await api('/api/portal/language', { method: 'PUT', body: { language } }); me.language = language; },
     send: (body) => api(`/api/portal/conversations/${c.id}`, { method: 'POST', body: { body } }),
   });
   refreshUnread();
@@ -386,6 +386,8 @@ async function renderProfile() {
           <div class="hint">Leeg = je voornaam en de eerste letter van je achternaam.</div></div>
         <p>Voorbeeld: <b id="preview-name"></b></p>
         <label class="check"><input type="checkbox" name="newsletter" ${me.newsletter ? 'checked' : ''}> Nieuwsbrief ontvangen</label>
+        <div class="field"><label>Mijn taal (voor de chat)</label><select name="language" id="lang-select"></select>
+          <div class="hint">Berichten van ontvangers worden automatisch naar deze taal vertaald, en jij kunt in deze taal terugschrijven.</div></div>
         <div class="field"><label>Hoe willen we je bereiken?</label><select name="preferred_channel">
           ${[['email', 'E-mail'], ['post', 'Post'], ['telefoon', 'Telefoon'], ['whatsapp', 'WhatsApp']].map(([k, v]) => `<option value="${k}" ${me.preferred_channel === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
         <button class="btn btn-primary">Opslaan</button>
@@ -411,6 +413,9 @@ async function renderProfile() {
         </form>
       </div>
     </div>`;
+  RF.api('/api/public/translation').then((t) => {
+    $('#lang-select').innerHTML = Object.entries(t.languages).map(([k, v]) => `<option value="${k}" ${(me.language || 'nl') === k ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  });
   const pf = $('#privacy');
   const preview = () => {
     const anon = pf.elements.anonymous.checked;

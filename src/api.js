@@ -42,7 +42,7 @@ const centsToEuro = (c) => ((c || 0) / 100).toFixed(2).replace('.', ',');
 
 const DONOR_FIELDS = ['donor_type', 'first_name', 'last_name', 'company_name', 'email', 'phone', 'street',
   'postal_code', 'city', 'country', 'status', 'source', 'tags', 'notes', 'anonymous', 'display_name',
-  'newsletter', 'preferred_channel'];
+  'newsletter', 'preferred_channel', 'language'];
 
 function cleanDonor(body, { partial = false } = {}) {
   const out = {};
@@ -55,6 +55,7 @@ function cleanDonor(body, { partial = false } = {}) {
   if (out.email && !isEmail(out.email)) throw new AppError(400, 'Ongeldig e-mailadres');
   if (out.donor_type && !['particulier', 'bedrijf', 'stichting'].includes(out.donor_type)) throw new AppError(400, 'Ongeldig type');
   if (out.status && !['prospect', 'actief', 'inactief'].includes(out.status)) throw new AppError(400, 'Ongeldige status');
+  if (out.language !== undefined && !require('./translate').LANGUAGES[out.language]) throw new AppError(400, 'Onbekende taal');
   if (!partial && !out.first_name && !out.last_name && !out.company_name) throw new AppError(400, 'Naam is verplicht');
   return out;
 }
@@ -68,7 +69,8 @@ function publicDonor(d) {
 function publicRecipient(r) {
   if (!r) return r;
   const { password_hash, ...rest } = r;
-  return { ...rest, has_login: !!(r.username && password_hash), chat_moderated: S.isModerated(r) ? 1 : 0 };
+  return { ...rest, has_login: !!(r.username && password_hash), chat_moderated: S.isModerated(r) ? 1 : 0,
+    language_effective: require('./translate').recipientLanguage(r) };
 }
 
 function annualStatement(db, donorId, year) {
@@ -328,7 +330,7 @@ function buildRoutes({ db, uploadDir }) {
     }, donor],
     ['PUT', '/api/portal/profile', (ctx) => {
       const allowed = ['first_name', 'last_name', 'phone', 'street', 'postal_code', 'city', 'country',
-        'anonymous', 'display_name', 'newsletter', 'preferred_channel'];
+        'anonymous', 'display_name', 'newsletter', 'preferred_channel', 'language'];
       const data = cleanDonor(Object.fromEntries(allowed.filter((k) => k in ctx.body).map((k) => [k, ctx.body[k]])), { partial: true });
       const keys = Object.keys(data);
       if (keys.length) {
@@ -337,6 +339,12 @@ function buildRoutes({ db, uploadDir }) {
         S.audit(db, ctx.actor, 'profiel_gewijzigd', 'donor', ctx.donor.id, keys.join(','));
       }
       return publicDonor(get(db, 'SELECT * FROM donors WHERE id = ?', ctx.donor.id));
+    }, donor],
+    ['PUT', '/api/portal/language', (ctx) => {
+      const T = require('./translate');
+      if (!T.LANGUAGES[ctx.body.language]) throw new AppError(400, 'Onbekende taal');
+      run(db, 'UPDATE donors SET language = ? WHERE id = ?', ctx.body.language, ctx.donor.id);
+      return { language: ctx.body.language };
     }, donor],
     ['POST', '/api/portal/password', (ctx) => {
       if (!auth.verifyPassword(ctx.body.current || '', ctx.donor.password_hash)) throw new AppError(400, 'Huidig wachtwoord klopt niet');
@@ -365,11 +373,14 @@ function buildRoutes({ db, uploadDir }) {
         AND r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
       ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
       .map((r) => ({ ...r, chat_moderated: S.isModerated(r) ? 1 : 0 })), donor],
-    ['GET', '/api/portal/conversations/:id', (ctx) => {
+    ['GET', '/api/portal/conversations/:id', async (ctx) => {
       const rid = id(ctx.params.id);
       if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
-      const msgs = S.chatThread(db, rid, ctx.donor.id, 'donor');
-      return ctx.query.vertaal ? S.withTranslations(db, msgs, ctx.query.vertaal) : msgs;
+      const T = require('./translate');
+      const r = get(db, 'SELECT * FROM recipients WHERE id = ?', rid);
+      const mine = T.donorLanguage(ctx.donor);
+      const res = await S.withTranslations(db, S.chatThread(db, rid, ctx.donor.id, 'donor'), mine);
+      return { ...res, my_language: mine, their_language: T.recipientLanguage(r), translation_enabled: T.isEnabled() };
     }, donor],
     ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
       { recipientId: id(ctx.params.id), donorId: ctx.donor.id, sender: 'donor', body: ctx.body.body }, ctx.actor), donor],
@@ -386,19 +397,28 @@ function buildRoutes({ db, uploadDir }) {
       auth.destroySession(db, ctx.cookies[RECIPIENT_COOKIE]);
       setCookie(ctx, RECIPIENT_COOKIE, '');
     }],
-    ['GET', '/api/recipient/me', (ctx) => meWith(ctx, publicRecipient(ctx.recipient)), recipient],
+    ['GET', '/api/recipient/me', (ctx) => meWith(ctx, { ...publicRecipient(ctx.recipient), language: require('./translate').recipientLanguage(ctx.recipient) }), recipient],
     ['GET', '/api/recipient/supporters', (ctx) => {
       if (!ctx.recipient.chat_enabled) return [];
       return supportersOf(ctx.recipient.id);
     }, recipient],
-    ['GET', '/api/recipient/supporters/:id', (ctx) => {
+    ['GET', '/api/recipient/supporters/:id', async (ctx) => {
       const did = id(ctx.params.id);
       if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
-      const msgs = S.chatThread(db, ctx.recipient.id, did, 'recipient');
-      return ctx.query.vertaal ? S.withTranslations(db, msgs, ctx.query.vertaal) : msgs;
+      const T = require('./translate');
+      const d = get(db, 'SELECT * FROM donors WHERE id = ?', did);
+      const mine = T.recipientLanguage(ctx.recipient);
+      const res = await S.withTranslations(db, S.chatThread(db, ctx.recipient.id, did, 'recipient'), mine);
+      return { ...res, my_language: mine, their_language: T.donorLanguage(d), translation_enabled: T.isEnabled() };
     }, recipient],
     ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
       { recipientId: ctx.recipient.id, donorId: id(ctx.params.id), sender: 'recipient', body: ctx.body.body }, ctx.actor), recipient],
+    ['PUT', '/api/recipient/language', (ctx) => {
+      const T = require('./translate');
+      if (!T.LANGUAGES[ctx.body.language]) throw new AppError(400, 'Onbekende taal');
+      run(db, 'UPDATE recipients SET language = ? WHERE id = ?', ctx.body.language, ctx.recipient.id);
+      return { language: ctx.body.language };
+    }, recipient],
     ['POST', '/api/recipient/password', (ctx) => {
       if (!auth.verifyPassword(ctx.body.current || '', ctx.recipient.password_hash)) throw new AppError(400, 'Huidig wachtwoord klopt niet');
       if (!ctx.body.password || String(ctx.body.password).length < 8) throw new AppError(400, 'Nieuw wachtwoord moet minimaal 8 tekens zijn');
@@ -710,9 +730,10 @@ function buildRoutes({ db, uploadDir }) {
       if (b.password && String(b.password).length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
       if (username && !b.password && !r.password_hash) throw new AppError(400, 'Stel een wachtwoord in');
       const moderated = r.kind === 'kind' ? 1 : bool(b.chat_moderated);
+      const language = require('./translate').LANGUAGES[b.language] ? b.language : (r.language || '');
       tx(db, () => {
-        run(db, 'UPDATE recipients SET username = ?, managed_by = ?, chat_enabled = ?, chat_moderated = ? WHERE id = ?',
-          username, managedBy, bool(b.chat_enabled), moderated, rid);
+        run(db, 'UPDATE recipients SET username = ?, managed_by = ?, chat_enabled = ?, chat_moderated = ?, language = ? WHERE id = ?',
+          username, managedBy, bool(b.chat_enabled), moderated, language, rid);
         if (b.password) run(db, 'UPDATE recipients SET password_hash = ? WHERE id = ?', auth.hashPassword(b.password), rid);
         if (!username) {
           run(db, 'UPDATE recipients SET password_hash = NULL WHERE id = ?', rid);

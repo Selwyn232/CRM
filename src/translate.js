@@ -16,6 +16,15 @@ const LANGUAGES = {
   tl: 'Tagalog',
 };
 
+// Standaardtaal voor ontvangers zonder eigen keuze, op basis van het land.
+const COUNTRY_LANG = {
+  'haïti': 'ht', haiti: 'ht', honduras: 'es', guatemala: 'es', nicaragua: 'es', 'el salvador': 'es', mexico: 'es',
+  filipijnen: 'tl', philippines: 'tl', 'curaçao': 'pap', curacao: 'pap', aruba: 'pap', bonaire: 'pap',
+  nederland: 'nl', 'belgië': 'nl', suriname: 'nl', frankrijk: 'fr', duitsland: 'de', brazilië: 'pt', mozambique: 'pt',
+};
+const recipientLanguage = (r) => (r && LANGUAGES[r.language] ? r.language : COUNTRY_LANG[String(r && r.country || '').trim().toLowerCase()] || 'en');
+const donorLanguage = (d) => (d && LANGUAGES[d.language] ? d.language : 'nl');
+
 const MODEL = process.env.CRM_TRANSLATE_MODEL || 'claude-opus-5-5';
 
 let client = null;
@@ -107,4 +116,4 @@ async function translateBatch(items, target) {
   return out;
 }
 
-module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL };
+module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL, recipientLanguage, donorLanguage };

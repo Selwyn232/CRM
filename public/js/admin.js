@@ -36,9 +36,12 @@ async function showApp() {
 }
 
 async function loadLookups() {
-  [state.categories, state.users, state.campaigns, state.recipients] = await Promise.all([
+  let tr;
+  [state.categories, state.users, state.campaigns, state.recipients, tr] = await Promise.all([
     api('/api/admin/categories'), api('/api/admin/users'), api('/api/admin/campaigns'), api('/api/admin/recipients'),
+    api('/api/public/translation'),
   ]);
+  state.languages = tr.languages;
   refreshNavCounts();
 }
 
@@ -98,6 +101,7 @@ const userOptions = (sel) => opt('', '— niemand —', sel) + state.users.filte
 const recipientOptions = (sel) => opt('', '— geen specifieke ontvanger —', sel) +
   state.recipients.filter((r) => r.active).map((r) => opt(r.id, `${r.name} (${label('recipient', r.kind)}${r.country ? `, ${r.country}` : ''})`, sel)).join('');
 const campaignOptions = (sel) => opt('', '— geen campagne —', sel) + state.campaigns.map((c) => opt(c.id, c.name, sel)).join('');
+const langOptions = (sel) => Object.entries(state.languages || {}).map(([k, v]) => opt(k, v, sel)).join('');
 const tags = (s) => String(s || '').split(',').map((t) => t.trim()).filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join('');
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
 const donorLink = (id, name) => `<a href="#/donateurs/${id}">${esc(name)}</a>`;
@@ -254,6 +258,7 @@ function donorForm(d, done) {
         <div class="field"><label>Plaats</label><input type="text" name="city" value="${esc(d.city || '')}"></div>
         <div class="field"><label>Land</label><input type="text" name="country" value="${esc(d.country || 'Nederland')}"></div>
       </div>
+      <div class="field"><label>Taal (chat)</label><select name="language">${langOptions(d.language || 'nl')}</select></div>
       <div class="field"><label>Tags (komma-gescheiden)</label><input type="text" name="tags" value="${esc(d.tags || '')}" placeholder="maandgever, major donor"></div>
       <div class="field-row">
         <div class="field"><label class="check"><input type="checkbox" name="anonymous" ${d.anonymous ?? 1 ? 'checked' : ''}> Anoniem op het leaderboard</label>
@@ -896,6 +901,8 @@ function accessForm(r) {
       <div class="field"><label>Begeleider ${isChild ? '(verplicht bij kinderen)' : '(optioneel)'}</label>
         <input type="text" name="managed_by" value="${esc(r.managed_by || '')}" placeholder="bv. Juf Marie (Escuela Esperanza)" ${isChild ? 'required' : ''}>
         <div class="hint">De volwassene die het account beheert en het kind helpt met lezen en schrijven.</div></div>
+      <div class="field"><label>Taal waarin de ontvanger leest en schrijft</label><select name="language">${langOptions(r.language_effective || r.language)}</select>
+        <div class="hint">Standaard afgeleid uit het land (bv. Haïti → Kreyòl ayisyen). Berichten worden automatisch vertaald.</div></div>
       <label class="check"><input type="checkbox" name="chat_enabled" ${r.chat_enabled ?? 1 ? 'checked' : ''}> Chat ingeschakeld</label>
       <label class="check"><input type="checkbox" name="chat_moderated" ${r.chat_moderated || isChild ? 'checked' : ''} ${isChild ? 'disabled' : ''}>
         <span>Berichten eerst laten goedkeuren door een medewerker ${isChild ? '<span class="muted">(altijd aan bij kinderen)</span>' : ''}</span></label>

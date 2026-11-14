@@ -297,6 +297,9 @@ function migrate(db) {
   add('chat_enabled', 'INTEGER NOT NULL DEFAULT 1');
   add('chat_moderated', 'INTEGER NOT NULL DEFAULT 1');        // berichten eerst laten goedkeuren
   add('last_login_at', 'TEXT');
+  add('language', "TEXT NOT NULL DEFAULT ''");                // leest/schrijft in; leeg = afleiden uit land
+  const donorCols = db.prepare('PRAGMA table_info(donors)').all().map((c) => c.name);
+  if (!donorCols.includes('language')) db.exec("ALTER TABLE donors ADD COLUMN language TEXT NOT NULL DEFAULT 'nl'");
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_recipients_username ON recipients(username COLLATE NOCASE)');
 
   const sessionCols = () => db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name);

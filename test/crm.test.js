@@ -278,7 +278,7 @@ test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang en gelogd',
   const me = await (await fetch(`${base}/api/donor/me`, { headers: { cookie: as } })).json();
   assert.equal(me.impersonated_by, 'Admin');
   const thread = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie: as } })).json();
-  assert.equal(thread.length, 1);
+  assert.equal(thread.messages.length, 1);
   // namens de donateur chatten en doneren mag; audit log laat zien wie het deed
   const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
   assert.equal(post.status, 200);
@@ -323,4 +323,34 @@ test('chat vertalen: alleen berichten van de ander, gecachet, fout breekt chat n
     T.translateBatch = orig;
     if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
   }
+});
+
+test('taal: ontvanger standaard uit land, eigen keuze gaat voor; donateur standaard Nederlands', () => {
+  const T = require('../src/translate');
+  assert.equal(T.recipientLanguage({ country: 'Haïti', language: '' }), 'ht');
+  assert.equal(T.recipientLanguage({ country: 'Honduras', language: '' }), 'es');
+  assert.equal(T.recipientLanguage({ country: 'Filipijnen', language: '' }), 'tl');
+  assert.equal(T.recipientLanguage({ country: 'Haïti', language: 'fr' }), 'fr');
+  assert.equal(T.recipientLanguage({ country: 'Onbekend', language: '' }), 'en');
+  assert.equal(T.donorLanguage({ language: 'nl' }), 'nl');
+  assert.equal(T.donorLanguage({}), 'nl');
+});
+
+test('HTTP: chatgesprek geeft eigen taal en taal van de ander; taal wijzigen', async (t) => {
+  const { db, donor, rid } = chatSetup('school', 0);
+  run(db, "UPDATE recipients SET country = 'Haïti' WHERE id = ?", rid);
+  run(db, 'UPDATE donors SET password_hash = ?, email = ? WHERE id = ?', hashPassword('welkom123'), 'd@x.nl', donor);
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'd@x.nl', password: 'welkom123' }) }))
+    .headers.get('set-cookie').split(';')[0];
+  let th = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie } })).json();
+  assert.equal(th.my_language, 'nl');
+  assert.equal(th.their_language, 'ht');
+  assert.equal((await fetch(`${base}/api/portal/language`, { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify({ language: 'tl' }) })).status, 200);
+  assert.equal((await fetch(`${base}/api/portal/language`, { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify({ language: 'xx' }) })).status, 400);
+  th = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie } })).json();
+  assert.equal(th.my_language, 'tl');
 });

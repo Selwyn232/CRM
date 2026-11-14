@@ -213,31 +213,22 @@ const RF = (() => {
   };
 
 
-  // Vertaalinstellingen (per apparaat): { on, lang }
   let translationInfo = null;
   const getTranslationInfo = () => (translationInfo ||= api('/api/public/translation').catch(() => ({ enabled: false, languages: {} })));
-  const prefKey = (scope) => `rf_vertalen_${scope}`;
-  const loadPref = (scope, fallback) => {
-    try { return { on: false, lang: fallback, ...JSON.parse(localStorage.getItem(prefKey(scope)) || '{}') }; }
-    catch { return { on: false, lang: fallback }; }
-  };
-  const savePref = (scope, pref) => { try { localStorage.setItem(prefKey(scope), JSON.stringify(pref)); } catch { /* geen opslag */ } };
-  const browserLang = () => (navigator.language || 'nl').slice(0, 2).toLowerCase();
 
-  // Chatvenster. opts: { load(lang): Promise<msgs | {messages, translate_error}>, send(body), notice, otherName, scope, defaultLang }
+  // Chatvenster. opts: { load(): Promise<{messages, my_language, their_language, translate_error}>,
+  //   send(body), setLanguage(code), notice, otherName }
+  // Je kiest één taal ("Mijn taal") om in te lezen en te schrijven; de taal van berichten wordt automatisch herkend.
   async function chatBox(container, opts) {
     const info = await getTranslationInfo();
-    const scope = opts.scope || 'chat';
-    const pref = loadPref(scope, info.languages[browserLang()] ? browserLang() : (opts.defaultLang || 'nl'));
     container.innerHTML = `
       <div class="chat">
         ${opts.notice ? `<div class="chat-notice">${opts.notice}</div>` : ''}
         <div class="chat-tools">
-          <button type="button" class="btn btn-ghost btn-sm translate-toggle" aria-pressed="${pref.on && info.enabled}"
-            ${info.enabled ? '' : 'disabled title="Vertalen is nog niet ingesteld door Robin Foundation"'}>🌐 Automatisch vertalen: <b>${pref.on && info.enabled ? 'aan' : 'uit'}</b></button>
-          <select class="translate-lang" aria-label="Vertaal naar" ${pref.on && info.enabled ? '' : 'hidden'}>
-            ${Object.entries(info.languages).map(([k, v]) => `<option value="${k}" ${k === pref.lang ? 'selected' : ''}>naar ${esc(v)}</option>`).join('')}
-          </select>
+          <label class="lang-pick">🌐 Mijn taal
+            <select class="translate-lang" aria-label="Mijn taal (lezen en schrijven)">
+              ${Object.entries(info.languages).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
+            </select></label>
           <span class="translate-status small muted"></span>
         </div>
         <div class="chat-log" aria-live="polite"></div>
@@ -248,21 +239,19 @@ const RF = (() => {
         <p class="form-error" hidden style="margin:8px 0 0"></p>
       </div>`;
     const log = container.querySelector('.chat-log');
-    const toggle = container.querySelector('.translate-toggle');
     const langSel = container.querySelector('.translate-lang');
     const status = container.querySelector('.translate-status');
+    const textarea = container.querySelector('textarea');
     const showOriginal = new Set();
-    const translating = () => pref.on && info.enabled;
-    toggle.addEventListener('click', () => {
-      pref.on = !pref.on;
-      savePref(scope, pref);
-      toggle.setAttribute('aria-pressed', translating());
-      toggle.querySelector('b').textContent = translating() ? 'aan' : 'uit';
-      langSel.hidden = !translating();
+    const langName = (code) => info.languages[code] || code;
+    langSel.addEventListener('change', async () => {
+      langSel.disabled = true;
+      try { await opts.setLanguage(langSel.value); toast(`Mijn taal: ${langName(langSel.value)}`); }
+      catch (ex) { toast(ex.message, 'error'); }
+      finally { langSel.disabled = false; }
       lastSig = '';
       refresh();
     });
-    langSel.addEventListener('change', () => { pref.lang = langSel.value; savePref(scope, pref); lastSig = ''; refresh(); });
     log.addEventListener('click', (e) => {
       const b = e.target.closest('[data-orig]');
       if (!b) return;
@@ -271,7 +260,6 @@ const RF = (() => {
       lastSig = '';
       refresh();
     });
-    const langName = (code) => info.languages[code] || code;
     const form = container.querySelector('.chat-form');
     const err = container.querySelector('.form-error');
     let lastSig = '';
@@ -280,12 +268,18 @@ const RF = (() => {
       : m.status === 'afgewezen' ? `<span class="chat-status bad">✗ niet verstuurd${m.reject_reason ? `: ${esc(m.reject_reason)}` : ''}</span>`
         : m.read_at ? '<span class="chat-status">✓✓ gelezen</span>' : '<span class="chat-status">✓ verstuurd</span>');
     async function refresh() {
-      const lang = translating() ? pref.lang : '';
-      if (lang && !lastSig) status.textContent = 'Vertalen…';
-      const res = await opts.load(lang);
+      if (!lastSig && info.enabled) status.textContent = 'Berichten laden…';
+      const res = await opts.load();
       const msgs = Array.isArray(res) ? res : res.messages;
-      status.textContent = res.translate_error ? `⚠️ ${res.translate_error}` : '';
-      const sig = lang + msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}:${m.translation ? 1 : 0}:${showOriginal.has(m.id) ? 1 : 0}`).join('|');
+      if (res.my_language && document.activeElement !== langSel) langSel.value = res.my_language;
+      const other = opts.otherName || 'De ander';
+      if (!info.enabled) status.textContent = 'Automatisch vertalen is nog niet ingesteld.';
+      else if (res.translate_error) status.textContent = `⚠️ ${res.translate_error}`;
+      else if (res.their_language && res.my_language && res.their_language !== res.my_language) {
+        status.textContent = `Jij leest en schrijft in: ${langName(res.my_language)} · ${other} leest jouw berichten in: ${langName(res.their_language)}`;
+      } else status.textContent = 'Berichten in een andere taal worden automatisch vertaald.';
+      if (res.my_language) textarea.placeholder = `Schrijf een bericht (${langName(res.my_language)})…`;
+      const sig = (res.my_language || '') + msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}:${m.translation ? 1 : 0}:${showOriginal.has(m.id) ? 1 : 0}`).join('|');
       if (sig === lastSig) return;
       lastSig = sig;
       const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
