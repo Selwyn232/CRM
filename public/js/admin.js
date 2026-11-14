@@ -1248,7 +1248,7 @@ function accessForm(r) {
         <input type="text" name="managed_by" value="${esc(r.managed_by || '')}" placeholder="bv. Juf Marie (Escuela Esperanza)" ${isChild ? 'required' : ''}>
         <div class="hint">De volwassene die het account beheert en het kind helpt met lezen en schrijven.</div></div>
       <div class="field"><label>Taal waarin de ontvanger leest en schrijft</label><select name="language">${langOptions(r.language_effective || r.language)}</select>
-        <div class="hint">Standaard afgeleid uit het land (bv. Haïti → Kreyòl ayisyen). Berichten worden automatisch vertaald.</div></div>
+        <div class="hint">Standaard Nederlands. Kies een andere taal als de ontvanger die beter leest; berichten worden automatisch vertaald.</div></div>
       <label class="check"><input type="checkbox" name="chat_enabled" ${r.chat_enabled ?? 1 ? 'checked' : ''}> Chat ingeschakeld</label>
       <label class="check"><input type="checkbox" name="chat_moderated" ${r.chat_moderated || isChild ? 'checked' : ''} ${isChild ? 'disabled' : ''}>
         <span>Berichten eerst laten goedkeuren door een medewerker ${isChild ? '<span class="muted">(altijd aan bij kinderen)</span>' : ''}</span></label>
