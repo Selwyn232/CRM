@@ -655,11 +655,12 @@ function buildRoutes({ db, uploadDir }) {
       if (tag) { where.push("(',' || REPLACE(d.tags, ' ', '') || ',') LIKE ?"); params.push(`%,${tag.replace(/\s/g, '')},%`); }
       const order = {
         name: 'd.last_name COLLATE NOCASE, d.first_name COLLATE NOCASE, d.company_name COLLATE NOCASE',
-        total: 'total_cents DESC', recent: 'last_donation DESC', created: 'd.created_at DESC',
+        total: 'total_cents DESC', monthly: 'monthly_cents DESC, total_cents DESC', recent: 'last_donation DESC', created: 'd.created_at DESC',
       }[sort] || 'd.last_name';
       return all(db, `SELECT d.*,
           COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen'),0) AS total_cents,
           (SELECT COUNT(*) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd') AS children,
+          COALESCE((SELECT SUM(monthly_cents) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd'),0) AS monthly_cents,
           (SELECT COUNT(*) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen') AS donation_count,
           (SELECT MAX(received_at) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen') AS last_donation,
           (SELECT COUNT(*) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND frequency<>'eenmalig' AND status='ontvangen') AS recurring
