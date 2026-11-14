@@ -44,7 +44,12 @@ function readBody(req) {
       const raw = Buffer.concat(chunks).toString('utf8');
       // Webhooks van betaalproviders sturen een formulier (id=tr_…), geen JSON.
       if ((req.headers['content-type'] || '').includes('application/x-www-form-urlencoded')) return resolve(Object.fromEntries(new URLSearchParams(raw)));
-      try { resolve(JSON.parse(raw)); }
+      try {
+        const body = JSON.parse(raw);
+        // Ruwe body bewaren (onzichtbaar) voor webhooks die een handtekening over de body controleren.
+        if (body && typeof body === 'object') Object.defineProperty(body, '__raw', { value: raw, enumerable: false });
+        resolve(body);
+      }
       catch { reject(new AppError(400, 'Ongeldige JSON')); }
     });
     req.on('error', reject);

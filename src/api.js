@@ -22,6 +22,7 @@ const id = (v) => {
   if (!Number.isInteger(n) || n <= 0) throw new AppError(400, 'Ongeldig id');
   return n;
 };
+const ROLES = ['admin', 'medewerker', 'veldmedewerker'];
 const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 function csv(rows, columns) {
@@ -173,7 +174,7 @@ function buildRoutes({ db, uploadDir }) {
   }
 
   // ------------------------------------------------------------ wachtwoorden & demo
-  const WEAK = ['robin', 'admin123', 'medewerker123', 'welkom123', 'wachtwoord', 'password', '12345678', 'robinfoundation'];
+  const WEAK = ['robin', 'veld', 'admin123', 'medewerker123', 'welkom123', 'wachtwoord', 'password', '12345678', 'robinfoundation'];
   const isWeakStored = (hash) => WEAK.some((w) => auth.verifyPassword(w, hash));
   function checkStrongPassword(pw, login = '') {
     const p = String(pw || '');
@@ -183,12 +184,13 @@ function buildRoutes({ db, uploadDir }) {
     }
   }
   // Demomodus zolang er nog demo-accounts of voorbeelddonateurs in de database staan.
-  const isDemo = () => !!(get(db, "SELECT 1 AS x FROM users WHERE email IN ('robin', 'admin@robinfoundation.org', 'medewerker@robinfoundation.org') LIMIT 1")
+  const isDemo = () => !!(get(db, "SELECT 1 AS x FROM users WHERE email IN ('robin', 'veld', 'admin@robinfoundation.org', 'medewerker@robinfoundation.org') LIMIT 1")
     || get(db, "SELECT 1 AS x FROM donors WHERE email LIKE '%@example.nl' LIMIT 1"));
   // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
   const setting = (k) => (get(db, 'SELECT value FROM settings WHERE key = ?', k) || {}).value || '';
   require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model'), workspace: setting('translate_workspace') });
   require('./payments').configure({ apiKey: setting('mollie_api_key') });
+  require('./idcheck').configure({ apiKey: setting('veriff_api_key'), secret: setting('veriff_secret') });
   require('./mailer').configure({ apiKey: setting('mail_api_key'), fromEmail: setting('mail_from_email'), fromName: setting('mail_from_name') });
   // Chatmoderatie: standaard UIT tijdens de testfase (zet aan in Instellingen of met CRM_CHAT_MODERATION=aan).
   // Chatmoderatie staat standaard AAN (kinderen). Eenmalig na de testfase weer aanzetten.
@@ -206,15 +208,26 @@ function buildRoutes({ db, uploadDir }) {
     } catch (err) { console.error('Voorbeeldkinderen toevoegen mislukt:', err.message); }
     run(db, "INSERT INTO settings (key, value) VALUES ('sponsor_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
   }
+  // Onboarding: in een demo-omgeving eenmalig een veldmedewerker (veld / veld) om het vier-ogenprincipe te testen.
+  if (!setting('veld_demo_v1') && isDemo() && !get(db, "SELECT 1 AS x FROM users WHERE role = 'veldmedewerker'")) {
+    run(db, "INSERT OR IGNORE INTO users (email, name, role, password_hash) VALUES ('veld', 'Joy Veldwerker', 'veldmedewerker', ?)", auth.hashPassword('veld'));
+    run(db, "INSERT INTO settings (key, value) VALUES ('veld_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
+  }
   S.setModeration(setting('chat_moderation') ? setting('chat_moderation') === 'aan' : process.env.CRM_CHAT_MODERATION !== 'uit');
   // ------------------------------------------------------------ guards
-  const staff = (ctx) => {
+  // Iedere ingelogde medewerker, ook veldmedewerkers (alleen voor eigen account en onboarding).
+  const field = (ctx) => {
     const s = auth.getSession(db, ctx.cookies[STAFF_COOKIE]);
     if (!s || s.kind !== 'staff') throw new AppError(401, 'Niet ingelogd');
     const user = get(db, 'SELECT id, email, name, role, active FROM users WHERE id = ?', s.subject_id);
     if (!user || !user.active) throw new AppError(401, 'Niet ingelogd');
     ctx.user = user;
     ctx.actor = `medewerker:${user.email}`;
+  };
+  // Kantoormedewerkers en beheerders: veldmedewerkers hebben geen toegang tot donateurs, betalingen e.d.
+  const staff = (ctx) => {
+    field(ctx);
+    if (ctx.user.role === 'veldmedewerker') throw new AppError(403, 'Veldmedewerkers hebben alleen toegang tot onboarding');
   };
   const admin = (ctx) => {
     staff(ctx);
@@ -287,9 +300,11 @@ function buildRoutes({ db, uploadDir }) {
 
   const categories = () => all(db, 'SELECT * FROM categories ORDER BY sort_order');
   sponsor = require('./api-sponsor').buildSponsorRoutes({ db, guards: { staff, admin, donor, recipient }, publicBase });
+  const onboardingRoutes = require('./api-onboarding').buildOnboardingRoutes({ db, uploadDir, guards: { field, staff, admin }, publicBase });
 
   return [
     ...sponsor.routes,
+    ...onboardingRoutes,
     // ================================================================ PUBLIEK
     ['GET', '/api/public/translation', () => {
       const T = require('./translate');
@@ -326,7 +341,7 @@ function buildRoutes({ db, uploadDir }) {
       let nav = null;
       try { nav = u.nav_prefs ? JSON.parse(u.nav_prefs) : null; } catch { nav = null; }
       return { ...ctx.user, weak_password: isWeakStored(u.password_hash), nav };
-    }, staff],
+    }, field],
     // Eigen menuvolgorde: [{ group: 'Naam', items: ['donateurs', ...] }, ...]; null = standaard.
     ['PUT', '/api/staff/preferences/nav', (ctx) => {
       const nav = ctx.body.nav;
@@ -342,7 +357,7 @@ function buildRoutes({ db, uploadDir }) {
       });
       run(db, 'UPDATE users SET nav_prefs = ? WHERE id = ?', JSON.stringify(clean), ctx.user.id);
       return { nav: clean };
-    }, staff],
+    }, field],
     ['POST', '/api/staff/password', (ctx) => {
       const u = get(db, 'SELECT * FROM users WHERE id = ?', ctx.user.id);
       if (!auth.verifyPassword(ctx.body.current || '', u.password_hash)) throw new AppError(400, 'Je huidige wachtwoord klopt niet');
@@ -351,7 +366,7 @@ function buildRoutes({ db, uploadDir }) {
       // Andere sessies van deze gebruiker afmelden
       run(db, "DELETE FROM sessions WHERE kind = 'staff' AND subject_id = ? AND token <> ?", u.id, ctx.cookies[STAFF_COOKIE] || '');
       S.audit(db, ctx.actor, 'eigen_wachtwoord_gewijzigd', 'user', u.id);
-    }, staff],
+    }, field],
     ['GET', '/api/public/config', () => ({ demo: isDemo(), payments: require('./payments').isEnabled(), payments_mode: require('./payments').mode() })],
 
     // ================================================================ AUTH DONATEURS
@@ -1044,7 +1059,7 @@ function buildRoutes({ db, uploadDir }) {
       checkStrongPassword(b.password, email);
       if (get(db, 'SELECT id FROM users WHERE email = ?', email)) throw new AppError(409, 'Gebruiker bestaat al');
       const r = run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)',
-        email, str(b.name, 100) || email, b.role === 'admin' ? 'admin' : 'medewerker', auth.hashPassword(b.password));
+        email, str(b.name, 100) || email, ROLES.includes(b.role) ? b.role : 'medewerker', auth.hashPassword(b.password));
       S.audit(db, ctx.actor, 'gebruiker_aangemaakt', 'user', Number(r.lastInsertRowid));
       return { id: Number(r.lastInsertRowid) };
     }, admin],
@@ -1053,12 +1068,12 @@ function buildRoutes({ db, uploadDir }) {
       const u = get(db, 'SELECT * FROM users WHERE id = ?', userId);
       if (!u) throw new AppError(404, 'Gebruiker niet gevonden');
       const b = ctx.body;
-      if (userId === ctx.user.id && (b.active === false || b.role === 'medewerker')) {
+      if (userId === ctx.user.id && (b.active === false || (b.role && b.role !== 'admin'))) {
         throw new AppError(400, 'Je kunt je eigen beheerrechten niet intrekken');
       }
       tx(db, () => {
         run(db, 'UPDATE users SET name=?, role=?, active=? WHERE id=?', str(b.name ?? u.name, 100),
-          (b.role ?? u.role) === 'admin' ? 'admin' : 'medewerker', b.active === undefined ? u.active : bool(b.active), userId);
+          ROLES.includes(b.role ?? u.role) ? (b.role ?? u.role) : 'medewerker', b.active === undefined ? u.active : bool(b.active), userId);
         if (b.password) {
           checkStrongPassword(b.password, u.email);
           run(db, 'UPDATE users SET password_hash = ? WHERE id = ?', auth.hashPassword(b.password), userId);
@@ -1075,7 +1090,7 @@ function buildRoutes({ db, uploadDir }) {
     }, admin],
 
     // ================================================================ BEHEER: INTEGRATIES (betalingen, e-mail)
-    ['GET', '/api/admin/integrations', () => ({ payments: require('./payments').status(), email: require('./mailer').status() }), admin],
+    ['GET', '/api/admin/integrations', () => ({ payments: require('./payments').status(), email: require('./mailer').status(), idcheck: require('./idcheck').status() }), admin],
     ['PUT', '/api/admin/integrations', (ctx) => {
       const P = require('./payments'); const M = require('./mailer');
       const b = ctx.body;
@@ -1093,6 +1108,14 @@ function buildRoutes({ db, uploadDir }) {
         save('mail_api_key', k); M.configure({ apiKey: k });
       }
       if (b.remove_mail) { save('mail_api_key', ''); M.configure({ apiKey: '' }); }
+      const V = require('./idcheck');
+      for (const [field, k] of [['veriff_api_key', 'apiKey'], ['veriff_secret', 'secret']]) {
+        if (!b[field]) continue;
+        const v = String(b[field]).trim();
+        if (/\s/.test(v) || v.length < 16) throw new AppError(400, 'Dit lijkt geen Veriff-sleutel (Veriff Station → Integrations → API keys).');
+        save(field, v); V.configure({ [k]: v });
+      }
+      if (b.remove_veriff) { save('veriff_api_key', ''); save('veriff_secret', ''); V.configure({ apiKey: '', secret: '' }); }
       if (b.mail_from_email !== undefined) {
         const e = str(b.mail_from_email, 200).toLowerCase();
         if (e && !isEmail(e)) throw new AppError(400, 'Ongeldig afzenderadres');
@@ -1101,7 +1124,7 @@ function buildRoutes({ db, uploadDir }) {
       if (b.mail_from_name !== undefined) { save('mail_from_name', str(b.mail_from_name, 100)); M.configure({ fromName: str(b.mail_from_name, 100) }); }
       S.audit(db, ctx.actor, 'integraties_gewijzigd', 'settings', null,
         { mollie: b.remove_mollie ? 'verwijderd' : b.mollie_api_key ? 'gewijzigd' : '-', mail: b.remove_mail ? 'verwijderd' : b.mail_api_key ? 'gewijzigd' : '-' });
-      return { payments: P.status(), email: M.status() };
+      return { payments: P.status(), email: M.status(), idcheck: V.status() };
     }, admin],
     ['POST', '/api/admin/integrations/test-mollie', async () => {
       const P = require('./payments');
@@ -1144,7 +1167,7 @@ function buildRoutes({ db, uploadDir }) {
       if (isWeakStored(me.password_hash)) throw new AppError(400, 'Wijzig eerst je eigen wachtwoord; anders kan na het wissen iedereen met het demo-wachtwoord inloggen.');
       if (['robin', 'admin@robinfoundation.org'].includes(me.email)) throw new AppError(400, 'Geef je eigen account eerst een echte inlognaam (je e-mailadres) via Instellingen → Gebruikers.');
       tx(db, () => {
-        db.exec(`DELETE FROM child_updates; DELETE FROM sponsor_months; DELETE FROM sponsorships; DELETE FROM children;
+        db.exec(`DELETE FROM onboarding_files; DELETE FROM onboardings; DELETE FROM child_updates; DELETE FROM sponsor_months; DELETE FROM sponsorships; DELETE FROM children;
           DELETE FROM chat_translations; DELETE FROM chat_messages; DELETE FROM donor_messages; DELETE FROM impact_messages;
           DELETE FROM allocations; DELETE FROM expenditures; DELETE FROM cells; DELETE FROM donations; DELETE FROM interactions;
           DELETE FROM tasks; DELETE FROM campaigns; DELETE FROM recipients; DELETE FROM outbox; DELETE FROM donors;`);
@@ -1155,6 +1178,8 @@ function buildRoutes({ db, uploadDir }) {
       S.setModeration(true);
       // Geüploade bestanden hoorden bij de verwijderde berichten
       for (const f of fs.readdirSync(uploadDir)) { try { fs.unlinkSync(path.join(uploadDir, f)); } catch { /* negeren */ } }
+      const privateDir = process.env.CRM_PRIVATE || path.join(path.dirname(path.resolve(uploadDir)), 'private');
+      if (fs.existsSync(privateDir)) for (const f of fs.readdirSync(privateDir)) { try { fs.unlinkSync(path.join(privateDir, f)); } catch { /* negeren */ } }
       S.audit(db, ctx.actor, 'demodata_gewist', 'system', null);
       return { ok: true };
     }, admin],

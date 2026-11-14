@@ -25,6 +25,7 @@ function showLogin() {
 const NAV = [
   { items: [{ route: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' }] },
   { group: 'Sponsoring', items: [
+    { route: 'onboarding', label: 'Onboarding', icon: 'badge-check', count: 'onb', attn: true },
     { route: 'kinderen', label: 'Kinderen', icon: 'smile' },
     { route: 'sponsorschappen', label: 'Sponsorschappen', icon: 'heart-handshake' },
     { route: 'updates', label: 'Maandupdates', icon: 'image' },
@@ -50,7 +51,9 @@ const NAV = [
 const NAV_ITEMS = NAV.flatMap((g) => g.items);
 
 // Eigen menuvolgorde toepassen. Onbekende routes vallen weg; nieuwe pagina's komen in hun standaardgroep.
+const isField = () => state.user && state.user.role === 'veldmedewerker';
 function navGroups() {
+  if (isField()) return [{ group: '', items: NAV_ITEMS.filter((i) => i.route === 'onboarding') }];
   const prefs = state.user && state.user.nav;
   const byRoute = Object.fromEntries(NAV_ITEMS.map((it) => [it.route, it]));
   if (!Array.isArray(prefs)) return NAV.map((g) => ({ group: g.group || '', items: g.items }));
@@ -184,7 +187,7 @@ async function showApp() {
   $('#cmdk-icon').innerHTML = RF.icon('search');
   $('#menu-toggle').innerHTML = RF.icon('menu', 'icon-lg');
   $('#m-search').innerHTML = RF.icon('search', 'icon-lg');
-  $('#me').innerHTML = `${RF.avatar(state.user.name, 'sm')}<span class="who"><b>${esc(state.user.name)}</b><span>${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></span>${RF.icon('chevron-down', 'icon-sm')}`;
+  $('#me').innerHTML = `${RF.avatar(state.user.name, 'sm')}<span class="who"><b>${esc(state.user.name)}</b><span>${({ admin: 'Beheerder', medewerker: 'Medewerker', veldmedewerker: 'Veldmedewerker' })[state.user.role] || 'Medewerker'}</span></span>${RF.icon('chevron-down', 'icon-sm')}`;
   $('#me').onclick = (e) => RF.menu(e.currentTarget, [
     { heading: state.user.email },
     { label: 'Publiek leaderboard', icon: 'globe', href: '/leaderboard', external: true },
@@ -211,6 +214,7 @@ async function showApp() {
 
 async function loadLookups() {
   let tr;
+  if (isField()) { state.languages = (await api('/api/public/translation')).languages; return; }
   [state.categories, state.users, state.campaigns, state.recipients, tr] = await Promise.all([
     api('/api/admin/categories'), api('/api/admin/users'), api('/api/admin/campaigns'), api('/api/admin/recipients'),
     api('/api/public/translation'),
@@ -220,10 +224,12 @@ async function loadLookups() {
 }
 
 async function refreshNavCounts() {
+  if (isField()) return;
   try {
     const d = await api('/api/admin/dashboard');
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || ''; };
     set('nav-cells', d.totals.open_cells); set('nav-tasks', d.totals.open_tasks); set('nav-chat', d.totals.pending_chats);
+    api('/api/onboarding?status=ingediend').then((r) => set('nav-onb', r.length)).catch(() => {});
   } catch { /* stil */ }
 }
 
@@ -247,7 +253,8 @@ const ROUTES = {
 };
 
 async function route() {
-  const [name, param] = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/');
+  let [name, param] = (location.hash.replace(/^#\/?/, '') || (isField() ? 'onboarding' : 'dashboard')).split('/');
+  if (isField() && name !== 'onboarding') { name = 'onboarding'; param = undefined; }
   const fn = ROUTES[name] || ROUTES.dashboard;
   document.querySelectorAll('#nav a[data-route]').forEach((a) => {
     const on = a.dataset.route === (ROUTES[name] ? name : 'dashboard');
@@ -1547,7 +1554,7 @@ async function renderGoLive() {
 
 async function renderIntegrations() {
   const st = await api('/api/admin/integrations');
-  const p = st.payments; const m = st.email;
+  const p = st.payments; const m = st.email; const v = st.idcheck || {};
   const src = (x) => (x.key_source === 'render' ? ' (ingesteld in Render)' : '');
   $('#int-card').innerHTML = `<div class="card-head"><div><h2>Integraties</h2><div class="small muted">Echte betalingen en e-mail. Sleutels worden nooit volledig getoond.</div></div></div>
     <form id="int-form">
@@ -1567,6 +1574,14 @@ async function renderIntegrations() {
           <div class="field"><label>Afzendernaam</label><input type="text" name="mail_from_name" value="${esc(m.from_name)}"></div>
         </div>
         <div class="toolbar"><input type="text" id="test-to" placeholder="Stuur testmail naar…" style="width:auto;min-width:220px;height:28px;font-size:13px" autocapitalize="none">${btn('test-mail', 'Testmail sturen', { icon: 'send', size: 'sm' })}${m.key_source === 'crm' ? btn('rm-mail', 'Ontkoppelen', { size: 'sm', kind: 'quiet' }) : ''}<span class="small" id="mail-result"></span></div>
+      </section>
+      <section class="form-section"><h3 style="display:flex;align-items:center;gap:8px">${RF.icon('scan-face')}Identiteitscontrole via Veriff
+        ${v.enabled ? `<span class="badge badge-actief" style="margin-left:auto">Gekoppeld · ${esc(v.key_hint)}${src(v)}</span>` : '<span class="badge" style="margin-left:auto">Handmatige controle</span>'}</h3>
+        <div class="field-row"><div class="field"><label>API-sleutel (public key)</label><input type="password" name="veriff_api_key" placeholder="${v.key_set ? 'Ingesteld · plak een nieuwe om te vervangen' : ''}" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+          <div class="field"><label>Shared secret key</label><input type="password" name="veriff_secret" placeholder="${v.secret_set ? 'Ingesteld · plak een nieuwe om te vervangen' : ''}" autocomplete="off" autocapitalize="none" spellcheck="false"></div></div>
+        <div class="hint">Bij de onboarding scant de ouder het paspoort/ID en het gezicht; Veriff controleert echtheid en gezicht (met live-detectie). Maak een account op <b>veriff.com</b> → Veriff Station → Integrations.
+          Zet daar de <b>decision webhook URL</b> op <code>${esc(location.origin)}/api/webhooks/veriff</code>. Zonder Veriff fotografeert de veldmedewerker het ID en een selfie, en vergelijkt een medewerker die.</div>
+        ${v.key_source === 'crm' ? `<div class="toolbar" style="margin-top:8px">${btn('rm-veriff', 'Ontkoppelen', { size: 'sm', kind: 'quiet' })}</div>` : ''}
       </section>
       <div class="toolbar" style="justify-content:flex-end;margin-top:6px"><button class="btn btn-primary" type="submit">Opslaan</button></div>
     </form>`;
@@ -1588,6 +1603,7 @@ async function renderIntegrations() {
   const rm = (sel, body) => { const b = $(sel); if (b) b.onclick = async () => { await api('/api/admin/integrations', { method: 'PUT', body }); renderIntegrations(); renderGoLive(); }; };
   rm('#rm-mollie', { remove_mollie: true });
   rm('#rm-mail', { remove_mail: true });
+  rm('#rm-veriff', { remove_veriff: true });
 }
 
 // ======================================================================= INSTELLINGEN
@@ -1603,7 +1619,7 @@ async function renderSettings() {
     <div class="card flush"><div class="card-head"><h2>Gebruikers</h2>${isAdmin() ? btn('new-user', 'Gebruiker', { icon: 'plus', size: 'sm' }) : ''}</div>
       ${table([
         { label: 'Naam', render: (u) => `<div class="cell-person">${RF.avatar(u.name, 'sm')}<div class="grow"><b>${esc(u.name)}</b><span class="sub">${esc(u.email)}</span></div></div>` },
-        { label: 'Rol', render: (u) => (u.role === 'admin' ? '<span class="badge badge-admin">Beheerder</span>' : '<span class="muted">Medewerker</span>') },
+        { label: 'Rol', render: (u) => (u.role === 'admin' ? '<span class="badge badge-admin">Beheerder</span>' : `<span class="muted">${u.role === 'veldmedewerker' ? 'Veldmedewerker' : 'Medewerker'}</span>`) },
         { label: 'Status', render: (u) => (u.active ? badge('donor', 'actief') : badge('donor', 'inactief')) },
         { label: '', render: (u) => (isAdmin() ? `<button class="icon-btn" data-user="${u.id}" aria-label="Bewerken" title="Bewerken">${RF.icon('pencil')}</button>` : '') },
       ], state.users)}</div>
@@ -1691,7 +1707,7 @@ async function renderSettings() {
     title: u.id ? 'Gebruiker bewerken' : 'Nieuwe gebruiker',
     body: `<div class="field"><label>Naam</label><input type="text" name="name" value="${esc(u.name || '')}" required></div>
       <div class="field"><label>Inlognaam (e-mailadres)</label><input type="text" name="email" value="${esc(u.email || '')}" required autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-      <div class="field"><label>Rol</label><select name="role">${opt('medewerker', 'Medewerker', u.role)}${opt('admin', 'Beheerder', u.role)}</select></div>
+      <div class="field"><label>Rol</label><select name="role">${opt('medewerker', 'Medewerker', u.role)}${opt('veldmedewerker', 'Veldmedewerker (alleen onboarding)', u.role)}${opt('admin', 'Beheerder', u.role)}</select></div>
       <div class="field"><label>${u.id ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="password" name="password" ${u.id ? '' : 'required'} minlength="10" autocomplete="new-password">
         <div class="hint">Minimaal 10 tekens. Een korte zin van een paar woorden is sterk en goed te onthouden.</div></div>
       ${u.id ? `<label class="check"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Actief</label>` : ''}`,

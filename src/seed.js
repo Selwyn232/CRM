@@ -178,6 +178,7 @@ function seed(db) {
   const staffId = Number(run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)',
     'medewerker@robinfoundation.org', 'Mila Medewerker', 'medewerker', hashPassword('medewerker123')).lastInsertRowid);
 
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'veld', 'Joy Veldwerker', 'veldmedewerker', hashPassword('veld'));
   const portalHash = hashPassword('welkom123');
   const donorIds = [];
   const tagsPool = ['maandgever', 'major donor', 'nieuwsbrief', 'evenement 2025', 'ambassadeur', 'kerkgemeente', 'collega'];
@@ -242,7 +243,7 @@ if (require.main === module) {
   const db = openDb(file);
   const stats = seed(db);
   console.log('Demodata geladen:', stats);
-  console.log('Beheer:  robin / robin   (of medewerker@robinfoundation.org / medewerker123)');
+  console.log('Beheer:  robin / robin   (of medewerker@robinfoundation.org / medewerker123) · veldmedewerker: veld / veld');
   console.log('Portaal: sanne@example.nl / welkom123');
   console.log('Gezinnen: santos / welkom123 · reyes / welkom123');
 }

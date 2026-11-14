@@ -646,3 +646,93 @@ test('eigen menuvolgorde opslaan, opschonen en herstellen', async (t) => {
   await fetch(`${base}/api/staff/preferences/nav`, { method: 'PUT', headers: h, body: JSON.stringify({ nav: null }) });
   assert.equal((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).nav, null);
 });
+
+// ------------------------------------------------------------------ onboarding
+test('Onboarding: veldmedewerker meldt aan, tweede medewerker keurt goed, ID-foto’s worden verwijderd', async (t) => {
+  const db = freshDb();
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-'));
+  process.env.CRM_PRIVATE = path.join(uploadDir, '..', path.basename(uploadDir) + '-private');
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('veld@rf.org','Veld','veldmedewerker',?)", hashPassword('Veld wachtwoord 1'));
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('kantoor@rf.org','Kantoor','medewerker',?)", hashPassword('Kantoor wachtwoord 1'));
+  const server = createServer({ db, uploadDir }).listen(0);
+  t.after(() => { server.close(); delete process.env.CRM_PRIVATE; });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = async (email, password) => ({ 'Content-Type': 'application/json',
+    cookie: (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })).headers.get('set-cookie').split(';')[0] });
+  const veld = await login('veld@rf.org', 'Veld wachtwoord 1');
+  const kantoor = await login('kantoor@rf.org', 'Kantoor wachtwoord 1');
+  const call = async (h, method, url, body) => { const r = await fetch(`${base}${url}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, json: await r.json().catch(() => null) }; };
+
+  // Veldmedewerker kan niet bij donateurs
+  assert.equal((await call(veld, 'GET', '/api/admin/donors')).status, 403);
+  assert.equal((await call(veld, 'GET', '/api/staff/me')).status, 200);
+
+  const onb = (await call(veld, 'POST', '/api/onboarding', { data: {} })).json;
+  assert.equal(onb.id_method, 'handmatig');
+  const story = 'Een verhaal van ruim veertig tekens over dit gezin en hun leven.';
+  await call(veld, 'PUT', `/api/onboarding/${onb.id}`, { data: {
+    family: { name: 'Familie Cruz', barangay: 'San Roque', city: 'Tacloban', province: 'Leyte', story, street: 'Purok 3' },
+    guardian: { first_name: 'Liza', last_name: 'Cruz', relation: 'moeder', birth_date: '1988-02-01', id_type: 'philsys', id_last4: '1234' },
+    children: [{ first_name: 'Ana', last_name: 'Cruz', birth_date: '2017-05-05', gender: 'meisje', school: 'San Roque ES', grade: 'Grade 3', story }],
+    consent: { agreed: true, share_photos: true, signed_by: 'Liza Cruz' },
+  } });
+  // Indienen zonder documenten lukt niet
+  const early = await call(veld, 'POST', `/api/onboarding/${onb.id}/submit`);
+  assert.equal(early.status, 400);
+  assert.match(early.json.error, /paspoort/);
+  const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  for (const [kind, child_index] of [['id_document'], ['selfie'], ['foto_gezin'], ['adres'], ['handtekening'], ['foto_kind', 0], ['geboorteakte', 0], ['inschrijving', 0]]) {
+    assert.equal((await call(veld, 'POST', `/api/onboarding/${onb.id}/files`, { kind, child_index, filename: `${kind}.png`, data: png })).status, 200);
+  }
+  // Bestanden staan niet in de openbare uploadmap
+  assert.equal(fs.readdirSync(uploadDir).length, 0);
+  assert.equal(fs.readdirSync(process.env.CRM_PRIVATE).length, 8);
+  const sub = await call(veld, 'POST', `/api/onboarding/${onb.id}/submit`);
+  assert.equal(sub.status, 200);
+  assert.equal(sub.json.status, 'ingediend');
+  // Na indienen niet meer te wijzigen
+  assert.equal((await call(veld, 'PUT', `/api/onboarding/${onb.id}`, { data: {} })).status, 409);
+  // Veldmedewerker kan niet zelf beoordelen
+  assert.equal((await call(veld, 'POST', `/api/onboarding/${onb.id}/review`, { decision: 'goedkeuren' })).status, 403);
+  // Bekijken van een document wordt gelogd
+  const fileId = sub.json.files[0].id;
+  const fr = await fetch(`${base}/api/onboarding/files/${fileId}`, { headers: { cookie: kantoor.cookie } });
+  assert.equal(fr.headers.get('content-type'), 'image/png');
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'document_bekeken'").n, 1);
+  // Zonder bevestigingen geen goedkeuring
+  assert.equal((await call(kantoor, 'POST', `/api/onboarding/${onb.id}/review`, { decision: 'goedkeuren' })).status, 400);
+  const ok = await call(kantoor, 'POST', `/api/onboarding/${onb.id}/review`, { decision: 'goedkeuren', id_checked: true, docs_checked: true });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.status, 'goedgekeurd');
+  assert.match(ok.json.login.username, /^familie-cruz/);
+  const fam = get(db, 'SELECT * FROM recipients WHERE id = ?', ok.json.family_id);
+  assert.equal(fam.kind, 'gezin');
+  assert.equal(fam.barangay, 'San Roque');
+  assert.equal(get(db, "SELECT status FROM children WHERE family_id = ?", fam.id).status, 'beschikbaar');
+  assert.match(get(db, 'SELECT photo_url FROM children WHERE family_id = ?', fam.id).photo_url, /^\/uploads\//);
+  // ID en selfie zijn verwijderd, de uitslag is bewaard
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM onboarding_files WHERE kind IN ('id_document','selfie')").n, 0);
+  assert.equal(JSON.parse(get(db, 'SELECT id_result FROM onboardings WHERE id = ?', onb.id).id_result).document_last4, '1234');
+  // Het gezin kan inloggen
+  const fl = await fetch(`${base}/api/recipient/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: ok.json.login.username, password: ok.json.login.password }) });
+  assert.equal(fl.status, 200);
+});
+
+test('Veriff: webhook alleen met geldige handtekening; uitslag komt bij de aanmelding', async (t) => {
+  const V = require('../src/idcheck');
+  const db = freshDb();
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  V.configure({ apiKey: 'k'.repeat(20), secret: 's'.repeat(20) });
+  t.after(() => { server.close(); V.configure({ apiKey: '', secret: '' }); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  run(db, "INSERT INTO onboardings (id_method, id_status, id_session) VALUES ('veriff', 'in_behandeling', 'sess-1')");
+  const body = JSON.stringify({ status: 'success', verification: { id: 'sess-1', status: 'approved', document: { type: 'PASSPORT', number: 'P1234567' }, person: { firstName: 'Liza', lastName: 'Cruz' } } });
+  const bad = await fetch(`${base}/api/webhooks/veriff`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-HMAC-Signature': 'ab'.repeat(32) }, body });
+  assert.equal(bad.status, 401);
+  const good = await fetch(`${base}/api/webhooks/veriff`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-HMAC-Signature': V.sign(body) }, body });
+  assert.equal(good.status, 200);
+  const o = get(db, 'SELECT * FROM onboardings WHERE id_session = ?', 'sess-1');
+  assert.equal(o.id_status, 'goedgekeurd');
+  assert.equal(JSON.parse(o.id_result).document_last4, '4567');
+  assert.ok(!o.id_result.includes('P1234567')); // geen volledig paspoortnummer bewaard
+});
