@@ -231,3 +231,27 @@ test('HTTP: ontvanger logt in, ziet anonieme donateur anoniem en kan niet bij be
   assert.equal((await fetch(`${base}/api/portal/overview`, { headers: { cookie } })).status, 401);
   assert.equal(rid > 0, true);
 });
+
+test('besteding uit cellen van één gekozen donateur (niet FIFO over iedereen)', () => {
+  const db = freshDb();
+  const oud = addDonor(db);
+  const selwyn = addDonor(db);
+  const d1 = S.createDonation(db, { donor_id: oud, category_key: 'schoolgeld', amount_cents: 30000 });
+  run(db, "UPDATE cells SET created_at = '2020-01-01' WHERE donation_id = ?", d1.id);
+  S.createDonation(db, { donor_id: selwyn, category_key: 'schoolgeld', amount_cents: 15000 });
+  const rid = Number(run(db, "INSERT INTO recipients (name, kind) VALUES ('Elias', 'kind')").lastInsertRowid);
+  S.spend(db, { category_key: 'schoolgeld', units: 1, recipient_id: rid, donor_id: selwyn });
+  assert.equal(S.hasFunded(db, selwyn, rid), true);
+  assert.equal(S.hasFunded(db, oud, rid), false);
+  assert.throws(() => S.spend(db, { category_key: 'schoolgeld', units: 1, donor_id: selwyn }), /van deze donateur/);
+});
+
+test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)', () => {
+  const db = freshDb();
+  const selwyn = addDonor(db);
+  S.createDonation(db, { donor_id: selwyn, category_key: 'schoolgeld', amount_cents: 15000 });
+  const rid = Number(run(db, "INSERT INTO recipients (name, kind) VALUES ('Elias', 'kind')").lastInsertRowid);
+  S.spend(db, { category_key: 'schoolgeld', units: 1, recipient_id: rid, donor_id: selwyn });
+  const m = S.sendChat(db, { recipientId: rid, donorId: selwyn, sender: 'donor', body: 'Hoi Elias!' });
+  assert.equal(m.status, 'in_behandeling');
+});

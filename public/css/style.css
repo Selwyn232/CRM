@@ -72,13 +72,11 @@ img, video { max-width: 100%; }
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .page-head h1 { margin: 0; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.btn.menu-toggle { display: none; }
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 0 30% 0 0; z-index: 50; transform: translateX(-100%); transition: transform .2s; height: 100%; }
   .sidebar.open { transform: none; }
   .main { padding: 16px; }
-  .btn.menu-toggle { display: inline-flex; }
 }
 
 /* ---------- cards & grids ---------- */
@@ -298,6 +296,102 @@ textarea { min-height: 90px; resize: vertical; }
 .chat-form { display: flex; gap: 8px; align-items: flex-end; }
 .chat-form textarea { min-height: 46px; flex: 1; }
 .big-ui { font-size: 17px; }
+
+
+/* ---------- mobiel & tablet ---------- */
+.grid-1-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.grid-3-2 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.mobile-bar, .nav-toggle, .mobile-only, .nav-backdrop { display: none; }
+@media (max-width: 1000px) {
+  .grid-1-2, .grid-3-2 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  /* beheer: vaste kopbalk + uitschuifmenu */
+  .mobile-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 40; background: var(--card);
+    border-bottom: 1px solid var(--line); margin: -16px -16px 16px; padding: 10px 16px; }
+  .mobile-bar img { width: 28px; height: 28px; }
+  .mobile-bar .btn { font-size: 1.2rem; padding: 4px 12px; }
+  .sidebar { inset: 0 auto 0 0; width: min(290px, 85vw); }
+  .nav-backdrop.open { display: block; position: fixed; inset: 0; background: rgba(15, 20, 30, .45); z-index: 45; }
+  .nav a { padding: 11px 12px; }
+
+  /* portaal: hamburgermenu */
+  .nav-toggle { display: inline-flex; font-size: 1.2rem; padding: 6px 12px; }
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block; }
+  .topbar-inner { flex-wrap: nowrap; gap: 10px; padding: 8px 16px; }
+  .topbar-inner .brand { flex: 1; min-width: 0; }
+  .topbar-inner .brand small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topnav { display: none; }
+  .topnav.open { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; top: 100%; background: var(--card);
+    border-bottom: 1px solid var(--line); box-shadow: 0 10px 20px rgba(0,0,0,.08); padding: 8px 12px 12px; gap: 2px; }
+  .topnav.open a { padding: 12px 14px; font-size: 1rem; }
+  .topbar { position: sticky; }
+}
+@media (max-width: 700px) {
+  body { font-size: 15px; }
+  /* iOS zoomt in bij velden kleiner dan 16px */
+  input, select, textarea { font-size: 16px !important; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: minmax(0, 1fr); }
+  .grid-4.kpis-2, .grid.grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi { padding: 12px; }
+  .kpi .value { font-size: 1.25rem; }
+  .kpi .label { font-size: .72rem; }
+  .card { padding: 14px; }
+  .container { padding: 16px 12px 48px; }
+  .main { padding: 16px 12px 48px; }
+  .mobile-bar { margin: -16px -12px 14px; padding: 10px 12px; }
+  h1 { font-size: 1.35rem; }
+  .hero { padding: 20px 18px; border-radius: 14px; }
+  .hero h1 { font-size: 1.4rem; }
+  .hero-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .hero-stats .value { font-size: 1.2rem; }
+  .page-head { align-items: flex-start; }
+  .page-head .toolbar { width: 100%; }
+  .toolbar input[type=search], .toolbar select, .toolbar input[type=date] { min-width: 0; flex: 1 1 140px; width: auto; }
+  .toolbar input[type=search] { flex-basis: 100%; }
+  .dl { grid-template-columns: 105px 1fr; }
+  .hbar { grid-template-columns: 90px 1fr 70px; font-size: .82rem; }
+  .profile-head h1 { font-size: 1.25rem; }
+  .cell-chip { min-width: 0; flex: 1 1 140px; }
+  .tabs button { padding: 10px; }
+
+  /* tabellen worden kaartjes */
+  .table-wrap.cards { margin: 0; padding: 0; overflow: visible; }
+  .table-wrap.cards thead { display: none; }
+  .table-wrap.cards table, .table-wrap.cards tbody, .table-wrap.cards tr, .table-wrap.cards td { display: block; width: 100%; }
+  .table-wrap.cards tr { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; background: var(--card); }
+  .table-wrap.cards td { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 0; padding: 5px 0; text-align: right; }
+  .table-wrap.cards td.num { text-align: right; }
+  .table-wrap.cards td::before { content: attr(data-label); color: var(--ink-3); font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; text-align: left; flex: none; }
+  .table-wrap.cards td[data-label=""]::before { content: none; }
+  .table-wrap.cards td[data-label=""] { justify-content: flex-start; }
+  .table-wrap.cards td > * { min-width: 0; }
+  .table-wrap.cards td.empty { justify-content: center; }
+  .table-wrap.cards td.empty::before { content: none; }
+
+  /* modals schermvullend */
+  .modal-backdrop { padding: 0; place-items: end stretch; }
+  .modal, .modal-wide { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
+  .modal-foot { position: sticky; bottom: 0; background: var(--card); }
+  .modal-foot .btn { flex: 1; }
+
+  /* chat */
+  .chat-log { height: calc(100vh - 360px); min-height: 260px; }
+  .bubble { max-width: 88%; }
+  .chat-list .last { max-width: 60vw; }
+
+  .lb-row { grid-template-columns: 40px 1fr auto; gap: 8px; }
+  .grid.grid-4:has(.cat-tile) { grid-template-columns: minmax(0, 1fr); }
+  .field-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .topbar-inner .brand { font-size: .95rem; }
+  .topbar-inner .brand > div { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .topbar-inner .brand img { width: 30px; height: 30px; flex: none; }
+  .topbar-inner .btn-sm { padding: 4px 8px; font-size: .8rem; }
+  .chat-layout .card-head { flex-wrap: nowrap; align-items: flex-start; }
+  #toasts { left: 12px; right: 12px; bottom: 12px; }
+  .toast { max-width: none; }
+}
 
 /* ---------- print ---------- */
 @media print {

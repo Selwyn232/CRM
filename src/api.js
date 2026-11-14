@@ -330,6 +330,7 @@ function buildRoutes({ db, uploadDir }) {
 
     // ================================================================ DONATEURSPORTAAL: CHAT
     ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated,
+        (r.username IS NOT NULL AND r.password_hash IS NOT NULL) AS has_login,
         CASE WHEN r.consent = 1 THEN r.photo_url ELSE '' END AS photo_url,
         (SELECT body FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ? AND (m.status='goedgekeurd' OR m.sender='donor')
           ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
@@ -337,7 +338,7 @@ function buildRoutes({ db, uploadDir }) {
         (SELECT COUNT(*) FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ? AND m.sender='recipient'
           AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
       FROM recipients r
-      WHERE r.active = 1 AND r.chat_enabled = 1 AND r.username IS NOT NULL AND r.password_hash IS NOT NULL
+      WHERE r.active = 1 AND r.chat_enabled = 1
         AND r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
       ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
       .map((r) => ({ ...r, chat_moderated: S.isModerated(r) ? 1 : 0 })), donor],

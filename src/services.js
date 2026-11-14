@@ -172,6 +172,10 @@ function spend(db, input, actor, userId = null) {
       throw new AppError(400, 'Alle geselecteerde cellen moeten dezelfde bestemming hebben');
     }
     cells = cells.filter((c) => c.remaining_cents > 0);
+  } else if (input.donor_id) {
+    // Alleen uit de cellen van één donateur (oudste eerst).
+    cells = all(db, `SELECT * FROM cells WHERE category_key = ? AND donor_id = ? AND remaining_cents > 0
+                     ORDER BY created_at ASC, id ASC`, cat.key, Number(input.donor_id));
   } else {
     cells = all(db, `SELECT * FROM cells WHERE category_key = ? AND remaining_cents > 0
                      ORDER BY created_at ASC, id ASC`, cat.key);
@@ -188,7 +192,7 @@ function spend(db, input, actor, userId = null) {
   }
   if (!Number.isInteger(amount) || amount <= 0) throw new AppError(400, 'Geef een bedrag of aantal op');
   if (available < amount) {
-    throw new AppError(409, `Onvoldoende saldo in de cellen voor "${cat.name}": beschikbaar ${euro(available)}, nodig ${euro(amount)}.`);
+    throw new AppError(409, `Onvoldoende saldo in de cellen voor "${cat.name}"${input.donor_id && !cellIds.length ? ' van deze donateur' : ''}: beschikbaar ${euro(available)}, nodig ${euro(amount)}.`);
   }
   if (input.recipient_id && !get(db, 'SELECT id FROM recipients WHERE id = ?', input.recipient_id)) {
     throw new AppError(400, 'Ontvanger niet gevonden');
@@ -357,7 +361,7 @@ function chatFlags(body) {
 
 function chatRecipient(db, recipientId) {
   const r = get(db, 'SELECT * FROM recipients WHERE id = ?', recipientId);
-  if (!r || !r.active || !r.chat_enabled || !r.username) throw new AppError(403, 'Chatten met deze ontvanger is niet mogelijk');
+  if (!r || !r.active || !r.chat_enabled) throw new AppError(403, 'Chatten met deze ontvanger staat uit');
   return r;
 }
 

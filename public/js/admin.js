@@ -42,7 +42,9 @@ async function showApp() {
     <div><span class="badge badge-admin">${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></div>
     <button class="btn btn-ghost btn-sm" id="logout">Uitloggen</button>`;
   $('#logout').onclick = async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.reload(); };
-  $('#menu-toggle').onclick = () => $('#sidebar').classList.toggle('open');
+  const setMenu = (open) => { $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open); };
+  $('#menu-toggle').onclick = () => setMenu(!$('#sidebar').classList.contains('open'));
+  $('#nav-backdrop').onclick = () => setMenu(false);
   await loadLookups();
   window.addEventListener('hashchange', route);
   route();
@@ -88,6 +90,7 @@ async function route() {
   const fn = ROUTES[name] || renderDashboard;
   document.querySelectorAll('#nav a[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
   $('#sidebar').classList.remove('open');
+  $('#nav-backdrop').classList.remove('open');
   view().innerHTML = '<p class="muted">Laden…</p>';
   try {
     await fn(param);
@@ -118,9 +121,9 @@ function table(columns, rows, { empty = 'Geen gegevens', onRow } = {}) {
   const head = columns.map((c) => `<th class="${c.num ? 'num' : ''}">${esc(c.label)}</th>`).join('');
   const body = rows.length
     ? rows.map((r, i) => `<tr data-i="${i}" class="${onRow ? 'clickable' : ''}">${columns.map((c) =>
-      `<td class="${c.num ? 'num' : ''}">${c.render ? c.render(r) : esc(r[c.key])}</td>`).join('')}</tr>`).join('')
+      `<td class="${c.num ? 'num' : ''}" data-label="${esc(c.label)}">${c.render ? c.render(r) : esc(r[c.key])}</td>`).join('')}</tr>`).join('')
     : `<tr><td colspan="${columns.length}" class="empty">${esc(empty)}</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `<div class="table-wrap cards"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function bindRows(root, rows, onRow) {
   root.querySelectorAll('tbody tr[data-i]').forEach((tr) => {
@@ -300,6 +303,7 @@ async function renderDonor(donorId) {
         <button class="btn btn-ghost" id="edit">Bewerken</button>
         <button class="btn btn-ghost" id="portal">${d.has_portal ? '🔑 Nieuw wachtwoord' : '🔑 Portaaltoegang geven'}</button>
         <button class="btn btn-ghost" id="annual">📄 Jaaroverzicht</button>
+        <button class="btn btn-ghost" id="spend-donor">⚡ Geld besteden</button>
         <button class="btn btn-primary" id="add-donation">+ Donatie</button>
       </div>
     </div>
@@ -309,7 +313,7 @@ async function renderDonor(donorId) {
       <div class="card kpi ok"><div class="label">Besteed</div><div class="value">${euro(totals.spent)}</div></div>
       <div class="card kpi"><div class="label">Berichten ontvangen</div><div class="value">${new Set(data.journey.flatMap((j) => j.messages.map((m) => m.id))).size}</div></div>
     </div>
-    <div class="grid grid-2" style="margin-top:16px;grid-template-columns:minmax(0,1fr) minmax(0,2fr)">
+    <div class="grid grid-1-2" style="margin-top:16px">
       <div class="stack">
         <div class="card"><h3>Contactgegevens</h3>
           <dl class="dl">
@@ -383,6 +387,11 @@ async function renderDonor(donorId) {
   const reload = () => renderDonor(donorId);
   $('#edit').onclick = () => donorForm(d, reload);
   $('#add-donation').onclick = () => donationForm({ donor_id: d.id }, reload);
+  $('#spend-donor').onclick = () => {
+    const withMoney = data.impact.find((r) => r.waiting_cents > 0);
+    if (!withMoney) { toast('Deze donateur heeft geen geld meer in de cellen', 'error'); return; }
+    spendForm({ donor_id: d.id, category_key: withMoney.key }, reload);
+  };
   $('#add-task').onclick = () => taskForm({ donor_id: d.id }, reload);
   $('#add-interaction').onclick = () => interactionForm(d.id, reload);
   $('#annual').onclick = () => annualModal(`/api/admin/donors/${d.id}/annual`, year);
@@ -668,21 +677,43 @@ function spendForm(pre, done) {
     body: `
       ${fromCells ? `<div class="impact-preview">Geselecteerd: ${cells.length} cellen van ${esc(catByKey(pre.category_key).name)} · totaal ${euro(cellSum)}</div>
         <input type="hidden" name="category_key" value="${esc(pre.category_key)}">`
-        : `<div class="field"><label>Bestemming</label><select name="category_key">${catOptions(pre.category_key)}</select></div>`}
+        : `<div class="field-row">
+            <div class="field"><label>Bestemming</label><select name="category_key">${catOptions(pre.category_key)}</select></div>
+            <div class="field"><label>Uit cellen van</label><select name="donor_id"><option value="">Oudste cellen eerst (alle donateurs)</option></select>
+              <div class="hint">Kies een donateur om precies diens geld aan deze ontvanger te besteden.</div></div></div>`}
       <div class="field-row">
         <div class="field" data-units><label>Aantal <span data-unit-label></span></label><input type="number" name="units" min="1" step="1"></div>
         <div class="field"><label>Bedrag (€)</label><input type="text" name="amount" inputmode="decimal" placeholder="${fromCells ? centsToInput(cellSum) : ''}"></div>
         <div class="field"><label>Datum besteding</label><input type="date" name="spent_at" value="${today()}"></div>
       </div>
       <div class="impact-preview" id="spend-preview"></div>
+      <div class="small" id="spend-sources" style="margin:-6px 0 12px"></div>
       <div class="field"><label>Ontvanger</label><select name="recipient_id">${recipientOptions(pre.recipient_id)}</select></div>
       <div class="field"><label>Omschrijving</label><input type="text" name="description" placeholder="bv. 400 schoolmaaltijden voor Escuela Esperanza (week 46)"></div>
       <details style="margin:8px 0 12px" ${pre.withMessage ? 'open' : ''}><summary><b>Bericht van de ontvanger direct meesturen</b> (brief, filmpje, foto…)</summary>
         <div style="margin-top:10px">${messageFields('msg_')}</div></details>
       <p class="hint">${fromCells ? 'Het bedrag wordt uit precies deze cellen gehaald (in volgorde van selectie).' : 'Het geld wordt uit de oudste cellen van deze bestemming gehaald (first in, first out).'}
-        Elke betrokken donateur krijgt automatisch een e-mail en ziet de besteding in zijn portaal.</p>`,
+        Elke betrokken donateur krijgt automatisch een e-mail, ziet de besteding in zijn portaal en kan daarna chatten met de ontvanger.</p>`,
     onOpen: (form) => {
       bindUploads(form);
+      let openCells = cells;
+      const loadCells = async () => {
+        if (fromCells) return;
+        const cat = form.elements.category_key.value;
+        openCells = await api(`/api/admin/cells?category=${encodeURIComponent(cat)}&status=open`);
+        const sel = form.elements.donor_id;
+        const prev = sel.value || (pre.donor_id ? String(pre.donor_id) : '');
+        const donors = new Map();
+        for (const c of openCells) {
+          const d = donors.get(c.donor_id) || { name: c.donor_name, cents: 0 };
+          d.cents += c.remaining_cents;
+          donors.set(c.donor_id, d);
+        }
+        sel.innerHTML = '<option value="">Oudste cellen eerst (alle donateurs)</option>' +
+          [...donors.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name))
+            .map(([id, d]) => `<option value="${id}" ${String(id) === prev ? 'selected' : ''}>${esc(d.name)} — ${euro(d.cents)} in cel</option>`).join('');
+        update();
+      };
       const update = () => {
         const cat = catByKey(form.elements.category_key.value);
         const unitField = form.querySelector('[data-units]');
@@ -692,21 +723,35 @@ function spendForm(pre, done) {
         let amount = form.elements.amount.value ? toCents(form.elements.amount.value) : null;
         if (!amount && units && cat.unit_cost_cents) amount = units * cat.unit_cost_cents;
         if (!amount && fromCells) amount = cellSum;
-        const avail = fromCells ? cellSum : cat.waiting_cents;
+        const donorId = !fromCells && form.elements.donor_id.value ? Number(form.elements.donor_id.value) : null;
+        const pool = donorId ? openCells.filter((c) => c.donor_id === donorId) : openCells;
+        const avail = pool.reduce((s, c) => s + c.remaining_cents, 0);
+        // Voorbeeld: welke donateurs worden aangesproken (zelfde volgorde als de server)
+        const per = new Map();
+        let left = amount || 0;
+        for (const c of pool) {
+          if (left <= 0) break;
+          const take = Math.min(c.remaining_cents, left);
+          per.set(c.donor_name, (per.get(c.donor_name) || 0) + take);
+          left -= take;
+        }
+        $('#spend-sources', form).innerHTML = per.size
+          ? `Geld komt uit de cellen van: ${[...per.entries()].map(([n, v]) => `<b>${esc(n)}</b> (${euro(v)})`).join(', ')}` : '';
         $('#spend-preview', form).innerHTML = amount
           ? `${euro(amount)} wordt besteed ${cat.unit_cost_cents ? `(≈ ${num(Math.floor(amount / cat.unit_cost_cents))} ${esc(cat.unit_label_plural)})` : ''} · beschikbaar ${euro(avail)}
              ${amount > avail ? '<br><span style="color:var(--bad)">Onvoldoende saldo!</span>' : ''}`
           : `Beschikbaar in cellen: ${euro(avail)}${cat.unit_cost_cents ? ` (≈ ${num(Math.floor(avail / cat.unit_cost_cents))} ${esc(cat.unit_label_plural)})` : ''}`;
       };
       form.addEventListener('input', update);
-      form.addEventListener('change', update);
+      form.addEventListener('change', (e) => { if (e.target.name === 'category_key') loadCells(); else update(); });
       update();
+      loadCells();
     },
     onSubmit: async (f) => {
       const body = {
         category_key: f.category_key, units: f.units || null, amount_cents: f.amount ? toCents(f.amount) : null,
         spent_at: f.spent_at, recipient_id: f.recipient_id || null, description: f.description,
-        cell_ids: cells.map((c) => c.id),
+        cell_ids: cells.map((c) => c.id), donor_id: f.donor_id || null,
       };
       if (f.msg_title) body.message = { type: f.msg_type, title: f.msg_title, body: f.msg_body, media_url: f.msg_media_url };
       const r = await api('/api/admin/expenditures', { method: 'POST', body });

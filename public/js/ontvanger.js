@@ -59,7 +59,7 @@ async function render(openId) {
           ${p.unread ? `<span class="pill">${p.unread}</span>` : ''}</button>`).join('')
           || '<p class="muted" style="padding:10px">Er zijn nog geen helpers aan jou gekoppeld.</p>'}
       </div>
-      <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies links iemand om mee te chatten.</p>'}</div>
+      <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies iemand om mee te chatten.</p>'}</div>
     </div>`;
   view.querySelectorAll('.chat-list button[data-id]').forEach((b) => b.addEventListener('click', () => render(b.dataset.id)));
   if (!selected) return;

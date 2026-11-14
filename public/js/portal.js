@@ -43,7 +43,14 @@ function showAuth() {
 function showApp() {
   $('#auth').classList.add('hidden');
   $('#app').classList.remove('hidden');
-  $('#logout').onclick = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.hash = ''; location.reload(); };
+  const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.hash = ''; location.reload(); };
+  $('#logout').onclick = logout;
+  $('#logout-m').onclick = (e) => { e.preventDefault(); logout(); };
+  $('#nav-toggle').onclick = () => {
+    const open = !$('#nav').classList.contains('open');
+    $('#nav').classList.toggle('open', open);
+    $('#nav-toggle').setAttribute('aria-expanded', open);
+  };
   window.addEventListener('hashchange', route);
   route();
 }
@@ -56,6 +63,8 @@ const ROUTES = {
 async function route() {
   const [name, param] = (location.hash.replace(/^#\/?/, '') || 'overzicht').split('/');
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
+  $('#nav').classList.remove('open');
+  $('#nav-toggle').setAttribute('aria-expanded', 'false');
   view().innerHTML = '<p class="muted">Laden…</p>';
   try {
     await (ROUTES[name] || renderOverview)(param);
@@ -77,6 +86,8 @@ async function refreshUnread() {
     const c = convs.reduce((s, x) => s + x.unread, 0);
     $('#chat-unread').textContent = c;
     $('#chat-unread').classList.toggle('hidden', !c);
+    $('#unread-m').textContent = n + c;
+    $('#unread-m').classList.toggle('hidden', !(n + c));
   } catch { /* stil */ }
 }
 
@@ -134,9 +145,9 @@ async function renderOverview() {
       <div class="card"><div class="card-head"><h2>Laatst besteed</h2><a href="#/reis">Alles bekijken →</a></div>
         ${journey.slice(0, 4).map(journeyItem).join('') || '<p class="muted">Nog niets besteed.</p>'}</div>
       <div class="card"><div class="card-head"><h2>Mijn donaties</h2></div>
-        <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Bestemming</th><th>Status</th><th class="num">Bedrag</th></tr></thead><tbody>
-        ${donations.slice(0, 8).map((d) => `<tr><td>${date(d.received_at)}</td><td>${esc(d.icon)} ${esc(d.category_name)}${d.frequency !== 'eenmalig' ? ` <span class="badge badge-maandelijks">${esc(label('frequency', d.frequency))}</span>` : ''}</td>
-          <td>${d.status === 'ontvangen' ? RF.badge('cell', d.cell_status) : RF.badge('donation', d.status)}</td><td class="num">${euro(d.amount_cents)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nog geen donaties</td></tr>'}
+        <div class="table-wrap cards"><table><thead><tr><th>Datum</th><th>Bestemming</th><th>Status</th><th class="num">Bedrag</th></tr></thead><tbody>
+        ${donations.slice(0, 8).map((d) => `<tr><td data-label="Datum">${date(d.received_at)}</td><td data-label="Bestemming"><span>${esc(d.icon)} ${esc(d.category_name)}${d.frequency !== 'eenmalig' ? ` <span class="badge badge-maandelijks">${esc(label('frequency', d.frequency))}</span>` : ''}</span></td>
+          <td data-label="Status">${d.status === 'ontvangen' ? RF.badge('cell', d.cell_status) : RF.badge('donation', d.status)}</td><td class="num" data-label="Bedrag">${euro(d.amount_cents)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nog geen donaties</td></tr>'}
         </tbody></table></div></div>
     </div>`;
 }
@@ -220,7 +231,7 @@ async function renderDonate() {
   const presets = { schoolmaaltijd: [1000, 2500, 5000], schoolgeld: [5000, 15000, 30000], noodfonds: [2500, 5000, 10000], gezondheidspakket: [2500, 5000, 10000] };
   view().innerHTML = `
     <div class="page-head"><h1>Doneer</h1></div>
-    <div class="grid grid-2" style="grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
+    <div class="grid grid-3-2">
       <form class="card" id="donate-form">
         <h3>1. Kies een bestemming</h3>
         <div class="cat-picker">${cats.map((c, i) => `<label><input type="radio" name="category_key" value="${esc(c.key)}" ${i === 0 ? 'checked' : ''}>
@@ -307,9 +318,10 @@ async function renderChat(openId) {
           <div style="min-width:0"><div class="who">${esc(c.name)}</div>
           <div class="last">${esc(c.last_message || [c.location, c.country].filter(Boolean).join(', '))}</div></div>
           ${c.unread ? `<span class="pill">${c.unread}</span>` : ''}</button>`).join('')
-          || '<p class="muted" style="padding:10px">Er is nog niemand om mee te chatten. Zodra je geld is besteed aan een ontvanger met een account, verschijnt die hier.</p>'}
+          || `<p class="muted" style="padding:10px">Er is nog niemand om mee te chatten. Zodra Robin Foundation geld uit <b>jouw</b> cellen besteedt aan een kind, school of project, verschijnt die ontvanger hier.
+            <a href="#/reis">Bekijk waar je geld nu is →</a></p>`}
       </div>
-      <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies links met wie je wilt chatten.</p>'}</div>
+      <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies een gesprek om te chatten.</p>'}</div>
     </div>`;
   view().querySelectorAll('.chat-list button[data-id]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/chat/${b.dataset.id}`; }));
   const c = convs.find((x) => x.id === selected);
@@ -317,11 +329,12 @@ async function renderChat(openId) {
   $('#thread').innerHTML = `<div class="card-head"><div><h2 style="margin:0">${esc(c.name)}</h2>
       <div class="small muted">${esc([c.age ? `${c.age} jaar` : '', c.location, c.country].filter(Boolean).join(' · '))}</div></div>
       <a class="btn btn-ghost btn-sm" href="#/chat">← Terug</a></div><div id="box"></div>`;
+  const noLogin = c.has_login ? '' : `📭 ${esc(c.name)} heeft nog geen account. Je bericht wordt bewaard en verschijnt zodra ${esc(c.name)} kan inloggen.<br>`;
   await RF.chatBox($('#box'), {
     otherName: c.name,
-    notice: c.chat_moderated
+    notice: noLogin + (c.chat_moderated
       ? '🛡️ Berichten worden eerst door een begeleider gelezen voordat ze worden afgeleverd. Deel geen contactgegevens en vraag niet om die van de ontvanger.'
-      : '🛡️ Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.',
+      : '🛡️ Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.'),
     load: () => api(`/api/portal/conversations/${c.id}`),
     send: (body) => api(`/api/portal/conversations/${c.id}`, { method: 'POST', body: { body } }),
   });
@@ -371,8 +384,8 @@ async function renderAnnual(y) {
       <h2>Giftenoverzicht ${esc(a.year)}</h2>
       <p><b>${esc(a.organisation.name)}</b> · ${esc(a.organisation.anbi)} · RSIN ${esc(a.organisation.rsin)}</p>
       <p>${esc(a.donor.full_name)}<br>${esc(a.donor.street)}<br>${esc(a.donor.postal_code)} ${esc(a.donor.city)}</p>
-      <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Bestemming</th><th>Betaalwijze</th><th>Kenmerk</th><th class="num">Bedrag</th></tr></thead><tbody>
-      ${a.donations.map((d) => `<tr><td>${date(d.received_at)}</td><td>${esc(d.category_name)}</td><td>${esc(label('method', d.method))}</td><td class="small muted">${esc(d.reference)}</td><td class="num">${euro(d.amount_cents)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Geen giften in dit jaar</td></tr>'}
+      <div class="table-wrap cards"><table><thead><tr><th>Datum</th><th>Bestemming</th><th>Betaalwijze</th><th>Kenmerk</th><th class="num">Bedrag</th></tr></thead><tbody>
+      ${a.donations.map((d) => `<tr><td data-label="Datum">${date(d.received_at)}</td><td data-label="Bestemming">${esc(d.category_name)}</td><td data-label="Betaalwijze">${esc(label('method', d.method))}</td><td class="small muted" data-label="Kenmerk">${esc(d.reference)}</td><td class="num" data-label="Bedrag">${euro(d.amount_cents)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Geen giften in dit jaar</td></tr>'}
       </tbody><tfoot><tr><th colspan="4">Totaal</th><th class="num">${euro(a.total_cents)}</th></tr></tfoot></table></div>
       <p class="small muted" style="margin-top:12px">In ${esc(a.year)} is ${euro(a.spent_in_year_cents)} van jouw giften besteed aan projecten. Giften aan een ANBI zijn onder voorwaarden aftrekbaar voor de inkomstenbelasting.</p>
     </div>`;
