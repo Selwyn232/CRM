@@ -217,8 +217,8 @@ async function showApp() {
 async function loadLookups() {
   let tr;
   if (isField()) { state.languages = (await api('/api/public/translation')).languages; return; }
-  [state.categories, state.users, state.campaigns, state.recipients, tr] = await Promise.all([
-    api('/api/admin/categories'), api('/api/admin/users'), api('/api/admin/campaigns'), api('/api/admin/recipients'),
+  [state.categories, state.users, state.campaigns, state.recipients, state.labels, tr] = await Promise.all([
+    api('/api/admin/categories'), api('/api/admin/users'), api('/api/admin/campaigns'), api('/api/admin/recipients'), api('/api/admin/labels'),
     api('/api/public/translation'),
   ]);
   state.languages = tr.languages;
@@ -387,6 +387,7 @@ const campaignOptions = (sel) => opt('', '— geen campagne —', sel) + state.c
 const langOptions = (sel) => Object.entries(state.languages || {}).map(([k, v]) => opt(k, v, sel)).join('');
 const tags = (s) => String(s || '').split(',').map((t) => t.trim()).filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join('');
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
+const labelChip = (name) => (name ? `<span class="tag label-chip">${RF.icon('tag', 'icon-sm')}&nbsp;${esc(name)}</span>` : '');
 const donorLink = (id, name) => `<a href="#/sponsoren/${id}">${esc(name)}</a>`;
 
 function table(columns, rows, { empty = 'Geen gegevens', emptyIcon = 'inbox', onRow } = {}) {
@@ -423,30 +424,29 @@ async function renderDonors() {
       <div class="filters">
         ${searchInput('f-q', 'Zoek op naam, e-mail, plaats of telefoon', params.get('q') || '')}
         <select id="f-status">${labelOptions('donor', params.get('status') || '', 'Alle statussen')}</select>
-        <select id="f-type">${labelOptions('type', params.get('type') || '', 'Alle typen')}</select>
+        <select id="f-label">${opt('', 'Alle labels', params.get('label') || '')}${(state.labels || []).map((l) => opt(l.id, l.name, params.get('label') || '')).join('')}</select>
         <input type="search" id="f-tag" placeholder="Tag" value="${esc(params.get('tag') || '')}" style="min-width:110px">
         <select id="f-sort" style="margin-left:auto">${opt('name', 'Naam A–Z', params.get('sort'))}${opt('monthly', 'Meeste per maand', params.get('sort'))}${opt('total', 'Hoogste totaal betaald', params.get('sort'))}${opt('recent', 'Laatste gift', params.get('sort'))}${opt('created', 'Nieuwste', params.get('sort'))}</select>
       </div>
       <div id="donor-table">${RF.skeleton('rows')}</div>
     </div>`;
   const load = async () => {
-    const p = new URLSearchParams({ q: $('#f-q').value, status: $('#f-status').value, type: $('#f-type').value, tag: $('#f-tag').value, sort: $('#f-sort').value });
+    const p = new URLSearchParams({ q: $('#f-q').value, status: $('#f-status').value, label: $('#f-label').value, tag: $('#f-tag').value, sort: $('#f-sort').value });
     sessionStorage.setItem('donorFilters', p.toString());
     const rows = await api(`/api/admin/donors?${p}`);
     const monthly = rows.reduce((a, r) => a + (r.monthly_cents || 0), 0);
     const kids = rows.reduce((a, r) => a + (r.children || 0), 0);
     $('#donor-table').innerHTML = table([
       { label: 'Naam', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}<div class="grow"><a href="#/sponsoren/${r.id}">${esc(r.full_name)}</a>
-          <span class="sub">${esc(r.email || label('type', r.donor_type))}</span></div></div>` },
+          <span class="sub">${esc([r.email, r.city].filter(Boolean).join(' · ') || label('type', r.donor_type))}</span></div></div>` },
       { label: 'Status', render: (r) => badge('donor', r.status) },
-      { label: 'Plaats', render: (r) => `<span class="muted">${esc(r.city) || '—'}</span>` },
-      { label: 'Tags', render: (r) => tags(r.tags) || '<span class="muted">—</span>' },
+      { label: 'Label', render: (r) => (r.label_name ? labelChip(r.label_name) : '<span class="muted">—</span>') },
       { label: 'Kenmerken', render: (r) => [
         r.recurring ? `<span class="tag" title="Terugkerende gever">${RF.icon('repeat', 'icon-sm')}&nbsp;Terugkerend</span>` : '',
         r.has_portal ? `<span class="tag" title="Heeft een portaal-account">${RF.icon('key-round', 'icon-sm')}&nbsp;Portaal</span>` : '',
         r.anonymous ? `<span class="tag" title="Anoniem op het leaderboard">${RF.icon('eye-off', 'icon-sm')}&nbsp;Anoniem</span>` : '',
+        tags(r.tags),
       ].join('') || '<span class="muted">—</span>' },
-      { label: 'Laatste betaling', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
       { label: 'Kinderen', num: true, render: (r) => `<span class="muted">${r.children || '—'}</span>` },
       { label: 'Per maand', num: true, render: (r) => (r.monthly_cents ? `<b style="font-weight:600">${euro(r.monthly_cents)}</b>` : '<span class="muted">—</span>')
         + (r.total_cents ? `<span class="sub">${euro(r.total_cents)} totaal betaald</span>` : '') },
@@ -456,7 +456,7 @@ async function renderDonors() {
   };
   const deb = RF.debounce(load);
   ['#f-q', '#f-tag'].forEach((x) => $(x).addEventListener('input', deb));
-  ['#f-status', '#f-type', '#f-sort'].forEach((x) => $(x).addEventListener('change', load));
+  ['#f-status', '#f-label', '#f-sort'].forEach((x) => $(x).addEventListener('change', load));
   $('#new-donor').onclick = () => donorForm({}, (d) => go(`#/sponsoren/${d.id}`));
   await load();
 }
@@ -477,7 +477,9 @@ function donorForm(d, done) {
         <div class="field-row">
           <div class="field"><label>Type</label><select name="donor_type">${labelOptions('type', d.donor_type || 'particulier')}</select></div>
           ${f('company_name', 'Organisatie <span class="muted">(optioneel)</span>', d.company_name)}
-        </div>`)}
+        </div>
+        <div class="field"><label>Label</label><select name="label_id">${opt('', isNew ? '— automatisch (op basis van type) —' : '— geen label —', d.label_id ?? '')}${(state.labels || []).map((l) => opt(l.id, l.name, d.label_id ?? '')).join('')}</select>
+          <div class="hint">Groep waarin de sponsor valt, bijvoorbeeld Particulieren of Bedrijven. Elk label heeft een eigen ranglijst. Labels beheer je bij Instellingen.</div></div>`)}
       ${section('Contact', `
         <div class="field-row">
           <div class="field"><label for="df-email">E-mail</label><input type="email" id="df-email" name="email" value="${esc(d.email || '')}"></div>
@@ -527,7 +529,7 @@ async function renderDonor(donorId) {
     <div class="page-head" style="align-items:center">
       <div class="profile-head">${RF.avatar(d.full_name, 'lg')}
         <div><h1>${esc(d.full_name)}</h1>
-          <div class="profile-meta">${badge('donor', d.status)}<span>${esc(label('type', d.donor_type))}</span>
+          <div class="profile-meta">${badge('donor', d.status)}${labelChip((state.labels || []).find((l) => l.id === d.label_id)?.name)}<span>${esc(label('type', d.donor_type))}</span>
             <span class="dot-sep">Sinds ${date(d.created_at)}</span>
             ${data.rank ? `<span class="dot-sep">#${data.rank} op leaderboard</span>` : ''}
             <span class="dot-sep" style="display:inline-flex;align-items:center;gap:5px">${d.anonymous ? `${RF.icon('eye-off', 'icon-sm')} Anoniem` : `${RF.icon('globe', 'icon-sm')} Publiek als “${esc(d.public_name)}”`}</span>
@@ -1150,6 +1152,39 @@ async function renderIntegrations() {
   rm('#rm-veriff', { remove_veriff: true });
 }
 
+// Sponsorlabels beheren (groepen zoals Particulieren en Bedrijven; elk label een eigen ranglijst).
+async function renderLabelsSetting() {
+  const card = $('#labels-card');
+  if (!card) return;
+  const labels = await api('/api/admin/labels');
+  state.labels = labels;
+  card.innerHTML = `<div class="card-head"><div><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('tag')}Sponsorlabels</h2>
+      <div class="small muted">Groepen sponsoren, elk met een eigen ranglijst. Nieuwe sponsoren krijgen automatisch Particulieren of Bedrijven (op basis van het type).</div></div>
+      ${isAdmin() ? btn('label-add', 'Label', { icon: 'plus', size: 'sm' }) : ''}</div>
+    <div class="list">${labels.map((l, i) => `<div class="list-row"><span class="cat-ico sm" style="--c:var(--accent)">${RF.icon('tag')}</span>
+      <div class="grow"><div class="title">${esc(l.name)}${l.key ? ' <span class="muted small">· standaard</span>' : ''}</div><div class="meta">${l.donors} ${l.donors === 1 ? 'sponsor' : 'sponsoren'}</div></div>
+      ${isAdmin() ? `<button class="icon-btn" data-up="${l.id}" ${i === 0 ? 'disabled' : ''} aria-label="Omhoog" title="Omhoog" style="transform:rotate(180deg)">${RF.icon('chevron-down')}</button>
+        <button class="icon-btn" data-down="${l.id}" ${i === labels.length - 1 ? 'disabled' : ''} aria-label="Omlaag" title="Omlaag">${RF.icon('chevron-down')}</button>
+        <button class="icon-btn" data-edit="${l.id}" aria-label="Hernoemen" title="Hernoemen">${RF.icon('pencil')}</button>
+        ${l.key ? '' : `<button class="icon-btn" data-del="${l.id}" aria-label="Verwijderen" title="Verwijderen">${RF.icon('trash-2')}</button>`}` : ''}</div>`).join('')}</div>`;
+  const form = (l = {}) => modal({
+    title: l.id ? 'Label hernoemen' : 'Nieuw label', submitLabel: 'Opslaan',
+    body: `<div class="field"><label>Naam</label><input type="text" name="name" value="${esc(l.name || '')}" maxlength="40" required placeholder="bv. Scholen, Kerken, Stichtingen"></div>`,
+    onSubmit: async (f) => { await api(l.id ? `/api/admin/labels/${l.id}` : '/api/admin/labels', { method: l.id ? 'PUT' : 'POST', body: f }); toast('Label opgeslagen'); renderLabelsSetting(); },
+  });
+  if ($('#label-add')) $('#label-add').onclick = () => form();
+  card.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => form(labels.find((l) => l.id === Number(b.dataset.edit)))));
+  card.querySelectorAll('[data-up],[data-down]').forEach((b) => b.addEventListener('click', async () => {
+    const l = labels.find((x) => x.id === Number(b.dataset.up || b.dataset.down));
+    await api(`/api/admin/labels/${l.id}`, { method: 'PUT', body: { name: l.name, move: b.dataset.up ? -1 : 1 } }); renderLabelsSetting();
+  }));
+  card.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    const l = labels.find((x) => x.id === Number(b.dataset.del));
+    if (!await confirmDialog(`Label “${l.name}” verwijderen?`, 'Verwijderen')) return;
+    try { await api(`/api/admin/labels/${l.id}`, { method: 'DELETE' }); renderLabelsSetting(); } catch (ex) { toast(ex.message, 'error'); }
+  }));
+}
+
 // "Inloggen als": alleen meekijken of volledige toegang (aan/uit).
 async function renderImpersonationSetting() {
   const card = $('#imp-card');
@@ -1181,6 +1216,7 @@ async function renderSettings() {
       ${btn('tr-test', 'Proefvertaling', { icon: 'zap', size: 'sm' })}</div><div id="tr-status"><p class="muted small">Laden…</p></div></div>` : ''}
     ${isAdmin() ? '<div class="card" id="imp-card"></div>' : ''}
     <div class="card" id="sponsor-cfg-card"></div>
+    <div class="card" id="labels-card"></div>
     <div class="card flush"><div class="card-head"><h2>Gebruikers</h2>${isAdmin() ? btn('new-user', 'Gebruiker', { icon: 'plus', size: 'sm' }) : ''}</div>
       ${table([
         { label: 'Naam', render: (u) => `<div class="cell-person">${RF.avatar(u.name, 'sm')}<div class="grow"><b>${esc(u.name)}</b><span class="sub">${esc(u.email)}</span></div></div>` },
@@ -1294,6 +1330,7 @@ async function renderSettings() {
   });
   if ($('#new-user')) $('#new-user').onclick = () => userForm();
   if (isAdmin()) { renderGoLive(); renderIntegrations(); renderImpersonationSetting(); }
+  renderLabelsSetting();
   view().querySelectorAll('[data-user]').forEach((b) => b.addEventListener('click', () => userForm(state.users.find((u) => u.id === Number(b.dataset.user)))));
   if ($('#show-audit')) $('#show-audit').onclick = async () => {
     const rows = await api('/api/admin/audit');

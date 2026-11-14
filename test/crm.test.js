@@ -812,3 +812,35 @@ test('Face ID (passkeys): alleen voor ingelogde accounts, eenmalige uitdaging, o
   const again = await fetch(`${base}/api/passkeys/login/verify`, { method: 'POST', headers: json, body: JSON.stringify({ challenge_id: lo.challenge_id, response: { id: 'onbekend' } }) });
   assert.equal(again.status, 400); // al gebruikt
 });
+
+test('Sponsorlabels: standaard Particulieren en Bedrijven, eigen labels, ranglijst per label', async (t) => {
+  const { db, kids } = sponsorSetup();
+  const priv = addDonor(db, { first_name: 'Piet', anonymous: 0 });
+  const comp = Number(run(db, "INSERT INTO donors (donor_type, company_name, email, anonymous) VALUES ('bedrijf', 'Bouw BV', 'b@bv.nl', 0)").lastInsertRowid);
+  const lbl = (id) => get(db, 'SELECT l.name FROM donors d JOIN sponsor_labels l ON l.id = d.label_id WHERE d.id = ?', id).name;
+  assert.equal(lbl(priv), 'Particulieren');
+  assert.equal(lbl(comp), 'Bedrijven');
+  SP.startSponsorships(db, priv, [kids[0]]);
+  SP.startSponsorships(db, comp, [kids[1], kids[2]]);
+  const bedrijven = get(db, "SELECT id FROM sponsor_labels WHERE key = 'bedrijf'").id;
+  assert.deepEqual(SP.leaderboard(db, { label: bedrijven }).map((r) => r.name), ['Bouw BV']);
+  assert.equal(SP.leaderboard(db).length, 2);
+
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('l@rf.org','L','admin',?)", hashPassword('Sterk wachtwoord 1'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const h = { 'Content-Type': 'application/json', cookie: (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'l@rf.org', password: 'Sterk wachtwoord 1' }) })).headers.get('set-cookie').split(';')[0] };
+  const scholen = await (await fetch(`${base}/api/admin/labels`, { method: 'POST', headers: h, body: JSON.stringify({ name: 'Scholen' }) })).json();
+  assert.equal((await fetch(`${base}/api/admin/donors/${priv}`, { method: 'PUT', headers: h, body: JSON.stringify({ label_id: scholen.id }) })).status, 200);
+  assert.equal(lbl(priv), 'Scholen');
+  assert.equal((await fetch(`${base}/api/admin/donors/${priv}`, { method: 'PUT', headers: h, body: JSON.stringify({ label_id: 9999 }) })).status, 400);
+  // In gebruik of standaard: niet verwijderen
+  assert.equal((await fetch(`${base}/api/admin/labels/${scholen.id}`, { method: 'DELETE', headers: h })).status, 409);
+  assert.equal((await fetch(`${base}/api/admin/labels/${bedrijven}`, { method: 'DELETE', headers: h })).status, 409);
+  const pub = await (await fetch(`${base}/api/public/leaderboard?label=${scholen.id}`)).json();
+  assert.equal(pub.length, 1);
+  assert.equal(pub[0].donor_id, undefined);
+  const labels = await (await fetch(`${base}/api/public/labels`)).json();
+  assert.deepEqual(labels.map((l) => l.name), ['Particulieren', 'Bedrijven', 'Scholen']);
+});

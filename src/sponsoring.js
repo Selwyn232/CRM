@@ -200,15 +200,18 @@ function endSponsorship(db, id, reason = '', actor = 'systeem') {
 }
 
 // Leaderboard: op aantal actieve sponsorkinderen, daarna op totaal gesponsorde maanden.
-function leaderboard(db, { limit = 50 } = {}) {
-  return all(db, `SELECT d.id, d.anonymous, d.display_name, d.first_name, d.last_name, d.company_name, d.donor_type, d.city,
+function leaderboard(db, { limit = 50, label = '' } = {}) {
+  const lid = Number(label) || null; // per label (bv. Particulieren of Bedrijven); leeg = iedereen
+  return all(db, `SELECT d.id, d.anonymous, d.display_name, d.first_name, d.last_name, d.company_name, d.donor_type, d.city, d.label_id,
+      l.name AS label_name,
       (SELECT COUNT(*) FROM sponsorships s WHERE s.donor_id = d.id AND s.status <> 'beeindigd') AS children,
       (SELECT COUNT(*) FROM sponsor_months m WHERE m.donor_id = d.id) AS months,
       (SELECT MIN(started_at) FROM sponsorships s WHERE s.donor_id = d.id) AS since
-    FROM donors d WHERE EXISTS (SELECT 1 FROM sponsorships s WHERE s.donor_id = d.id AND s.status <> 'beeindigd')
-    ORDER BY children DESC, months DESC, since ASC LIMIT ?`, Math.min(Number(limit) || 50, 500))
+    FROM donors d LEFT JOIN sponsor_labels l ON l.id = d.label_id
+    WHERE EXISTS (SELECT 1 FROM sponsorships s WHERE s.donor_id = d.id AND s.status <> 'beeindigd') ${lid ? 'AND d.label_id = ?' : ''}
+    ORDER BY children DESC, months DESC, since ASC LIMIT ?`, ...(lid ? [lid] : []), Math.min(Number(limit) || 50, 500))
     .map((r, i) => ({ rank: i + 1, donor_id: r.id, name: S.donorPublicName(r), anonymous: !!r.anonymous, city: r.anonymous ? '' : r.city,
-      children: r.children, months: r.months, since: r.since }));
+      children: r.children, months: r.months, since: r.since, label_id: r.label_id, label_name: r.label_name || '' }));
 }
 
 module.exports = {

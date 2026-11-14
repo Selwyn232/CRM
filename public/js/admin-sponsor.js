@@ -321,18 +321,23 @@ async function renderUpdates(month) {
 }
 
 // ======================================================================= LEADERBOARD
-async function renderSponsorLeaderboard() {
-  const rows = await api('/api/admin/leaderboard');
+async function renderSponsorLeaderboard(labelParam) {
+  const labels = await api('/api/public/labels');
+  const label = labels.some((l) => String(l.id) === String(labelParam)) ? String(labelParam) : '';
+  const rows = await api(`/api/admin/leaderboard${label ? `?label=${label}` : ''}`);
   view().innerHTML = `
     ${pageHead('Leaderboard', { sub: 'Op aantal gesponsorde kinderen · intern overzicht met echte namen', actions: '<a class="btn btn-ghost" href="/leaderboard" target="_blank" rel="noopener">' + RF.icon('arrow-up-right') + '<span>Publieke versie</span></a>' })}
+    <div class="seg" style="margin-bottom:12px">${[{ id: '', name: 'Iedereen' }, ...labels].map((l) => `<button type="button" data-label="${l.id}" class="${String(l.id) === label ? 'active' : ''}">${esc(l.name)}</button>`).join('')}</div>
     <div class="callout neutral">${RF.icon('info')}<span>Publiek en in het portaal zien bezoekers alleen de publieke naam. Anonieme sponsoren verschijnen als “Anonieme sponsor”.</span></div>
     <div class="card flush">${table([
       { label: '#', render: (r) => `<span class="muted num">${r.rank}</span>` },
       { label: 'Sponsor', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}${donorLink(r.donor_id, r.full_name)}</div>` },
       { label: 'Publiek als', render: (r) => (r.anonymous ? `<span class="muted">${RF.icon('eye-off', 'icon-sm')} Anonieme sponsor</span>` : esc(r.name)) },
+      ...(label ? [] : [{ label: 'Label', render: (r) => labelChip(r.label_name) || '<span class="muted">—</span>' }]),
       { label: 'Maanden', num: true, render: (r) => `<span class="muted">${r.months}</span>` },
       { label: 'Kinderen', num: true, render: (r) => `<b style="font-weight:600">${r.children}</b>` },
-    ], rows, { empty: 'Nog geen sponsoren', emptyIcon: 'trophy' })}</div>`;
+    ], rows, { empty: 'Nog geen sponsoren in deze groep', emptyIcon: 'trophy' })}</div>`;
+  view().querySelectorAll('[data-label]').forEach((b) => b.addEventListener('click', () => { location.hash = b.dataset.label ? `#/leaderboard/${b.dataset.label}` : '#/leaderboard'; }));
 }
 
 // ======================================================================= INSTELLINGEN: sponsorbedrag

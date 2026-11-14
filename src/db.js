@@ -301,6 +301,15 @@ CREATE TABLE IF NOT EXISTS onboarding_files (
 );
 CREATE INDEX IF NOT EXISTS idx_onbf ON onboarding_files(onboarding_id);
 
+-- ======================= Sponsorlabels (groepen, bv. Particulieren en Bedrijven) =======================
+CREATE TABLE IF NOT EXISTS sponsor_labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  key TEXT UNIQUE,                             -- vaste standaardlabels: 'particulier', 'bedrijf'
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ======================= Passkeys (Face ID / vingerafdruk) =======================
 -- Alleen de publieke sleutel staat hier; het gezicht of de vingerafdruk verlaat het toestel nooit.
 CREATE TABLE IF NOT EXISTS passkeys (
@@ -469,6 +478,18 @@ function migrate(db) {
     db.exec(`DROP TABLE sessions; CREATE TABLE sessions (token TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')), subject_id INTEGER NOT NULL, expires_at TEXT NOT NULL);`);
   }
+  // Sponsorlabels: standaard Particulieren en Bedrijven; elke sponsor één label (standaard op basis van het type).
+  addCol('donors', 'label_id', 'INTEGER REFERENCES sponsor_labels(id) ON DELETE SET NULL');
+  if (!db.prepare('SELECT 1 FROM sponsor_labels LIMIT 1').get()) {
+    db.exec("INSERT INTO sponsor_labels (name, key, sort_order) VALUES ('Particulieren', 'particulier', 1), ('Bedrijven', 'bedrijf', 2)");
+  }
+  db.exec(`UPDATE donors SET label_id = (SELECT id FROM sponsor_labels WHERE key = CASE WHEN donors.donor_type IN ('bedrijf','stichting') THEN 'bedrijf' ELSE 'particulier' END)
+    WHERE label_id IS NULL`);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS donors_default_label AFTER INSERT ON donors WHEN NEW.label_id IS NULL BEGIN
+    UPDATE donors SET label_id = (SELECT id FROM sponsor_labels WHERE key = CASE WHEN NEW.donor_type IN ('bedrijf','stichting') THEN 'bedrijf' ELSE 'particulier' END)
+    WHERE id = NEW.id; END`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_donors_label ON donors(label_id)');
+
   // Rol 'veldmedewerker' toevoegen: de CHECK op users.role vraagt om het opnieuw opbouwen van de tabel.
   const u = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
   if (u && !u.sql.includes('veldmedewerker')) {

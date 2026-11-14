@@ -128,6 +128,42 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
         (SELECT COUNT(*) FROM children WHERE status = 'gesponsord') AS sponsored,
         (SELECT COUNT(DISTINCT donor_id) FROM sponsorships WHERE status <> 'beeindigd') AS sponsors`) };
     }],
+    // Labels (groepen sponsoren) met het aantal sponsoren dat nu een kind sponsort.
+    ['GET', '/api/public/labels', () => all(db, `SELECT l.id, l.name, (SELECT COUNT(DISTINCT s.donor_id) FROM sponsorships s JOIN donors d ON d.id = s.donor_id
+      WHERE d.label_id = l.id AND s.status <> 'beeindigd') AS sponsors FROM sponsor_labels l ORDER BY l.sort_order, l.name`)],
+    ['GET', '/api/admin/labels', () => all(db, `SELECT l.*, (SELECT COUNT(*) FROM donors d WHERE d.label_id = l.id) AS donors
+      FROM sponsor_labels l ORDER BY l.sort_order, l.name`), staff],
+    ['POST', '/api/admin/labels', (ctx) => {
+      const name = str(ctx.body.name, 40);
+      if (!name) throw new AppError(400, 'Geef het label een naam');
+      if (get(db, 'SELECT id FROM sponsor_labels WHERE name = ?', name)) throw new AppError(409, 'Dit label bestaat al');
+      const r = run(db, 'INSERT INTO sponsor_labels (name, sort_order) VALUES (?, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sponsor_labels))', name);
+      S.audit(db, ctx.actor, 'label_aangemaakt', 'label', Number(r.lastInsertRowid), name);
+      return get(db, 'SELECT * FROM sponsor_labels WHERE id = ?', Number(r.lastInsertRowid));
+    }, admin],
+    ['PUT', '/api/admin/labels/:id', (ctx) => {
+      const lid = id(ctx.params.id);
+      const name = str(ctx.body.name, 40);
+      if (!name) throw new AppError(400, 'Geef het label een naam');
+      if (get(db, 'SELECT id FROM sponsor_labels WHERE name = ? AND id <> ?', name, lid)) throw new AppError(409, 'Dit label bestaat al');
+      run(db, 'UPDATE sponsor_labels SET name = ? WHERE id = ?', name, lid);
+      if (ctx.body.move) {
+        // Een plek omhoog/omlaag schuiven
+        const list = all(db, 'SELECT id FROM sponsor_labels ORDER BY sort_order, name').map((x) => x.id);
+        const i = list.indexOf(lid); const j = i + (ctx.body.move < 0 ? -1 : 1);
+        if (i >= 0 && j >= 0 && j < list.length) { [list[i], list[j]] = [list[j], list[i]]; list.forEach((x, k) => run(db, 'UPDATE sponsor_labels SET sort_order = ? WHERE id = ?', k + 1, x)); }
+      }
+      return get(db, 'SELECT * FROM sponsor_labels WHERE id = ?', lid);
+    }, admin],
+    ['DELETE', '/api/admin/labels/:id', (ctx) => {
+      const l = get(db, 'SELECT * FROM sponsor_labels WHERE id = ?', id(ctx.params.id));
+      if (!l) throw new AppError(404, 'Label niet gevonden');
+      if (l.key) throw new AppError(409, `"${l.name}" is een standaardlabel en kan niet worden verwijderd (wel hernoemd)`);
+      const n = get(db, 'SELECT COUNT(*) AS n FROM donors WHERE label_id = ?', l.id).n;
+      if (n) throw new AppError(409, `Er ${n === 1 ? 'hoort nog 1 sponsor' : `horen nog ${n} sponsoren`} bij dit label. Geef ${n === 1 ? 'die' : 'ze'} eerst een ander label.`);
+      run(db, 'DELETE FROM sponsor_labels WHERE id = ?', l.id);
+      S.audit(db, ctx.actor, 'label_verwijderd', 'label', l.id, l.name);
+    }, admin],
     ['GET', '/api/public/leaderboard', (ctx) => SP.leaderboard(db, ctx.query).map(({ donor_id, ...r }) => r)],
 
     // ------------------------------------------------------------------ sponsorportaal
@@ -373,7 +409,7 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
       if (!e) throw new AppError(404, 'Inzet niet gevonden');
       return S.reverseExpenditure(db, e.id, ctx.actor);
     }, admin],
-    ['GET', '/api/admin/leaderboard', () => SP.leaderboard(db, { limit: 500 })
+    ['GET', '/api/admin/leaderboard', (ctx) => SP.leaderboard(db, { limit: 500, label: ctx.query.label })
       .map((r) => ({ ...r, full_name: S.donorFullName(get(db, 'SELECT * FROM donors WHERE id = ?', r.donor_id)) })), staff],
   ];
   return { routes, handleSponsorPayment };
