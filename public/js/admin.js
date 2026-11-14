@@ -197,7 +197,10 @@ async function showApp() {
     { label: 'Wachtwoord wijzigen', icon: 'lock', onClick: changeOwnPassword },
     { label: 'Uitloggen', icon: 'log-out', onClick: async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace(`/login?rol=${isField() ? 'veldwerker' : 'medewerker'}`); } },
   ], { align: 'start' });
-  const setMenu = (open) => { $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open); };
+  const setMenu = (open) => {
+    $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open);
+    document.documentElement.classList.toggle('menu-open', open); // pagina erachter niet laten meescrollen
+  };
   $('#menu-toggle').onclick = () => setMenu(!$('#sidebar').classList.contains('open'));
   $('#nav-backdrop').onclick = () => setMenu(false);
   $('#open-cmdk').onclick = openCommandPalette;
@@ -259,6 +262,7 @@ async function route() {
   document.title = `${item ? item.label : 'Dashboard'} · Robin Foundation CRM`;
   $('#sidebar').classList.remove('open');
   $('#nav-backdrop').classList.remove('open');
+  document.documentElement.classList.remove('menu-open');
   view().innerHTML = RF.skeleton();
   try {
     await fn(param);
