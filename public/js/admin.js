@@ -1185,13 +1185,39 @@ async function renderSettings() {
     const showStatus = (st) => {
       $('#tr-status').innerHTML = `
         ${line(st.sdk_installed, 'Vertaalpakket is geïnstalleerd', 'Vertaalpakket ontbreekt → zet in Render het <b>Build Command</b> op <code>npm install</code> en deploy opnieuw')}
-        ${line(st.api_key_set, 'API-sleutel is ingesteld', 'API-sleutel ontbreekt → voeg in Render bij <b>Environment</b> <code>ANTHROPIC_API_KEY</code> toe')}
+        ${line(st.api_key_set, `API-sleutel is ingesteld ${st.key_source === 'render' ? 'in Render' : 'hier in het CRM'} (<code>${esc(st.key_hint)}</code>)`, 'API-sleutel ontbreekt → vul hem hieronder in')}
         ${st.api_key_has_spaces ? '<div>⚠️ De API-sleutel begint of eindigt met een spatie: verwijder die in Render.</div>' : ''}
-        ${line(!!st.model_from_env, `Model ingesteld via CRM_TRANSLATE_MODEL: <code>${esc(st.model_from_env || '')}</code>`, `CRM_TRANSLATE_MODEL niet gevonden → standaardmodel <code>${esc(st.model)}</code>`)}
+        <div>🤖 Model: <code>${esc(st.model)}</code>${st.model_from_env ? ' (ingesteld in Render)' : ''}</div>
         ${st.lookalikes && st.lookalikes.length ? `<div style="margin-top:6px">⚠️ Gevonden variabelen met een <b>bijna</b> goede naam: ${st.lookalikes.map((k) => `<code>${esc(k)}</code>`).join(', ')}
           → hernoem ze precies naar <code>ANTHROPIC_API_KEY</code> en <code>CRM_TRANSLATE_MODEL</code>.</div>` : ''}
         <div class="small muted" style="margin-top:8px">Deze app draait als Render-service: <b>${esc(st.service || 'onbekend')}</b>${st.url ? ` (${esc(st.url)})` : ''}${st.commit ? ` · versie ${esc(st.commit)}` : ''}.
-          Vul de variabelen in bij <b>deze</b> service.</div>`;
+          </div>
+        <form id="tr-form" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+          <div class="field"><label>Anthropic API-sleutel ${st.key_source === 'render' ? '<span class="muted">(Render-instelling gaat voor)</span>' : ''}</label>
+            <input type="password" name="api_key" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+              placeholder="${st.api_key_set ? 'Ingesteld — plak een nieuwe sleutel om te vervangen' : 'sk-ant-…'}">
+            <div class="hint">Maak een sleutel op <b>console.anthropic.com → API Keys</b> en plak hem hier. Hij wordt daarna nooit meer volledig getoond.</div></div>
+          <div class="field"><label>Model</label><select name="model">
+            ${Object.entries(st.models || {}).map(([k, v]) => `<option value="${esc(k)}" ${k === st.model ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+          <div class="toolbar"><button class="btn btn-primary">Opslaan</button>
+            ${st.key_source === 'crm' ? '<button type="button" class="btn btn-danger btn-sm" id="tr-remove">Sleutel verwijderen</button>' : ''}</div>
+          <p class="hint" style="margin-top:8px">⚠️ Op het gratis Render-abonnement wordt de database bij elke nieuwe versie gewist; vul de sleutel daarna opnieuw in
+            (of zet hem in Render bij Environment als <code>ANTHROPIC_API_KEY</code>, dan blijft hij bewaard).</p>
+        </form>`;
+      $('#tr-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = RF.formData(e.target);
+        try {
+          const st2 = await api('/api/admin/translation/settings', { method: 'PUT', body: { api_key: f.api_key, model: f.model } });
+          showStatus(st2);
+          toast('Opgeslagen — tik op Proefvertaling om te testen');
+        } catch (ex) { toast(ex.message, 'error'); }
+      };
+      const rm = $('#tr-remove');
+      if (rm) rm.onclick = async () => {
+        if (!(await confirmDialog('De API-sleutel uit het CRM verwijderen? Vertalen stopt dan.', 'Verwijderen'))) return;
+        showStatus(await api('/api/admin/translation/settings', { method: 'PUT', body: { remove_key: true } }));
+      };
     };
     api('/api/admin/translation/status').then(showStatus).catch((e) => { $('#tr-status').textContent = e.message; });
     $('#tr-test').onclick = async () => {
@@ -1200,9 +1226,9 @@ async function renderSettings() {
       try {
         const r = await api('/api/admin/translation/test', { method: 'POST', body: {} });
         showStatus(r);
-        $('#tr-status').innerHTML += r.ok
-          ? `<div style="margin-top:10px" class="impact-preview">✅ Het werkt! (${r.ms} ms)<br><span class="small">“${esc(r.input)}” (${esc(r.source_language)})<br>→ “${esc(r.output)}”</span></div>`
-          : `<div style="margin-top:10px" class="form-error" style="margin:10px 0 0">❌ ${esc(r.error)}${r.detail ? `<br><span class="small">${esc(r.detail)}</span>` : ''}</div>`;
+        $('#tr-status').insertAdjacentHTML('afterbegin', r.ok
+          ? `<div style="margin:0 0 10px" class="impact-preview">✅ Het werkt! (${r.ms} ms)<br><span class="small">“${esc(r.input)}” (${esc(r.source_language)})<br>→ “${esc(r.output)}”</span></div>`
+          : `<div class="form-error" style="margin:0 0 10px">❌ ${esc(r.error)}${r.detail ? `<br><span class="small">${esc(r.detail)}</span>` : ''}</div>`);
       } catch (e) { $('#tr-status').textContent = e.message; }
       finally { $('#tr-test').disabled = false; }
     };

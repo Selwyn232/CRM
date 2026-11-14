@@ -57,7 +57,7 @@ Iedereen kiest in het chatvenster **🌐 Mijn taal**: de taal waarin je leest en
 
 - Donateurs: standaard Nederlands. Ontvangers: standaard afgeleid uit het land (Haïti → Kreyòl ayisyen, Honduras → Español, Filipijnen → Tagalog, Curaçao/Aruba/Bonaire → Papiamentu, anders English).
 - Talen: Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees, Papiaments en Tagalog.
-- Vertalen gebeurt met Claude (Anthropic). Stel daarvoor de omgevingsvariabele **`ANTHROPIC_API_KEY`** in, in Render via *Environment*. Zonder sleutel is de knop uitgeschakeld.
+- Vertalen gebeurt met Claude (Anthropic). Vul de API-sleutel in onder **Instellingen → 🌐 Automatisch vertalen** in het CRM, of zet hem in Render bij *Environment* als `ANTHROPIC_API_KEY`. De Render-instelling gaat voor, en blijft ook bewaard als de database wordt gewist. Op dezelfde plek staan de status en een knop **Proefvertaling**.
 - Standaardmodel is `claude-opus-5-5` met lage *effort*. Met **`CRM_TRANSLATE_MODEL`** kies je een ander model, bijvoorbeeld `claude-haiku-5-5` (veel goedkoper).
 - Elk bericht wordt per taal maar één keer vertaald en daarna uit de database gehaald.
 - Server-side *fallback* staat aan: weigert het model een vertaling, dan probeert de API het automatisch met een ander model.

@@ -39,15 +39,31 @@ const COUNTRY_LANG = {
 const recipientLanguage = (r) => (r && LANGUAGES[r.language] ? r.language : COUNTRY_LANG[String(r && r.country || '').trim().toLowerCase()] || 'en');
 const donorLanguage = (d) => (d && LANGUAGES[d.language] ? d.language : 'nl');
 
-const MODEL = (process.env.CRM_TRANSLATE_MODEL || '').trim() || 'claude-opus-5-5';
+const DEFAULT_MODEL = 'claude-opus-5-5';
+const MODELS = { 'claude-haiku-5-5': 'Claude Haiku 5.5 (snel en goedkoop, aanbevolen)', 'claude-opus-5-5': 'Claude Opus 5.5 (beste kwaliteit)' };
+
+// Sleutel/model kunnen uit Render (omgevingsvariabelen) komen of in het CRM zelf worden ingesteld
+// (Instellingen). Omgevingsvariabelen gaan voor.
+const runtime = { apiKey: '', model: '' };
+const envKey = () => (process.env.ANTHROPIC_API_KEY || '').trim();
+const envModel = () => (process.env.CRM_TRANSLATE_MODEL || '').trim();
+const currentKey = () => envKey() || runtime.apiKey;
+const currentModel = () => envModel() || runtime.model || DEFAULT_MODEL;
+function configure({ apiKey, model } = {}) {
+  if (apiKey !== undefined) runtime.apiKey = String(apiKey || '').trim();
+  if (model !== undefined) runtime.model = MODELS[model] ? model : '';
+  client = null;
+}
 
 let client = null;
+let clientKey = '';
 function getClient() {
-  if (!client) client = new (loadSdk())();
+  const key = currentKey();
+  if (!client || clientKey !== key) { client = new (loadSdk())({ apiKey: key }); clientKey = key; }
   return client;
 }
 
-const isEnabled = () => !!(process.env.ANTHROPIC_API_KEY || '').trim() && !!loadSdk();
+const isEnabled = () => !!currentKey() && !!loadSdk();
 
 const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Donateurs chatten
 met kinderen, scholen en projecten die ze steunen (o.a. in Haïti en Honduras).
@@ -90,7 +106,7 @@ async function translateBatch(items, target) {
   let response;
   try {
     response = await getClient().beta.messages.create({
-      model: MODEL,
+      model: currentModel(),
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
@@ -139,10 +155,13 @@ function status() {
     (wanted.some((w) => norm(w) === norm(k)) || /anthropic.*key|api.?key|translate.*model/i.test(k)));
   return {
     sdk_installed: !!loadSdk(),
-    api_key_set: !!process.env.ANTHROPIC_API_KEY,
+    api_key_set: !!currentKey(),
+    key_source: envKey() ? 'render' : runtime.apiKey ? 'crm' : null,
+    key_hint: currentKey() ? `…${currentKey().slice(-4)}` : '',
     api_key_has_spaces: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== process.env.ANTHROPIC_API_KEY.trim(),
-    model_from_env: process.env.CRM_TRANSLATE_MODEL || null,
-    model: MODEL,
+    model_from_env: envModel() || null,
+    model: currentModel(),
+    models: MODELS,
     enabled: isEnabled(),
     lookalikes,
     // Render zet deze variabelen zelf; zo zie je in welke service de app draait.
@@ -152,4 +171,4 @@ function status() {
   };
 }
 
-module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL, recipientLanguage, donorLanguage, status };
+module.exports = { LANGUAGES, MODELS, isEnabled, translateBatch, recipientLanguage, donorLanguage, status, configure };

@@ -354,3 +354,28 @@ test('HTTP: chatgesprek geeft eigen taal en taal van de ander; taal wijzigen', a
   th = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie } })).json();
   assert.equal(th.my_language, 'tl');
 });
+
+test('vertaalsleutel in het CRM instellen (alleen beheerder), wordt nooit teruggegeven', async (t) => {
+  const prev = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+  const db = freshDb();
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => { server.close(); require('../src/translate').configure({ apiKey: '', model: '' }); if (prev !== undefined) process.env.ANTHROPIC_API_KEY = prev; });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'a@rf.org', password: 'admin123' }) }))
+    .headers.get('set-cookie').split(';')[0];
+  const put = (body) => fetch(`${base}/api/admin/translation/settings`, { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify(body) });
+  assert.equal((await put({ api_key: 'geen-sleutel' })).status, 400);
+  const key = 'sk-ant-api03-' + 'x'.repeat(40) + 'WXYZ';
+  const res = await put({ api_key: key, model: 'claude-haiku-5-5' });
+  const st = await res.json();
+  assert.equal(st.api_key_set, true);
+  assert.equal(st.key_source, 'crm');
+  assert.equal(st.key_hint, '…WXYZ');
+  assert.equal(st.model, 'claude-haiku-5-5');
+  assert.ok(!JSON.stringify(st).includes(key));
+  assert.equal(get(db, "SELECT value FROM settings WHERE key = 'translate_model'").value, 'claude-haiku-5-5');
+  assert.equal(require('../src/translate').isEnabled(), true);
+  assert.equal((await fetch(`${base}/api/admin/translation/status`)).status, 401);
+});

@@ -122,6 +122,9 @@ function donorJourney(db, donorId) {
 }
 
 function buildRoutes({ db, uploadDir }) {
+  // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
+  const setting = (k) => (get(db, 'SELECT value FROM settings WHERE key = ?', k) || {}).value || '';
+  require('./translate').configure({ apiKey: setting('translate_api_key'), model: setting('translate_model') });
   // ------------------------------------------------------------ guards
   const staff = (ctx) => {
     const s = auth.getSession(db, ctx.cookies[STAFF_COOKIE]);
@@ -856,6 +859,27 @@ function buildRoutes({ db, uploadDir }) {
       S.audit(db, ctx.actor, 'bestemming_gewijzigd', 'category', null, cat.key);
     }, admin],
     ['GET', '/api/admin/translation/status', () => require('./translate').status(), admin],
+    ['PUT', '/api/admin/translation/settings', (ctx) => {
+      const T = require('./translate');
+      const save = (k, v) => run(db, `INSERT INTO settings (key, value, updated_at) VALUES (?,?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, k, v);
+      const b = ctx.body;
+      if (b.api_key !== undefined && b.api_key !== '') {
+        const key = String(b.api_key).trim();
+        if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key)) throw new AppError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-")');
+        save('translate_api_key', key);
+        T.configure({ apiKey: key });
+      }
+      if (b.remove_key) { save('translate_api_key', ''); T.configure({ apiKey: '' }); }
+      if (b.model !== undefined) {
+        if (b.model && !T.MODELS[b.model]) throw new AppError(400, 'Onbekend model');
+        save('translate_model', b.model || '');
+        T.configure({ model: b.model || '' });
+      }
+      S.audit(db, ctx.actor, 'vertaalinstellingen_gewijzigd', 'settings', null,
+        { key: b.remove_key ? 'verwijderd' : b.api_key ? 'gewijzigd' : 'ongewijzigd', model: b.model });
+      return T.status();
+    }, admin],
     ['POST', '/api/admin/translation/test', async () => {
       const T = require('./translate');
       const st = T.status();
