@@ -80,7 +80,7 @@ function keyProblem(key = currentKey()) {
 }
 const isEnabled = () => !!currentKey() && !keyProblem() && !!loadSdk();
 
-const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Donateurs chatten
+const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Sponsoren chatten
 met kinderen, scholen en projecten die ze steunen (o.a. in Haïti en Honduras).
 
 Vertaal elk bericht natuurgetrouw naar de gevraagde doeltaal:

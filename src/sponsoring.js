@@ -61,7 +61,7 @@ const age = (birth) => {
   return a;
 };
 
-// Publiek (voor donateurs) toonbare info over een kind: geen achternaam, adres of documenten.
+// Publiek (voor sponsoren) toonbare info over een kind: geen achternaam, adres of documenten.
 function publicChild(c) {
   return {
     id: c.id, first_name: c.first_name, age: age(c.birth_date), gender: c.gender, school: c.school, grade: c.grade,
@@ -80,7 +80,7 @@ function availableChildren(db, donorId = null) {
     ORDER BY ch.available_since ASC, ch.id ASC`, donorId || 0).map(publicChild);
 }
 
-// Kinderen tijdelijk reserveren tijdens het afrekenen (30 minuten), zodat twee donateurs niet hetzelfde kind kiezen.
+// Kinderen tijdelijk reserveren tijdens het afrekenen (30 minuten), zodat twee sponsoren niet hetzelfde kind kiezen.
 function reserve(db, donorId, childIds) {
   const ids = [...new Set(childIds.map(Number).filter(Boolean))];
   if (!ids.length) throw new AppError(400, 'Kies minimaal één kind');
@@ -116,7 +116,7 @@ function startSponsorships(db, donorId, childIds, { subscriptionId = null, actor
     S.sendMail(db, donor, `Welkom als sponsor van ${names.join(', ')}!`,
       `Beste ${donor.first_name || S.donorFullName(donor)},\n\nWat fijn dat je ${names.length === 1 ? names[0] : `${names.length} kinderen`} gaat sponsoren. `
       + `Voor ${S.euro(cfg.amount_cents)} per maand betaal je per kind: ${cfg.parts.map((p) => `${p.label.toLowerCase()} (${S.euro(p.cents)})`).join(', ')}.\n\n`
-      + 'In je donateursportaal zie je elke maand waar je geld heen gaat, ontvang je foto’s en updates, en kun je chatten met het gezin.\n\nRobin Foundation', 'welkom');
+      + 'In je sponsorportaal zie je elke maand waar je geld heen gaat, ontvang je foto’s en updates, en kun je chatten met het gezin.\n\nRobin Foundation', 'welkom');
   }
   return created;
 }

@@ -179,7 +179,7 @@ if (require.main === module) {
     console.log(`Robin Foundation CRM draait op http://localhost:${port}`);
     console.log(`  Inloggen:        http://localhost:${port}/login`);
     console.log(`  Beheer:          http://localhost:${port}/admin`);
-    console.log(`  Donateursportaal: http://localhost:${port}/portal`);
+    console.log(`  Sponsorportaal: http://localhost:${port}/portal`);
     console.log(`  Leaderboard:     http://localhost:${port}/leaderboard`);
     console.log(`  Ontvangers:      http://localhost:${port}/ontvanger`);
   });

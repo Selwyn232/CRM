@@ -36,7 +36,7 @@ async function renderSponsorDashboard() {
     <div class="kpis">
       <div class="kpi"><div class="label">${RF.icon('smile')}Gesponsorde kinderen</div><div class="value">${num(t.sponsored)}</div>
         <div class="sub">${num(t.available)} wachten op een sponsor${t.in_review ? ` · ${t.in_review} in behandeling` : ''}</div></div>
-      <div class="kpi"><div class="label">${RF.icon('users')}Sponsors</div><div class="value">${num(t.sponsors)}</div>
+      <div class="kpi"><div class="label">${RF.icon('users')}Sponsoren</div><div class="value">${num(t.sponsors)}</div>
         <div class="sub">gemiddeld ${t.sponsors ? (t.sponsorships / t.sponsors).toFixed(1).replace('.', ',') : 0} kind per sponsor</div></div>
       <div class="kpi"><div class="label">${RF.icon('repeat')}Maandinkomsten</div><div class="value">${euro0(t.monthly_cents)}</div>
         <div class="sub">${euro(o.config.amount_cents)} per kind per maand</div></div>
@@ -65,7 +65,7 @@ async function renderSponsorDashboard() {
           <div class="grow"><div class="t">${esc(p.label)}</div><div class="small muted">${esc(p.description)}</div></div><b class="num">${euro(p.cents)}</b></div>`).join('')}
           <div class="bd-row total"><div class="grow">Per kind per maand</div><b class="num">${euro(o.config.amount_cents)}</b></div></div></div>
       <div class="card"><div class="card-head"><h2>Recente betalingen</h2><a href="#/donaties">Alles</a></div>
-        <div class="list">${d.recent.slice(0, 7).map((r) => `<a class="list-row" href="#/donateurs/${r.donor_id}">${RF.catIcon(r, 'sm')}
+        <div class="list">${d.recent.slice(0, 7).map((r) => `<a class="list-row" href="#/sponsoren/${r.donor_id}">${RF.catIcon(r, 'sm')}
           <div class="grow"><div class="title">${esc(r.donor_name)}</div><div class="meta">${esc(r.category_name)} · ${date(r.received_at)}</div></div>
           <div class="end">${euro(r.amount_cents)}</div></a>`).join('') || RF.emptyState({ icon: 'banknote', title: 'Nog geen betalingen' })}</div></div>
     </div>`;
@@ -79,7 +79,7 @@ async function renderKids(param) {
   const status = param || '';
   const q = sessionStorage.getItem('rf-kids-q') || '';
   view().innerHTML = `
-    ${pageHead('Kinderen', { sub: 'Alle kinderen in het programma. Donateurs zien alleen voornaam, leeftijd, school, provincie, verhaal en foto.', actions: btn('new', 'Nieuw kind', { icon: 'plus', kind: 'primary' }) })}
+    ${pageHead('Kinderen', { sub: 'Alle kinderen in het programma. Sponsoren zien alleen voornaam, leeftijd, school, provincie, verhaal en foto.', actions: btn('new', 'Nieuw kind', { icon: 'plus', kind: 'primary' }) })}
     <div class="toolbar" style="margin-bottom:12px">${searchInput('q', 'Zoek op naam, gezin of school', q)}
       <select id="f-status">${opt('', 'Alle statussen', status)}${Object.entries(RF.LABELS.child).map(([k, v]) => opt(k, v, status)).join('')}</select></div>
     <div class="card flush" id="tbl">${RF.skeleton('rows')}</div>`;
@@ -106,7 +106,7 @@ function childForm(c, done) {
   modal({
     title: c.id ? `${c.first_name} bewerken` : 'Nieuw kind', wide: true,
     body: `<div class="field-row"><div class="field"><label>Voornaam</label><input type="text" name="first_name" required value="${esc(c.first_name || '')}"></div>
-        <div class="field"><label>Achternaam <span class="muted">(niet zichtbaar voor donateurs)</span></label><input type="text" name="last_name" value="${esc(c.last_name || '')}"></div></div>
+        <div class="field"><label>Achternaam <span class="muted">(niet zichtbaar voor sponsoren)</span></label><input type="text" name="last_name" value="${esc(c.last_name || '')}"></div></div>
       <div class="field-row"><div class="field"><label>Geboortedatum</label><input type="date" name="birth_date" value="${esc(c.birth_date || '')}"></div>
         <div class="field"><label>Geslacht</label><select name="gender">${opt('', '—', c.gender)}${opt('meisje', 'Meisje', c.gender)}${opt('jongen', 'Jongen', c.gender)}</select></div>
         <div class="field"><label>Status</label><select name="status" ${c.status === 'gesponsord' ? 'disabled' : ''}>${Object.entries(RF.LABELS.child).filter(([k]) => k !== 'gesponsord' || c.status === 'gesponsord').map(([k, v]) => opt(k, v, c.status || 'beschikbaar')).join('')}</select></div></div>
@@ -139,7 +139,7 @@ async function renderKid(childId) {
           <div class="profile-meta">${badge('child', c.status)}${c.age != null ? `<span>${c.age} jaar</span>` : ''}
             ${c.family_name ? `<span class="dot-sep">${esc(c.family_name)}</span>` : ''}${c.province ? `<span class="dot-sep">${esc([c.city, c.province].filter(Boolean).join(', '))}</span>` : ''}</div></div></div>
       <div class="toolbar">${btn('edit', 'Bewerken', { icon: 'pencil' })}${btn('add-update', 'Update plaatsen', { icon: 'image', kind: 'primary' })}
-        ${!active && c.status === 'beschikbaar' ? btn('link', 'Koppel aan donateur', { icon: 'user-plus' }) : ''}</div>
+        ${!active && c.status === 'beschikbaar' ? btn('link', 'Koppel aan sponsor', { icon: 'user-plus' }) : ''}</div>
     </div>
     <div class="grid grid-1-2">
       <div class="stack">
@@ -147,7 +147,7 @@ async function renderKid(childId) {
           ${active ? `<div class="cell-person">${RF.avatar(active.donor_name, 'sm')}<div class="grow">${donorLink(active.donor_id, active.donor_name)}
             <span class="sub">Sinds ${date(active.started_at)} · ${active.months} ${active.months === 1 ? 'maand' : 'maanden'} betaald</span></div>${badge('sponsorship', active.status)}</div>
             <div class="toolbar" style="margin-top:12px">${btn('pay', 'Betaling registreren', { icon: 'banknote', size: 'sm' })}${btn('end', 'Beëindigen', { icon: 'ban', size: 'sm' })}</div>`
-            : `<p class="muted small" style="margin:0">${c.status === 'beschikbaar' ? 'Nog geen sponsor. Het kind staat zichtbaar voor donateurs.' : 'Niet zichtbaar voor donateurs (status: ' + esc(label('child', c.status)) + ').'}</p>`}
+            : `<p class="muted small" style="margin:0">${c.status === 'beschikbaar' ? 'Nog geen sponsor. Het kind staat zichtbaar voor sponsoren.' : 'Niet zichtbaar voor sponsoren (status: ' + esc(label('child', c.status)) + ').'}</p>`}
         </div>
         ${fam ? `<div class="card"><div class="card-head"><h2>Ouders &amp; chat</h2></div><dl class="props">
           <dt>${RF.icon('house')}Gezin</dt><dd>${esc(fam.name)}${fam.barangay || fam.location ? `<span class="sub muted">${esc([fam.barangay, fam.location, fam.province].filter(Boolean).join(', '))}</span>` : ''}</dd>
@@ -160,7 +160,7 @@ async function renderKid(childId) {
           <dt>${RF.icon('school')}School</dt><dd>${esc(c.school) || '<span class="muted">—</span>'}${c.grade ? `<span class="sub muted">${esc(c.grade)}</span>` : ''}</dd>
           <dt>${RF.icon('house')}Gezin</dt><dd>${esc(c.family_name) || '<span class="muted">—</span>'}</dd>
           <dt>${RF.icon('clock')}In programma</dt><dd>${date(c.created_at)}</dd></dl></div>
-        ${c.sponsorships.length > (active ? 1 : 0) ? `<div class="card"><div class="card-head"><h2>Eerdere sponsors</h2></div>
+        ${c.sponsorships.length > (active ? 1 : 0) ? `<div class="card"><div class="card-head"><h2>Eerdere sponsoren</h2></div>
           <div class="list">${c.sponsorships.filter((s) => s.status === 'beeindigd').map((s) => `<div class="list-row"><div class="grow"><div class="title">${donorLink(s.donor_id, s.donor_name)}</div>
             <div class="meta">${date(s.started_at)} – ${date(s.ended_at)} · ${s.months} mnd${s.end_reason ? ` · ${esc(s.end_reason)}` : ''}</div></div></div>`).join('')}</div></div>` : ''}
       </div>
@@ -205,9 +205,9 @@ function updateForm(c, done) {
 
 async function linkSponsorForm(kids, done) {
   modal({
-    title: 'Koppel aan donateur',
-    body: `<p class="small muted">Gebruik dit voor sponsors die per bankoverschrijving betalen. Online sponsors kiezen zelf in het portaal.</p>
-      <div class="field"><label>Donateur</label><input type="search" id="donor-q" placeholder="Zoek op naam of e-mail" autocomplete="off"><input type="hidden" name="donor_id"><div class="hint" id="donor-pick"></div></div>
+    title: 'Koppel aan sponsor',
+    body: `<p class="small muted">Gebruik dit voor sponsoren die per bankoverschrijving betalen. Online sponsoren kiezen zelf in het portaal.</p>
+      <div class="field"><label>Sponsor</label><input type="search" id="donor-q" placeholder="Zoek op naam of e-mail" autocomplete="off"><input type="hidden" name="donor_id"><div class="hint" id="donor-pick"></div></div>
       <p>Kinderen: <b>${esc(kids.map((k) => k.first_name).join(', '))}</b></p>
       <label class="check"><input type="checkbox" name="book_first" checked> Eerste maand meteen als betaald boeken</label>
       <div class="field-row"><div class="field"><label>Betaalwijze</label><select name="method">${opt('overschrijving', 'Overschrijving')}${opt('incasso', 'Incasso')}${opt('contant', 'Contant')}</select></div>
@@ -223,7 +223,7 @@ async function linkSponsorForm(kids, done) {
       }, 200));
     },
     onSubmit: async (f) => {
-      if (!f.donor_id) throw new Error('Kies een donateur');
+      if (!f.donor_id) throw new Error('Kies een sponsor');
       await api('/api/admin/sponsorships', { method: 'POST', body: { ...f, child_ids: kids.map((k) => k.id) } });
       toast('Sponsorschap gestart'); done();
     },
@@ -247,8 +247,8 @@ function paymentForm(s, done) {
 function endForm(s, done) {
   modal({
     title: 'Sponsorschap beëindigen', submitLabel: 'Beëindigen',
-    body: `<p>Het kind komt weer beschikbaar voor een nieuwe sponsor. De donateur krijgt een bevestiging per e-mail en een lopende Mollie-incasso wordt aangepast.</p>
-      <div class="field"><label>Reden</label><input type="text" name="reason" placeholder="bv. Op verzoek van donateur"></div>`,
+    body: `<p>Het kind komt weer beschikbaar voor een nieuwe sponsor. De sponsor krijgt een bevestiging per e-mail en een lopende Mollie-incasso wordt aangepast.</p>
+      <div class="field"><label>Reden</label><input type="text" name="reason" placeholder="bv. Op verzoek van sponsor"></div>`,
     onSubmit: async (f) => { await api(`/api/admin/sponsorships/${s.id}/end`, { method: 'POST', body: f }); toast('Sponsorschap beëindigd'); done(); },
   });
 }
@@ -325,14 +325,14 @@ async function renderSponsorLeaderboard() {
   const rows = await api('/api/admin/leaderboard');
   view().innerHTML = `
     ${pageHead('Leaderboard', { sub: 'Op aantal gesponsorde kinderen · intern overzicht met echte namen', actions: '<a class="btn btn-ghost" href="/leaderboard" target="_blank" rel="noopener">' + RF.icon('arrow-up-right') + '<span>Publieke versie</span></a>' })}
-    <div class="callout neutral">${RF.icon('info')}<span>Publiek en in het portaal zien bezoekers alleen de publieke naam. Anonieme sponsors verschijnen als “Anonieme donateur”.</span></div>
+    <div class="callout neutral">${RF.icon('info')}<span>Publiek en in het portaal zien bezoekers alleen de publieke naam. Anonieme sponsoren verschijnen als “Anonieme sponsor”.</span></div>
     <div class="card flush">${table([
       { label: '#', render: (r) => `<span class="muted num">${r.rank}</span>` },
       { label: 'Sponsor', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}${donorLink(r.donor_id, r.full_name)}</div>` },
-      { label: 'Publiek als', render: (r) => (r.anonymous ? `<span class="muted">${RF.icon('eye-off', 'icon-sm')} Anonieme donateur</span>` : esc(r.name)) },
+      { label: 'Publiek als', render: (r) => (r.anonymous ? `<span class="muted">${RF.icon('eye-off', 'icon-sm')} Anonieme sponsor</span>` : esc(r.name)) },
       { label: 'Maanden', num: true, render: (r) => `<span class="muted">${r.months}</span>` },
       { label: 'Kinderen', num: true, render: (r) => `<b style="font-weight:600">${r.children}</b>` },
-    ], rows, { empty: 'Nog geen sponsors', emptyIcon: 'trophy' })}</div>`;
+    ], rows, { empty: 'Nog geen sponsoren', emptyIcon: 'trophy' })}</div>`;
 }
 
 // ======================================================================= INSTELLINGEN: sponsorbedrag
@@ -344,7 +344,7 @@ async function renderSponsorConfig() {
   const ICONS = ['utensils', 'graduation-cap', 'heart-pulse', 'cloud-lightning', 'school', 'house', 'gift', 'smile', 'circle'];
   const row = (p = {}) => `<div class="part-row">
     <input type="text" data-f="label" value="${esc(p.label || '')}" placeholder="Onderdeel" aria-label="Onderdeel" ${isAdmin() ? '' : 'disabled'}>
-    <input type="text" data-f="description" value="${esc(p.description || '')}" placeholder="Omschrijving voor donateurs" aria-label="Omschrijving" ${isAdmin() ? '' : 'disabled'}>
+    <input type="text" data-f="description" value="${esc(p.description || '')}" placeholder="Omschrijving voor sponsoren" aria-label="Omschrijving" ${isAdmin() ? '' : 'disabled'}>
     <select data-f="icon" aria-label="Icoon" ${isAdmin() ? '' : 'disabled'}>${ICONS.map((i) => opt(i, i, p.icon || 'circle')).join('')}</select>
     <input type="text" data-f="cents" inputmode="decimal" value="${p.cents != null ? centsToInput(p.cents) : ''}" placeholder="€" aria-label="Bedrag" ${isAdmin() ? '' : 'disabled'}>
     ${isAdmin() ? `<button type="button" class="icon-btn" data-rm aria-label="Verwijderen">${RF.icon('trash-2')}</button>` : '<span></span>'}
@@ -449,8 +449,8 @@ Object.assign(ROUTES, {
   noodfonds: renderNoodfonds,
 });
 {
-  const donors = ROUTES.donateurs;
-  ROUTES.donateurs = async (id) => {
+  const donors = ROUTES.sponsoren;
+  ROUTES.sponsoren = async (id) => {
     await donors(id);
     if (!id) return;
     const rows = await api(`/api/admin/sponsorships?donor_id=${id}`);

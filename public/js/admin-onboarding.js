@@ -36,8 +36,8 @@ async function renderOnboarding(param) {
   const rows = await api(`/api/onboarding${status ? `?status=${status}` : ''}`);
   view().innerHTML = `
     ${pageHead('Onboarding', {
-    sub: isField() ? 'Meld een gezin met kinderen aan. Een medewerker op kantoor controleert de aanmelding voordat de kinderen zichtbaar worden voor sponsors.'
-      : 'Aanmeldingen van veldmedewerkers. Na goedkeuring worden gezin en kinderen aangemaakt en zijn de kinderen te kiezen door sponsors.',
+    sub: isField() ? 'Meld een gezin met kinderen aan. Een medewerker op kantoor controleert de aanmelding voordat de kinderen zichtbaar worden voor sponsoren.'
+      : 'Aanmeldingen van veldmedewerkers. Na goedkeuring worden gezin en kinderen aangemaakt en zijn de kinderen te kiezen door sponsoren.',
     actions: btn('new', 'Nieuwe aanmelding', { icon: 'plus', kind: 'primary' }),
   })}
     <div class="toolbar" style="margin-bottom:12px"><select id="f-status">${opt('', 'Alle', status)}${Object.entries(RF.LABELS.onboarding).map(([k, v]) => opt(k, v, status)).join('')}</select></div>
@@ -90,8 +90,8 @@ function renderWizard(o, cfg, stepKey) {
       <div class="field"><label>Gezinsleden</label><input type="text" data-f="family.members" value="${val(d.family.members)}" placeholder="bv. moeder, oma, 3 kinderen"></div>
       <div class="field"><label>Inkomen en werk</label><input type="text" data-f="family.income" value="${val(d.family.income)}" placeholder="bv. vader visser, ca. ₱ 4.000 per maand"></div>
       <div class="field"><label>Verhaal van het gezin</label><textarea data-f="family.story" rows="5" placeholder="Hoe leeft het gezin, wat is de situatie, waarom is hulp nodig?">${val(d.family.story)}</textarea>
-        <div class="hint">Sponsors lezen dit verhaal (zonder achternaam en adres). Minimaal een paar zinnen.</div></div>
-      <p class="hint">Adres, telefoon en inkomen zijn alleen voor Robin Foundation en worden nooit met sponsors gedeeld.</p>`,
+        <div class="hint">Sponsoren lezen dit verhaal (zonder achternaam en adres). Minimaal een paar zinnen.</div></div>
+      <p class="hint">Adres, telefoon en inkomen zijn alleen voor Robin Foundation en worden nooit met sponsoren gedeeld.</p>`,
     ouder: () => `<h2>Ouder of voogd</h2>
       <div class="field-row"><div class="field"><label>Voornaam</label><input type="text" data-f="guardian.first_name" value="${val(d.guardian.first_name)}"></div>
         <div class="field"><label>Achternaam</label><input type="text" data-f="guardian.last_name" value="${val(d.guardian.last_name)}"></div></div>
@@ -337,7 +337,7 @@ function renderReview(o, cfg) {
     try {
       const res = await api(`/api/onboarding/${o.id}/review`, { method: 'POST', body: { ...f, decision } });
       if (res.login) {
-        modal({ title: 'Goedgekeurd: inlog voor het gezin', body: `<p>Gezin en ${res.child_ids.length} ${res.child_ids.length === 1 ? 'kind zijn' : 'kinderen zijn'} aangemaakt en nu te kiezen door sponsors.</p>
+        modal({ title: 'Goedgekeurd: inlog voor het gezin', body: `<p>Gezin en ${res.child_ids.length} ${res.child_ids.length === 1 ? 'kind zijn' : 'kinderen zijn'} aangemaakt en nu te kiezen door sponsoren.</p>
           <p>Geef deze inlog aan de veldmedewerker voor het gezin. <b>Het wachtwoord wordt maar één keer getoond.</b></p>
           <div class="callout neutral" style="font-family:var(--mono);font-size:15px;flex-direction:column;gap:4px"><span>Pagina: ${esc(location.origin)}/ontvanger</span><span>Gebruikersnaam: ${esc(res.login.username)}</span><span>Wachtwoord: ${esc(res.login.password)}</span></div>` });
       } else toast(decision === 'goedkeuren' ? 'Goedgekeurd' : decision === 'aanvulling' ? 'Teruggestuurd voor aanvulling' : 'Afgekeurd');

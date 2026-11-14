@@ -1,7 +1,7 @@
 'use strict';
 // Onboarding van gezinnen en kinderen door een veldmedewerker, met identiteitscontrole van de ouder/voogd,
 // documenten en toestemming. Een tweede medewerker beoordeelt; pas na goedkeuring worden gezin en kinderen
-// aangemaakt en zijn de kinderen zichtbaar voor donateurs.
+// aangemaakt en zijn de kinderen zichtbaar voor sponsoren.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -30,7 +30,7 @@ const MAX_FILE = 15 * 1024 * 1024;
 const ID_TYPES = ['paspoort', 'philsys', 'rijbewijs', 'umid', 'postal_id', 'voter_id', 'anders'];
 const CONSENT_TEXT = 'Ik geef Robin Foundation toestemming om de gegevens van mij en mijn kinderen te verwerken voor het sponsorprogramma. '
   + 'Ik weet dat de sponsor de voornaam, leeftijd, school, provincie, het verhaal en (als ik dat hieronder aanvink) foto’s van mijn kind te zien krijgt, '
-  + 'en dat de sponsor met ons gezin kan chatten via Robin Foundation. Adres, achternaam en documenten worden nooit met sponsors gedeeld. '
+  + 'en dat de sponsor met ons gezin kan chatten via Robin Foundation. Adres, achternaam en documenten worden nooit met sponsoren gedeeld. '
   + 'Ik kan deze toestemming altijd intrekken.';
 
 // Alleen bekende velden overnemen.

@@ -21,11 +21,11 @@
     <section class="hero">
       <div class="eyebrow" data-ic="trophy">Leaderboard</div>
       <h1>Wie sponsort de meeste kinderen?</h1>
-      <p>Dank aan alle sponsors. Wie liever anoniem blijft, verschijnt als “Anonieme donateur”; die kinderen tellen natuurlijk gewoon mee.</p>
+      <p>Dank aan alle sponsoren. Wie liever anoniem blijft, verschijnt als “Anonieme sponsor”; die kinderen tellen natuurlijk gewoon mee.</p>
       <div class="hero-stats" id="stats"></div>
     </section>
     <div class="card">
-      <div class="card-head"><h2>Top sponsors</h2></div>
+      <div class="card-head"><h2>Top sponsoren</h2></div>
       <div id="podium"></div>
       <div id="lb"></div>
     </div>
@@ -40,7 +40,7 @@
       const [sp, rows] = await Promise.all([api('/api/public/sponsor'), api('/api/public/leaderboard?limit=50')]);
       document.getElementById('stats').innerHTML = `
         <div><div class="label">Gesponsorde kinderen</div><div class="value">${num(sp.counts.sponsored)}</div></div>
-        <div><div class="label">Sponsors</div><div class="value">${num(sp.counts.sponsors)}</div></div>
+        <div><div class="label">Sponsoren</div><div class="value">${num(sp.counts.sponsors)}</div></div>
         <div><div class="label">Wachten op een sponsor</div><div class="value">${num(sp.counts.available)}</div></div>
         <div><div class="label">Per kind per maand</div><div class="value">${euro0(sp.config.amount_cents)}</div></div>`;
       const nameHtml = (r) => (r.anonymous ? `<span class="anon">${RF.icon('eye-off', 'icon-sm')}${esc(r.name)}</span>` : esc(r.name));
@@ -52,7 +52,7 @@
       document.getElementById('lb').innerHTML = rows.length ? rows.map((r) => `<div class="lb-row">
         <div class="lb-rank">${r.rank <= 3 ? `<span class="medal m${r.rank}">${r.rank}</span>` : r.rank}</div>
         <div><div class="lb-name">${nameHtml(r)}</div><div class="lb-meta">${r.months} ${r.months === 1 ? 'maand' : 'maanden'} gesponsord${r.city ? ' · ' + esc(r.city) : ''}</div></div>
-        <div class="lb-amount">${kids(r.children)}</div></div>`).join('') : RF.emptyState({ icon: 'trophy', title: 'Nog geen sponsors' });
+        <div class="lb-amount">${kids(r.children)}</div></div>`).join('') : RF.emptyState({ icon: 'trophy', title: 'Nog geen sponsoren' });
     })();
   </script>
 </body>
