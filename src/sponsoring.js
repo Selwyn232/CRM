@@ -66,7 +66,7 @@ function publicChild(c) {
   return {
     id: c.id, first_name: c.first_name, age: age(c.birth_date), gender: c.gender, school: c.school, grade: c.grade,
     story: c.story, photo_url: c.photo_url, city: c.city || '', province: c.province || '', country: c.country || 'Filipijnen',
-    family_story: c.family_story || '', family_photo: c.family_photo || '', family_id: c.family_id,
+    family_id: c.family_id, // gezinsverhaal en -foto blijven intern; het portaal draait om het kind
   };
 }
 

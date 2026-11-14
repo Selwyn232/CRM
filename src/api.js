@@ -418,55 +418,18 @@ function buildRoutes({ db, uploadDir }) {
     // ================================================================ DONATEURSPORTAAL
     ['GET', '/api/portal/overview', (ctx) => {
       const d = ctx.donor;
-      const impact = S.donorImpact(db, d.id);
       const board = SP.leaderboard(db, { limit: 500 });
-      const kids = get(db, `SELECT COUNT(*) AS children, COALESCE(SUM(monthly_cents),0) AS monthly_cents FROM sponsorships
-        WHERE donor_id = ? AND status <> 'beeindigd'`, d.id);
-      const months = get(db, 'SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents),0) AS cents FROM sponsor_months WHERE donor_id = ?', d.id);
       const me = board.find((r) => r.donor_id === d.id);
-      const unread = get(db, 'SELECT COUNT(*) AS n FROM donor_messages WHERE donor_id = ? AND read_at IS NULL', d.id).n;
-      const recipients = get(db, `SELECT COUNT(DISTINCT e.recipient_id) AS n FROM allocations a
-        JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ? AND e.recipient_id IS NOT NULL`, d.id).n;
       return {
         donor: publicDonor(d),
-        impact,
-        totals: {
-          donated_cents: impact.reduce((s, r) => s + r.donated_cents, 0),
-          waiting_cents: impact.reduce((s, r) => s + r.waiting_cents, 0),
-          spent_cents: impact.reduce((s, r) => s + r.spent_cents, 0),
-          recipients,
+        sponsor: {
+          children: get(db, "SELECT COUNT(*) AS n FROM sponsorships WHERE donor_id = ? AND status <> 'beeindigd'", d.id).n,
+          months: get(db, 'SELECT COUNT(*) AS n FROM sponsor_months WHERE donor_id = ?', d.id).n,
+          unread_updates: get(db, 'SELECT COUNT(*) AS n FROM child_updates WHERE donor_id = ? AND read_at IS NULL', d.id).n,
         },
-        sponsor: { children: kids.children, monthly_cents: kids.monthly_cents, months: months.n, sponsored_cents: months.cents,
-          unread_updates: get(db, 'SELECT COUNT(*) AS n FROM child_updates WHERE donor_id = ? AND read_at IS NULL', d.id).n },
         rank: me ? me.rank : null,
         ranked_donors: board.length,
-        unread,
       };
-    }, donor],
-    ['GET', '/api/portal/donations', (ctx) => all(db, `
-      SELECT dn.*, c.name AS category_name, c.icon, ce.id AS cell_id, ce.remaining_cents, ce.status AS cell_status
-      FROM donations dn JOIN categories c ON c.key = dn.category_key LEFT JOIN cells ce ON ce.donation_id = dn.id
-      WHERE dn.donor_id = ? ORDER BY dn.received_at DESC, dn.id DESC`, ctx.donor.id), donor],
-    ['GET', '/api/portal/journey', (ctx) => donorJourney(db, ctx.donor.id), donor],
-    ['GET', '/api/portal/messages', (ctx) => all(db, `
-      SELECT dm.id, dm.read_at, dm.delivered_at, im.type, im.title, im.body, im.media_url, im.created_at,
-        e.spent_at, e.description AS expenditure_description, c.name AS category_name, c.icon,
-        r.name AS recipient_name, r.location AS recipient_location, r.country AS recipient_country,
-        CASE WHEN r.consent = 1 THEN r.photo_url ELSE '' END AS recipient_photo,
-        (SELECT SUM(a.amount_cents) FROM allocations a WHERE a.expenditure_id = e.id AND a.donor_id = dm.donor_id) AS my_share_cents
-      FROM donor_messages dm JOIN impact_messages im ON im.id = dm.impact_message_id
-      JOIN expenditures e ON e.id = im.expenditure_id JOIN categories c ON c.key = e.category_key
-      LEFT JOIN recipients r ON r.id = im.recipient_id
-      WHERE dm.donor_id = ? ORDER BY dm.delivered_at DESC, dm.id DESC`, ctx.donor.id), donor],
-    ['POST', '/api/portal/messages/:id/read', (ctx) => {
-      run(db, "UPDATE donor_messages SET read_at = COALESCE(read_at, datetime('now')) WHERE id = ? AND donor_id = ?",
-        id(ctx.params.id), ctx.donor.id);
-    }, donor],
-    ['GET', '/api/portal/donations/:id', (ctx) => {
-      const d = get(db, `SELECT dn.id, dn.status, dn.amount_cents, dn.frequency, dn.category_key, c.name AS category_name
-        FROM donations dn JOIN categories c ON c.key = dn.category_key WHERE dn.id = ? AND dn.donor_id = ?`, id(ctx.params.id), ctx.donor.id);
-      if (!d) throw new AppError(404, 'Donatie niet gevonden');
-      return d;
     }, donor],
     // Mollie meldt een statuswijziging. We vertrouwen de inhoud niet en halen de betaling zelf op.
     ['POST', '/api/webhooks/mollie', async (ctx) => {
@@ -502,11 +465,6 @@ function buildRoutes({ db, uploadDir }) {
     }, donor],
     ['GET', '/api/portal/leaderboard', (ctx) => SP.leaderboard(db, ctx.query)
       .map(({ donor_id, ...rest }) => ({ ...rest, is_me: donor_id === ctx.donor.id })), donor],
-    ['GET', '/api/portal/annual', (ctx) => annualStatement(db, ctx.donor.id, ctx.query.year), donor],
-    ['GET', '/api/portal/campaigns', () => all(db, `SELECT cp.*,
-      COALESCE((SELECT SUM(amount_cents) FROM donations WHERE campaign_id = cp.id AND status='ontvangen'),0) AS raised_cents
-      FROM campaigns cp WHERE active = 1 AND (end_date IS NULL OR end_date >= date('now')) ORDER BY id DESC`), donor],
-    ['GET', '/api/portal/categories', () => categories().filter((c) => c.active), donor],
 
     // ================================================================ DONATEURSPORTAAL: CHAT
     ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated,
@@ -519,10 +477,17 @@ function buildRoutes({ db, uploadDir }) {
           AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
       FROM recipients r
       WHERE r.active = 1 AND r.chat_enabled = 1
-        AND (r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
-          OR r.id IN (SELECT ch.family_id FROM sponsorships s JOIN children ch ON ch.id = s.child_id WHERE s.donor_id = ? AND s.status <> 'beeindigd'))
-      ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
-      .map((r) => ({ ...r, chat_moderated: S.isModerated(r) ? 1 : 0 })), donor],
+        AND r.id IN (SELECT ch.family_id FROM sponsorships s JOIN children ch ON ch.id = s.child_id WHERE s.donor_id = ? AND s.status <> 'beeindigd')
+      ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
+      .map((r) => {
+        // In het portaal draait alles om het kind: gesprek tonen met naam en foto van de sponsorkinderen.
+        const kids = all(db, `SELECT ch.first_name, ch.photo_url FROM sponsorships s JOIN children ch ON ch.id = s.child_id
+          WHERE s.donor_id = ? AND ch.family_id = ? AND s.status <> 'beeindigd' ORDER BY ch.first_name`, ctx.donor.id, r.id);
+        const names = kids.map((k) => k.first_name);
+        return { ...r, chat_moderated: S.isModerated(r) ? 1 : 0,
+          name: names.length ? names.join(' & ') : r.name, subtitle: names.length ? `Ouders van ${names.join(' en ')}` : '',
+          photo_url: (kids.find((k) => k.photo_url) || {}).photo_url || r.photo_url };
+      }), donor],
     ['GET', '/api/portal/conversations/:id', async (ctx) => {
       const rid = id(ctx.params.id);
       if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
