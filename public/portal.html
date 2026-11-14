@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mijn Robin Foundation</title>
+  <link rel="icon" href="/img/logo.svg">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#/overzicht"><img src="/img/logo.svg" alt=""><div>Robin Foundation</div></a>
+        <nav class="topnav" id="nav">
+          <a href="#/overzicht" data-route="overzicht">Overzicht</a>
+          <a href="#/reis" data-route="reis">Geldstroom</a>
+          <a href="#/berichten" data-route="berichten">Berichten <span class="pill hidden" id="unread"></span></a>
+          <a href="#/chat" data-route="chat">Chat <span class="pill hidden" id="chat-unread"></span></a>
+          <a href="#/leaderboard" data-route="leaderboard">Leaderboard</a>
+          <a href="#/jaaroverzicht" data-route="jaaroverzicht">Jaaroverzicht</a>
+          <a href="#/profiel" data-route="profiel">Profiel</a>
+          <a href="#" id="logout-m" class="mobile-only">Uitloggen</a>
+        </nav>
+        <a class="btn btn-primary btn-sm" href="#/doneren" id="donate-btn">Doneer</a>
+        <button class="btn btn-quiet btn-sm desktop-only" id="logout">Uitloggen</button>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span id="nav-toggle-ic"></span><span class="pill hidden" id="unread-m"></span></button>
+      </div>
+    </header>
+    <main class="container" id="view"></main>
+  </div>
+  <script src="/js/icons.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/portal.js"></script>
+</body>
+</html>

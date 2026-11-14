@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robin Foundation</title>
+  <link rel="icon" href="/img/logo.svg">
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/"><img src="/img/logo.svg" alt=""><div>Robin Foundation</div></a>
+      <nav class="topnav"><a href="/leaderboard">Leaderboard</a><a href="/privacy">Privacy</a></nav>
+      <a class="btn btn-primary btn-sm" href="/login">Inloggen</a>
+    </div>
+  </header>
+  <main class="container">
+    <section class="hero" style="padding:48px 40px">
+      <div class="eyebrow" data-ic="sparkles">Elke euro zichtbaar</div>
+      <h1 style="font-size:34px;line-height:40px;max-width:640px">Zie precies waar jouw geld heen gaat</h1>
+      <p style="font-size:15.5px">Bij Robin Foundation komt elke donatie in een eigen cel. Pas wanneer het geld echt wordt uitgegeven, aan een schoolmaaltijd, schoolgeld, noodhulp of een gezondheidspakket, zie je waar het heen ging. En je krijgt een brief, foto of filmpje van wie je hebt geholpen.</p>
+      <div class="toolbar" style="margin-top:24px">
+        <a class="btn btn-primary btn-lg" href="/portal#/doneren" data-ic="heart">Doneer nu</a>
+        <a class="btn btn-ghost btn-lg" href="/leaderboard" data-ic="trophy">Leaderboard</a>
+      </div>
+    </section>
+    <div class="kpis" id="cats"></div>
+  </main>
+  <script src="/js/icons.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    document.querySelectorAll('[data-ic]').forEach((el) => { el.insertAdjacentHTML('afterbegin', RF.icon(el.dataset.ic, el.classList.contains('eyebrow') ? 'icon-sm' : '')); });
+    RF.api('/api/public/stats').then((s) => {
+      document.getElementById('cats').innerHTML = s.categories.map((c) => `<div class="kpi">
+        <div class="label">${RF.catIcon(c, 'sm')}${RF.esc(c.name)}</div>
+        <div class="value">${c.unit_label_plural ? RF.num(c.units_spent) : RF.euro0(c.spent_cents)}</div>
+        <div class="sub">${c.unit_label_plural ? RF.esc(c.unit_label_plural) + ' gefinancierd' : 'noodhulp verleend'}</div></div>`).join('');
+    });
+  </script>
+</body>
+</html>
