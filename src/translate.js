@@ -39,7 +39,7 @@ const COUNTRY_LANG = {
 const recipientLanguage = (r) => (r && LANGUAGES[r.language] ? r.language : COUNTRY_LANG[String(r && r.country || '').trim().toLowerCase()] || 'en');
 const donorLanguage = (d) => (d && LANGUAGES[d.language] ? d.language : 'nl');
 
-const MODEL = process.env.CRM_TRANSLATE_MODEL || 'claude-opus-5-5';
+const MODEL = (process.env.CRM_TRANSLATE_MODEL || '').trim() || 'claude-opus-5-5';
 
 let client = null;
 function getClient() {
@@ -47,7 +47,7 @@ function getClient() {
   return client;
 }
 
-const isEnabled = () => !!process.env.ANTHROPIC_API_KEY && !!loadSdk();
+const isEnabled = () => !!(process.env.ANTHROPIC_API_KEY || '').trim() && !!loadSdk();
 
 const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Donateurs chatten
 met kinderen, scholen en projecten die ze steunen (o.a. in Haïti en Honduras).
@@ -132,7 +132,24 @@ async function translateBatch(items, target) {
 
 // Diagnose voor beheerders: wat ontbreekt er?
 function status() {
-  return { sdk_installed: !!loadSdk(), api_key_set: !!process.env.ANTHROPIC_API_KEY, model: MODEL, enabled: isEnabled() };
+  const wanted = ['ANTHROPIC_API_KEY', 'CRM_TRANSLATE_MODEL'];
+  // Alleen NAMEN van variabelen die op de gezochte lijken (tikfouten opsporen), nooit waarden.
+  const norm = (k) => k.toUpperCase().replace(/[^A-Z]/g, '');
+  const lookalikes = Object.keys(process.env).filter((k) => !wanted.includes(k) &&
+    (wanted.some((w) => norm(w) === norm(k)) || /anthropic.*key|api.?key|translate.*model/i.test(k)));
+  return {
+    sdk_installed: !!loadSdk(),
+    api_key_set: !!process.env.ANTHROPIC_API_KEY,
+    api_key_has_spaces: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== process.env.ANTHROPIC_API_KEY.trim(),
+    model_from_env: process.env.CRM_TRANSLATE_MODEL || null,
+    model: MODEL,
+    enabled: isEnabled(),
+    lookalikes,
+    // Render zet deze variabelen zelf; zo zie je in welke service de app draait.
+    service: process.env.RENDER_SERVICE_NAME || null,
+    url: process.env.RENDER_EXTERNAL_URL || null,
+    commit: (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || null,
+  };
 }
 
 module.exports = { LANGUAGES, isEnabled, translateBatch, MODEL, recipientLanguage, donorLanguage, status };

@@ -1186,7 +1186,12 @@ async function renderSettings() {
       $('#tr-status').innerHTML = `
         ${line(st.sdk_installed, 'Vertaalpakket is geïnstalleerd', 'Vertaalpakket ontbreekt → zet in Render het <b>Build Command</b> op <code>npm install</code> en deploy opnieuw')}
         ${line(st.api_key_set, 'API-sleutel is ingesteld', 'API-sleutel ontbreekt → voeg in Render bij <b>Environment</b> <code>ANTHROPIC_API_KEY</code> toe')}
-        <div class="small muted" style="margin-top:6px">Model: <code>${esc(st.model)}</code></div>`;
+        ${st.api_key_has_spaces ? '<div>⚠️ De API-sleutel begint of eindigt met een spatie: verwijder die in Render.</div>' : ''}
+        ${line(!!st.model_from_env, `Model ingesteld via CRM_TRANSLATE_MODEL: <code>${esc(st.model_from_env || '')}</code>`, `CRM_TRANSLATE_MODEL niet gevonden → standaardmodel <code>${esc(st.model)}</code>`)}
+        ${st.lookalikes && st.lookalikes.length ? `<div style="margin-top:6px">⚠️ Gevonden variabelen met een <b>bijna</b> goede naam: ${st.lookalikes.map((k) => `<code>${esc(k)}</code>`).join(', ')}
+          → hernoem ze precies naar <code>ANTHROPIC_API_KEY</code> en <code>CRM_TRANSLATE_MODEL</code>.</div>` : ''}
+        <div class="small muted" style="margin-top:8px">Deze app draait als Render-service: <b>${esc(st.service || 'onbekend')}</b>${st.url ? ` (${esc(st.url)})` : ''}${st.commit ? ` · versie ${esc(st.commit)}` : ''}.
+          Vul de variabelen in bij <b>deze</b> service.</div>`;
     };
     api('/api/admin/translation/status').then(showStatus).catch((e) => { $('#tr-status').textContent = e.message; });
     $('#tr-test').onclick = async () => {
