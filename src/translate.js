@@ -78,8 +78,8 @@ function keyProblem(key = currentKey()) {
     return `De sleutel bevat een ongeldig teken (${bad === ' ' ? 'een spatie' : `"${bad}"`}). Waarschijnlijk is er iets anders geplakt dan de sleutel.`;
   }
   if (/^rnd_/i.test(key)) return 'Dit is een Render-sleutel, geen Anthropic API-sleutel.';
-  if (/^sk-ant-(admin|oat|ort|sid)/i.test(key)) return 'Dit soort sleutel (admin-sleutel of inlogtoken) kan niet vertalen. Maak een API-sleutel aan op platform.claude.com → API Keys.';
-  if (!/^sk-ant-[a-z]{3}\d{0,2}-[A-Za-z0-9_\-]{20,}$/i.test(key)) return 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-").';
+  // Bewust ruim: alleen duidelijk verkeerde waarden weigeren. Of de sleutel echt werkt, beslist Anthropic.
+  if (!/^sk-ant-/i.test(key)) return `Een Anthropic-sleutel begint met "sk-ant-"; deze begint met "${key.slice(0, 6)}…".`;
   return null;
 }
 const isEnabled = () => !!currentKey() && !keyProblem() && !!loadSdk();

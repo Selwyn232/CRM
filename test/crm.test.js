@@ -422,7 +422,10 @@ test('vertalen: persoonlijke sleutel + workspace-ID worden meegestuurd', async (
   });
   const key = 'sk-ant-usr-' + 'a'.repeat(40);
   assert.equal(T.keyProblem(key), null);
-  assert.match(T.keyProblem('sk-ant-admin01-' + 'a'.repeat(30)), /admin/);
+  assert.match(T.keyProblem('rnd_abc123'), /Render/);
+  assert.match(T.keyProblem('abc-123-xyz'), /sk-ant-/);
+  assert.equal(T.keyProblem('sk-ant-iets-nieuws-0123456789'), null);
+  assert.match(T.keyProblem('❌ fout'), /ongeldig teken/);
   T.configure({ apiKey: key, workspace: 'wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ', model: 'claude-haiku-5-5' });
   const out = await T.translateBatch([{ id: 1, text: 'Bonjou!' }], 'nl');
   assert.equal(out.get(1).text, 'Hallo!');
