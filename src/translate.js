@@ -2,7 +2,21 @@
 // Automatisch vertalen van chatberichten met Claude (Anthropic API).
 // Vereist de omgevingsvariabele ANTHROPIC_API_KEY. Zonder sleutel staat vertalen uit.
 
-const Anthropic = require('@anthropic-ai/sdk');
+// De SDK wordt pas geladen als hij nodig is. Ontbreekt het pakket (bv. omdat `npm install` niet
+// is uitgevoerd), dan staat vertalen uit in plaats van dat de chat crasht.
+let sdk;
+function loadSdk() {
+  if (sdk === undefined) {
+    try {
+      const mod = require('@anthropic-ai/sdk');
+      sdk = mod.default || mod;
+    } catch (err) {
+      sdk = null;
+      console.error('[vertalen] @anthropic-ai/sdk niet gevonden: voer "npm install" uit. Vertalen staat uit.');
+    }
+  }
+  return sdk;
+}
 
 const LANGUAGES = {
   nl: 'Nederlands',
@@ -29,11 +43,11 @@ const MODEL = process.env.CRM_TRANSLATE_MODEL || 'claude-opus-5-5';
 
 let client = null;
 function getClient() {
-  if (!client) client = new Anthropic.default ? new Anthropic.default() : new Anthropic();
+  if (!client) client = new (loadSdk())();
   return client;
 }
 
-const isEnabled = () => !!process.env.ANTHROPIC_API_KEY;
+const isEnabled = () => !!process.env.ANTHROPIC_API_KEY && !!loadSdk();
 
 const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Donateurs chatten
 met kinderen, scholen en projecten die ze steunen (o.a. in Haïti en Honduras).
@@ -91,7 +105,7 @@ async function translateBatch(items, target) {
       }],
     });
   } catch (err) {
-    const A = Anthropic.default || Anthropic;
+    const A = loadSdk();
     let msg = 'Vertalen is mislukt';
     if (err instanceof A.AuthenticationError) msg = 'Vertalen mislukt: de API-sleutel is ongeldig';
     else if (err instanceof A.RateLimitError) msg = 'Vertalen is even druk, probeer het zo opnieuw';
