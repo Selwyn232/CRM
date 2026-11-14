@@ -1,4 +1,4 @@
-// Eén inlogpagina voor donateurs, ontvangers en medewerkers.
+// Eén inlogpagina voor donateurs, ontvangers (ouders), medewerkers en veldwerkers.
 'use strict';
 
 const $ = (s) => document.querySelector(s);
@@ -11,12 +11,17 @@ const ROLES = {
   ontvanger: {
     login: '/api/recipient/login', me: '/api/recipient/me', home: '/ontvanger',
     idLabel: 'Gebruikersnaam', idType: 'text', idField: 'username',
-    demo: 'Demo: <b>grace</b> (kind) of <b>esperanza</b> (school) / <b>welkom123</b>',
+    demo: 'Demo: <b>santos</b> / <b>welkom123</b>',
   },
   medewerker: {
     login: '/api/staff/login', me: '/api/staff/me', home: '/admin',
     idLabel: 'E-mail of gebruikersnaam', idType: 'text', idField: 'email',
     demo: 'Demo: <b>robin</b> / <b>robin</b>',
+  },
+  veldwerker: {
+    login: '/api/staff/login', me: '/api/staff/me', home: '/admin',
+    idLabel: 'Gebruikersnaam', idType: 'text', idField: 'email',
+    demo: 'Demo: <b>veld</b> / <b>veld</b>',
   },
 };
 

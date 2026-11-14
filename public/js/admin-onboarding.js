@@ -291,7 +291,7 @@ function renderReview(o, cfg) {
     <div class="crumbs"><a href="#/onboarding">Onboarding</a>${RF.icon('chevron-right', 'icon-sm')}<span>${esc(d.family.name)}</span></div>
     ${pageHead(esc(d.family.name || 'Aanmelding'), { sub: `${badge('onboarding', o.status)} · door ${esc(o.created_by_name)} · ${o.submitted_at ? `ingediend ${dateTime(o.submitted_at)}` : `gestart ${dateTime(o.created_at)}`}${o.reviewed_by_name ? ` · beoordeeld door ${esc(o.reviewed_by_name)}` : ''}` })}
     ${o.review_note ? `<div class="callout ${o.status === 'goedgekeurd' ? 'neutral' : 'warn'}">${RF.icon('info')}<span>${esc(o.review_note)}</span></div>` : ''}
-    ${o.status === 'goedgekeurd' && o.family_id ? `<div class="callout neutral">${RF.icon('circle-check')}<span>Gezin en kinderen zijn aangemaakt. <a href="#/kinderen">Naar Kinderen</a> · <a href="#/ontvangers">Naar Gezinnen</a></span></div>` : ''}
+    ${o.status === 'goedgekeurd' && o.family_id ? `<div class="callout neutral">${RF.icon('circle-check')}<span>Gezin en kinderen zijn aangemaakt. <a href="#/kinderen">Naar Kinderen</a></span></div>` : ''}
     <div class="grid grid-2-1">
       <div class="stack">
         <div class="card"><h2>Gezin</h2><dl class="props">

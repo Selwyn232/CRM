@@ -89,6 +89,17 @@ function serveFile(req, res, file) {
   });
 }
 
+// Pagina's: scripts en stylesheets krijgen een versienummer per release, zodat browsers (ook Safari op iPad)
+// na een update nooit oude bestanden blijven gebruiken.
+const ASSET_VERSION = (process.env.RENDER_GIT_COMMIT || String(Date.now())).slice(0, 12);
+function servePage(res, file) {
+  fs.readFile(file, 'utf8', (err, html) => {
+    if (err) return send(res, 404, 'Niet gevonden', { 'Content-Type': 'text/plain; charset=utf-8' });
+    const body = html.replace(/((?:src|href)="\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1?v=${ASSET_VERSION}"`);
+    send(res, 200, body, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+  });
+}
+
 function safeJoin(base, rel) {
   const target = path.normalize(path.join(base, rel));
   return target.startsWith(base + path.sep) ? target : null;
@@ -138,6 +149,7 @@ function createServer({ db, uploadDir = UPLOAD_DIR } = {}) {
         return serveFile(req, res, file);
       }
       const page = PAGES[pathname.replace(/\/$/, '') || '/'];
+      if (page) return servePage(res, path.join(PUBLIC_DIR, page));
       const file = page ? path.join(PUBLIC_DIR, page) : safeJoin(PUBLIC_DIR, pathname);
       if (!file) return send(res, 404, 'Niet gevonden');
       return serveFile(req, res, file);
