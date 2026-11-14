@@ -35,13 +35,16 @@
   const drawLine = () => {
     if (!line || getComputedStyle(line).display === 'none') return;
     const base = wrap.getBoundingClientRect();
-    const pts = [...wrap.querySelectorAll('.num')].map((n) => { const r = n.getBoundingClientRect(); return [r.left - base.left + r.width / 2, r.top - base.top + r.height / 2]; });
-    if (pts.length < 3) return;
-    const [[x1, y1], [x2, y2], [x3, y3]] = pts; const off = 34; // net naast de cirkels beginnen en eindigen
+    const nums = [...wrap.querySelectorAll('.num')].map((n) => n.getBoundingClientRect());
+    if (nums.length < 3) return;
     line.setAttribute('viewBox', `0 0 ${base.width} ${base.height}`);
     line.style.width = `${base.width}px`; line.style.height = `${base.height}px`;
-    const c = (ax, ay, bx, by) => `C${ax + (bx - ax) * .45} ${ay - 26} ${ax + (bx - ax) * .55} ${by + 22} ${bx - off} ${by}`;
-    line.querySelector('path').setAttribute('d', `M${x1 + off} ${y1} ${c(x1 + off, y1, x2, y2)} M${x2 + off} ${y2} ${c(x2 + off, y2, x3, y3)}`);
+    // Van net na het ene cijfer tot net voor het volgende, met een lichte golf
+    const seg = (a, b) => {
+      const x1 = a.right - base.left + 18; const x2 = b.left - base.left - 18; const y = a.top - base.top + a.height * 0.55;
+      return x2 - x1 < 40 ? '' : `M${x1} ${y} C${x1 + (x2 - x1) * 0.35} ${y - 14} ${x1 + (x2 - x1) * 0.65} ${y + 12} ${x2} ${y}`;
+    };
+    line.querySelector('path').setAttribute('d', `${seg(nums[0], nums[1])} ${seg(nums[1], nums[2])}`.trim());
   };
   window.addEventListener('resize', drawLine); window.addEventListener('load', drawLine); drawLine();
 
@@ -58,7 +61,8 @@
       const p = v.play();
       if (p && p.catch) p.catch((e) => { if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') fail(); });
     });
-    v.addEventListener('error', fail, true);
+    // Alleen een fout van de video zelf of de bron telt; een ondertitelbestand dat niet laadt niet.
+    v.addEventListener('error', (e) => { if (e.target === v || e.target.tagName === 'SOURCE') fail(); }, true);
     const src = v.querySelector('source'); if (src) src.addEventListener('error', fail);
     if (v.networkState === NO_SOURCE) fail();
     v.addEventListener('play', () => { b.hidden = true; v.controls = true; });
@@ -66,24 +70,14 @@
   })();
 
   // Verdeling van het maandbedrag (uit de instellingen, zodat het altijd klopt)
-  const IMG = { maaltijden: 'maaltijd', school: 'school', verzorging: 'verzorging', noodfonds: 'noodfonds' };
-  const SHADES = ['#2E5A3B', '#8FA27C', '#E8601C', '#3B2A20'];
   const renderMoney = (cfg) => {
     if (!cfg || !Array.isArray(cfg.parts)) return;
-    const total = cfg.amount_cents;
-    $('.big-amount').textContent = euro(total);
-    const ratio = $('#ratio');
-    ratio.innerHTML = cfg.parts.map((p, i) => `<span style="flex:${p.cents} 1 0;background:${SHADES[i % SHADES.length]}"></span>`).join('');
-    ratio.setAttribute('aria-label', `Verdeling van ${euro(total)}: ${cfg.parts.map((p) => `${euro(p.cents)} ${p.label.toLowerCase()}`).join(', ')}`);
+    $('.big-amount').textContent = euro(cfg.amount_cents);
     const list = $('#parts');
-    const sameAsStatic = cfg.parts.length === list.children.length && cfg.parts.every((p, i) => IMG[p.key] && list.children[i].querySelector('img').src.includes(IMG[p.key]));
-    if (sameAsStatic) {
-      cfg.parts.forEach((p, i) => { list.children[i].querySelector('.amt').textContent = euro(p.cents); });
-    } else {
-      list.innerHTML = cfg.parts.map((p) => `<li class="reveal">${IMG[p.key] ? `<img src="/img/home/deel-${IMG[p.key]}.webp" alt="" width="120" height="120" loading="lazy">` : '<span></span>'}
-        <span class="amt">${euro(p.cents)}</span><div><h3>${esc(p.label)}</h3><p>${esc(p.description || '')}</p></div></li>`).join('');
-      reveal(list);
-    }
+    const rows = list.children;
+    const same = cfg.parts.length === rows.length && cfg.parts.every((p, i) => rows[i].querySelector('b').textContent === p.label);
+    if (same) { cfg.parts.forEach((p, i) => { rows[i].querySelector('dt').textContent = euro(p.cents); }); return; }
+    list.innerHTML = cfg.parts.map((p) => `<div><dt>${euro(p.cents)}</dt><dd><b>${esc(p.label)}</b><span>${esc(p.description || '')}</span></dd></div>`).join('');
   };
 
   // Live aantallen
@@ -97,7 +91,7 @@
     if (!Number(counts.sponsored)) document.querySelectorAll('#figures > div').forEach((d) => { if (d.querySelector('dd').dataset.k !== 'available') d.hidden = true; });
   };
 
-  // Kinderen die wachten (4 tot 8) + polaroid in de hero
+  // Kinderen die wachten (4 tot 8)
   const kidAge = (c) => (c.age != null ? `${c.age} jaar` : '');
   const renderKids = (kids) => {
     const ul = $('#kids');
@@ -111,16 +105,6 @@
       <div class="meta">${[kidAge(c), c.province || c.country].filter(Boolean).map(esc).join(' · ')}</div></a></li>`).join('');
     reveal(ul);
 
-    const first = kids.find((c) => c.photo_url);
-    const pol = $('#polaroid');
-    if (first && pol) {
-      const img = pol.querySelector('img');
-      img.src = first.photo_url; img.alt = `${first.first_name}${first.age != null ? `, ${first.age} jaar` : ''}, wacht op een sponsor`;
-      img.loading = 'eager';
-      pol.querySelector('figcaption').textContent = `${first.first_name}${first.age != null ? `, ${first.age}` : ''} · ${first.province || first.country || ''}`;
-      img.addEventListener('load', () => { pol.hidden = false; }, { once: true });
-      if (img.complete && img.naturalWidth) pol.hidden = false;
-    }
   };
 
   getJSON('/api/public/sponsor').then((s) => { renderMoney(s.config); renderCounts(s.counts); }).catch(() => {
