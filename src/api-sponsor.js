@@ -38,11 +38,12 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     const c = get(db, `${SP.CHILD_SELECT} WHERE ch.id = ?`, s.child_id);
     const stats = get(db, 'SELECT COUNT(*) AS months, COALESCE(SUM(amount_cents),0) AS total FROM sponsor_months WHERE sponsorship_id = ?', s.id);
     const unread = get(db, 'SELECT COUNT(*) AS n FROM child_updates WHERE child_id = ? AND donor_id = ? AND read_at IS NULL', s.child_id, donorId).n;
+    const updates = get(db, 'SELECT COUNT(*) AS n FROM child_updates WHERE child_id = ? AND donor_id = ?', s.child_id, donorId).n;
     const last = get(db, 'SELECT * FROM child_updates WHERE child_id = ? AND donor_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', s.child_id, donorId);
     const chat = c.family_id ? get(db, `SELECT chat_enabled FROM recipients WHERE id = ?`, c.family_id) : null;
     return {
       ...SP.publicChild(c), sponsorship_id: s.id, sponsorship_status: s.status, started_at: s.started_at, monthly_cents: s.monthly_cents,
-      missed_months: s.missed_months, months: stats.months, total_cents: stats.total, unread_updates: unread,
+      missed_months: s.missed_months, months: stats.months, total_cents: stats.total, unread_updates: unread, updates,
       last_update: last ? { title: last.title, type: last.type, media_url: last.media_url, created_at: last.created_at } : null,
       can_chat: !!(chat && chat.chat_enabled),
     };
