@@ -18,30 +18,15 @@ async function boot() {
 }
 
 function showLogin() {
-  $('#app').classList.add('hidden');
-  $('#login').classList.remove('hidden');
-  const form = $('#login-form');
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const err = form.querySelector('.form-error');
-    err.hidden = true;
-    try {
-      state.user = await api('/api/staff/login', { method: 'POST', body: RF.formData(form) });
-      showApp();
-    } catch (ex) {
-      err.textContent = ex.message;
-      err.hidden = false;
-    }
-  };
+  location.replace(`/login?rol=medewerker&terug=${encodeURIComponent(location.pathname + location.hash)}`);
 }
 
 async function showApp() {
-  $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#me').innerHTML = `<div><b>${esc(state.user.name)}</b></div><div class="muted">${esc(state.user.email)}</div>
     <div><span class="badge badge-admin">${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></div>
     <button class="btn btn-ghost btn-sm" id="logout">Uitloggen</button>`;
-  $('#logout').onclick = async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.reload(); };
+  $('#logout').onclick = async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace('/login?rol=medewerker'); };
   const setMenu = (open) => { $('#sidebar').classList.toggle('open', open); $('#nav-backdrop').classList.toggle('open', open); };
   $('#menu-toggle').onclick = () => setMenu(!$('#sidebar').classList.contains('open'));
   $('#nav-backdrop').onclick = () => setMenu(false);

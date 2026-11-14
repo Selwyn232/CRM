@@ -10,24 +10,14 @@ async function boot() {
 }
 
 function showAuth() {
-  $('#app').classList.add('hidden');
-  $('#auth').classList.remove('hidden');
-  const form = $('#login-form');
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const err = form.querySelector('.form-error');
-    err.hidden = true;
-    try { me = await api('/api/recipient/login', { method: 'POST', body: RF.formData(form) }); showApp(); }
-    catch (ex) { err.textContent = ex.message; err.hidden = false; }
-  };
+  location.replace('/login?rol=ontvanger');
 }
 
 function showApp() {
-  $('#auth').classList.add('hidden');
   $('#app').classList.remove('hidden');
   RF.impersonationBanner(me, '/api/recipient/logout');
   $('#who').textContent = me.name + (me.managed_by ? ` · begeleid door ${me.managed_by}` : '');
-  $('#logout').onclick = async () => { await api('/api/recipient/logout', { method: 'POST', body: {} }); location.reload(); };
+  $('#logout').onclick = async () => { await api('/api/recipient/logout', { method: 'POST', body: {} }); location.replace('/login?rol=ontvanger'); };
   $('#pw-btn').onclick = () => modal({
     title: 'Wachtwoord wijzigen',
     body: `<div class="field"><label>Huidig wachtwoord</label><input type="password" name="current" required></div>

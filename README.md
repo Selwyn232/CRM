@@ -19,6 +19,8 @@ Een CRM voor Robin Foundation dat laat zien **waar het gedoneerde geld van ieder
 
 ## Onderdelen
 
+Iedereen logt in via **één inlogpagina: `/login`**. Je kiest daar of je inlogt als donateur, ontvanger of medewerker, en komt daarna in de juiste omgeving. Open je zonder in te loggen een van de pagina's hieronder, dan word je eerst naar `/login` gestuurd en daarna teruggebracht.
+
 | Onderdeel | URL | Voor wie |
 |---|---|---|
 | Beheeromgeving (CRM) | `/admin` | Medewerkers |

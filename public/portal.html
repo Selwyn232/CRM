@@ -8,34 +8,6 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div id="auth" class="auth-wrap hidden">
-    <div class="card auth-card">
-      <div class="brand"><img src="/img/logo.svg" alt=""><div>Robin Foundation<small>Donateursportaal</small></div></div>
-      <p class="muted" style="text-align:center">Volg precies waar jouw donatie heen gaat — en ontvang een bericht van wie je helpt.</p>
-      <div class="tabs" id="auth-tabs"><button data-t="login" class="active">Inloggen</button><button data-t="register">Account aanmaken</button></div>
-      <form id="login-form">
-        <div class="field"><label for="p-email">E-mailadres</label><input id="p-email" name="email" type="email" required autocomplete="username"></div>
-        <div class="field"><label for="p-pw">Wachtwoord</label><input id="p-pw" name="password" type="password" required autocomplete="current-password"></div>
-        <p class="form-error" hidden style="margin:0 0 12px"></p>
-        <button class="btn btn-primary" style="width:100%">Inloggen</button>
-        <div class="demo-hint">Demo: <b>sanne@example.nl</b> / <b>welkom123</b></div>
-      </form>
-      <form id="register-form" class="hidden">
-        <div class="field-row">
-          <div class="field"><label>Voornaam</label><input name="first_name" type="text" required autocomplete="given-name"></div>
-          <div class="field"><label>Achternaam</label><input name="last_name" type="text" autocomplete="family-name"></div>
-        </div>
-        <div class="field"><label>E-mailadres</label><input name="email" type="email" required autocomplete="email"></div>
-        <div class="field"><label>Wachtwoord (min. 8 tekens)</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
-        <label class="check"><input type="checkbox" name="show_on_leaderboard"> Toon mijn naam op het leaderboard (anders verschijn je als “Anonieme donateur”)</label>
-        <label class="check"><input type="checkbox" name="newsletter" checked> Houd me op de hoogte via de nieuwsbrief</label>
-        <p class="form-error" hidden style="margin:12px 0"></p>
-        <button class="btn btn-primary" style="width:100%;margin-top:8px">Account aanmaken</button>
-      </form>
-      <p class="small muted" style="margin-top:14px;text-align:center"><a href="/leaderboard">Bekijk het leaderboard</a> · <a href="/admin">Medewerkers</a></p>
-    </div>
-  </div>
-
   <div id="app" class="hidden">
     <header class="topbar">
       <div class="topbar-inner">

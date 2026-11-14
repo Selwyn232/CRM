@@ -15,36 +15,15 @@ async function boot() {
   }
 }
 
+// Niet ingelogd: naar de centrale inlogpagina (en daarna terug naar deze pagina).
 function showAuth() {
-  $('#app').classList.add('hidden');
-  $('#auth').classList.remove('hidden');
-  $('#auth-tabs').onclick = (e) => {
-    const b = e.target.closest('button[data-t]');
-    if (!b) return;
-    $('#auth-tabs').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-    $('#login-form').classList.toggle('hidden', b.dataset.t !== 'login');
-    $('#register-form').classList.toggle('hidden', b.dataset.t !== 'register');
-  };
-  const wire = (form, url) => {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const err = form.querySelector('.form-error');
-      err.hidden = true;
-      try {
-        me = await api(url, { method: 'POST', body: RF.formData(form) });
-        showApp();
-      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
-    };
-  };
-  wire($('#login-form'), '/api/donor/login');
-  wire($('#register-form'), '/api/donor/register');
+  location.replace(`/login?rol=donateur&terug=${encodeURIComponent(location.pathname + location.hash)}`);
 }
 
 function showApp() {
-  $('#auth').classList.add('hidden');
   $('#app').classList.remove('hidden');
   RF.impersonationBanner(me, '/api/donor/logout');
-  const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.hash = ''; location.reload(); };
+  const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.replace('/login?rol=donateur'); };
   $('#logout').onclick = logout;
   $('#logout-m').onclick = (e) => { e.preventDefault(); logout(); };
   $('#nav-toggle').onclick = () => {

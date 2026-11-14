@@ -278,7 +278,7 @@ const RF = (() => {
     bar.querySelector('button').onclick = async () => {
       await api(logoutPath, { method: 'POST', body: {} });
       if (window.opener) window.close();
-      location.href = '/admin';
+      location.href = '/admin';  // beheerder is nog ingelogd als medewerker
     };
     document.body.prepend(bar);
   }
