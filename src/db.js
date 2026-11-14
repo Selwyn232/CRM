@@ -497,7 +497,10 @@ function migrate(db) {
 
 // Voert fn uit binnen een transactie; rollback bij een fout.
 function tx(db, fn) {
+  // Genest (een transactie binnen een transactie): gewoon meedoen met de buitenste.
+  if (db.__txDepth) { db.__txDepth++; try { return fn(); } finally { db.__txDepth--; } }
   db.exec('BEGIN IMMEDIATE');
+  db.__txDepth = 1;
   try {
     const result = fn();
     db.exec('COMMIT');
@@ -505,6 +508,8 @@ function tx(db, fn) {
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  } finally {
+    db.__txDepth = 0;
   }
 }
 

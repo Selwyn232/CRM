@@ -41,18 +41,18 @@ async function render(openId) {
   view.innerHTML = `
     <section class="hero">
       <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Robin Foundation</div>
-      <h1>Hoi ${esc(me.name)}!</h1>
-      <p>Hier zie je de mensen die jou hebben geholpen. Stuur ze een berichtje om te vertellen hoe het met je gaat!</p>
+      <h1>Hoi ${esc(me.managed_by ? me.managed_by.replace(/\s*\(.*\)$/, '') : me.name)}!</h1>
+      <p>Hier chat je met de sponsors van jullie kinderen. Vertel hoe het met je kind gaat. Berichten worden automatisch vertaald.</p>
     </section>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
-        <h3>Mijn helpers · ${people.length}</h3>
+        <h3>Sponsors · ${people.length}</h3>
         ${people.map((p) => `<button data-id="${p.id}" class="${p.id === selected ? 'active' : ''}">
           ${p.anonymous ? `<span class="avatar sm">${RF.icon('eye-off', 'icon-sm')}</span>` : RF.avatar(p.name, 'sm')}
           <div style="min-width:0"><div class="who">${esc(p.name)}</div>
-          <div class="last">${esc(p.last_message || `Hielp met: ${p.categories}`)}</div></div>
+          <div class="last">${esc(p.last_message || p.categories)}</div></div>
           ${p.unread ? `<span class="pill">${p.unread}</span>` : ''}</button>`).join('')
-          || '<p class="muted" style="padding:10px">Er zijn nog geen helpers aan jou gekoppeld.</p>'}
+          || '<p class="muted" style="padding:10px">Jullie kinderen hebben nog geen sponsor.</p>'}
       </div>
       <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies iemand om mee te chatten.</p>'}</div>
     </div>`;
@@ -62,11 +62,13 @@ async function render(openId) {
   if (!p) return;
   const thread = $('#thread');
   thread.innerHTML = `<div class="card-head"><div><h2 style="margin:0">${esc(p.name)}</h2>
-      <div class="small muted">Helpt je sinds ${date(p.since)} met: ${esc(p.categories)}</div></div>
+      <div class="small muted">${esc((p.categories || 'Sponsor').replace(/, ([^,]+)$/, ' en $1'))} · sinds ${date(p.since)}</div></div>
       <button class="btn btn-ghost btn-sm" id="back">← Terug</button></div><div id="box"></div>`;
   $('#back').onclick = () => render();
   await RF.chatBox($('#box'), {
     otherName: p.name,
+    to: p.name,
+    theirLabel: `${p.name} · ${(p.categories || 'Sponsor').replace(/^Sponsor/, 'sponsor').replace(/, ([^,]+)$/, ' en $1')}`,
     notice: me.chat_moderated
       ? 'Een begeleider van Robin Foundation leest berichten eerst even mee. Deel nooit je adres, telefoonnummer of social media.'
       : 'Deel geen adres, telefoonnummer of social media. Zulke berichten worden eerst gecontroleerd.',

@@ -199,21 +199,22 @@ function buildRoutes({ db, uploadDir }) {
       run(db, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v);
     }
   }
-  // Sponsormodel: in een demo-omgeving zonder kinderen eenmalig voorbeeldgezinnen en -kinderen toevoegen om mee te testen.
-  if (!setting('sponsor_demo_v1') && isDemo() && !get(db, 'SELECT 1 AS x FROM children LIMIT 1')) {
+  // Eenmalig (op verzoek, nov 2026): alle demodata eruit en opnieuw vullen met 20 kinderen en 10 sponsors.
+  // Alleen op een echte database (CRM_DB) zolang er demo-accounts zijn. Eerst een reservekopie van de database.
+  // Medewerkers en instellingen (zoals API-sleutels) blijven staan.
+  if (!setting('demo_reset_v2') && process.env.CRM_DB && isDemo()) {
     try {
-      const admin = get(db, 'SELECT id FROM users ORDER BY id LIMIT 1');
-      require('./seed').seedSponsoring(db, { donorIds: all(db, 'SELECT id FROM donors ORDER BY id').map((d) => d.id), adminId: admin ? admin.id : null,
-        portalHash: auth.hashPassword('welkom123') });
-    } catch (err) { console.error('Voorbeeldkinderen toevoegen mislukt:', err.message); }
-    run(db, "INSERT INTO settings (key, value) VALUES ('sponsor_demo_v1', '1') ON CONFLICT(key) DO NOTHING");
-  }
-  // Demokinderen: tekeningen vervangen door foto's van Filipijnse kinderen (eenmalig).
-  if (!setting('demo_photos_v1')) {
-    const { demoPhoto } = require('./seed');
-    all(db, "SELECT id, gender FROM children WHERE photo_url LIKE '/img/kind_.svg' ORDER BY id")
-      .forEach((c, i) => run(db, 'UPDATE children SET photo_url = ? WHERE id = ?', demoPhoto(c.gender, i), c.id));
-    run(db, "INSERT INTO settings (key, value) VALUES ('demo_photos_v1', '1') ON CONFLICT(key) DO NOTHING");
+      const backup = `${process.env.CRM_DB}.voor-demo-reset-${new Date().toISOString().slice(0, 10)}`;
+      if (!fs.existsSync(backup)) db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
+      const stats = tx(db, () => require('./seed').resetDemo(db));
+      // Geüploade foto's en privédocumenten hoorden bij de verwijderde gegevens
+      const privateDir = process.env.CRM_PRIVATE || path.join(path.dirname(path.resolve(uploadDir)), 'private');
+      for (const dir of [uploadDir, privateDir]) {
+        if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) { try { fs.unlinkSync(path.join(dir, f)); } catch { /* negeren */ } }
+      }
+      run(db, "INSERT INTO settings (key, value) VALUES ('demo_reset_v2', '1') ON CONFLICT(key) DO NOTHING");
+      console.log('[demo] Demodata opnieuw gevuld:', stats, '· reservekopie:', backup);
+    } catch (err) { console.error('[demo] Opnieuw vullen mislukt (niets gewijzigd):', err.message); }
   }
   // Onboarding: in een demo-omgeving eenmalig een veldmedewerker (veld / veld) om het vier-ogenprincipe te testen.
   if (!setting('veld_demo_v1') && isDemo() && !get(db, "SELECT 1 AS x FROM users WHERE role = 'veldmedewerker'")) {
@@ -513,7 +514,7 @@ function buildRoutes({ db, uploadDir }) {
       .map(({ donor_id, ...rest }) => ({ ...rest, is_me: donor_id === ctx.donor.id })), donor],
 
     // ================================================================ DONATEURSPORTAAL: CHAT
-    ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated,
+    ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated, r.managed_by,
         (r.username IS NOT NULL AND r.password_hash IS NOT NULL) AS has_login,
         CASE WHEN r.consent = 1 THEN r.photo_url ELSE '' END AS photo_url,
         (SELECT body FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ? AND (m.status='goedgekeurd' OR m.sender='donor')
@@ -530,8 +531,10 @@ function buildRoutes({ db, uploadDir }) {
         const kids = all(db, `SELECT ch.first_name, ch.photo_url FROM sponsorships s JOIN children ch ON ch.id = s.child_id
           WHERE s.donor_id = ? AND ch.family_id = ? AND s.status <> 'beeindigd' ORDER BY ch.first_name`, ctx.donor.id, r.id);
         const names = kids.map((k) => k.first_name);
-        return { ...r, chat_moderated: S.isModerated(r) ? 1 : 0,
-          name: names.length ? names.join(' & ') : r.name, subtitle: names.length ? `Ouders van ${names.join(' en ')}` : '',
+        const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} en ${names[names.length - 1]}` : (names[0] || '');
+        // De chatpartner zijn de ouders/verzorgers van het kind (managed_by, bv. "Liza Santos (moeder)").
+        return { ...r, chat_moderated: S.isModerated(r) ? 1 : 0, children: list, parent: r.managed_by || '',
+          name: list ? `Ouders van ${list}` : r.name, subtitle: r.managed_by ? `Je chat met ${r.managed_by}` : 'Je chat met de ouders van je sponsorkind',
           photo_url: (kids.find((k) => k.photo_url) || {}).photo_url || r.photo_url };
       }), donor],
     ['GET', '/api/portal/conversations/:id', async (ctx) => {

@@ -392,7 +392,7 @@ const RF = (() => {
       else if (res.their_language && res.my_language && res.their_language !== res.my_language) {
         status.textContent = `Jij leest en schrijft in: ${langName(res.my_language)} · ${other} leest jouw berichten in: ${langName(res.their_language)}`;
       } else status.textContent = 'Berichten in een andere taal worden automatisch vertaald.';
-      if (res.my_language) textarea.placeholder = `Schrijf een bericht (${langName(res.my_language)})…`;
+      if (res.my_language) textarea.placeholder = `${opts.to ? `Bericht aan ${opts.to}` : 'Schrijf een bericht'} (${langName(res.my_language)})…`;
       const sig = (res.my_language || '') + msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}:${m.translation ? 1 : 0}:${showOriginal.has(m.id) ? 1 : 0}`).join('|');
       if (sig === lastSig) return;
       lastSig = sig;
@@ -404,9 +404,10 @@ const RF = (() => {
           <button type="button" class="link-btn" data-orig="${m.id}">${orig ? 'Vertaling tonen' : `Vertaald uit ${esc(langName(m.source_lang))} · origineel tonen`}</button>`;
       };
       log.innerHTML = msgs.length ? msgs.map((m) => `<div class="bubble ${m.mine ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
+          ${!m.mine && opts.theirLabel ? `<div class="bubble-from">${esc(opts.theirLabel)}</div>` : ''}
           ${bodyHtml(m)}
           <div class="bubble-meta">${dateTime(m.created_at)} ${statusText(m)}</div></div>`).join('')
-        : `<p class="muted" style="text-align:center;margin:auto">Nog geen berichten. Stuur ${esc(opts.otherName || '')} als eerste een berichtje!</p>`;
+        : `<p class="muted" style="text-align:center;margin:auto">Nog geen berichten. Stuur ${esc(opts.to || opts.otherName || '')} als eerste een berichtje!</p>`;
       if (atBottom || !log.dataset.init) { log.scrollTop = log.scrollHeight; log.dataset.init = '1'; }
     }
     form.addEventListener('submit', async (e) => {

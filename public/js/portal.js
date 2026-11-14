@@ -168,7 +168,7 @@ async function renderChild(childId) {
           <div><div class="label">Updates</div><div class="value">${d.updates.length}</div></div>
         </div>
         <div class="toolbar" style="margin-top:14px">
-          ${c.can_chat ? `<a class="btn btn-primary btn-sm" href="#/chat/${c.family_id}">${RF.icon('message-circle')}Stuur een bericht</a>` : ''}
+          ${c.can_chat ? `<a class="btn btn-primary btn-sm" href="#/chat/${c.family_id}">${RF.icon('message-circle')}Bericht aan de ouders</a>` : ''}
         </div>
       </div>
     </section>
@@ -304,7 +304,7 @@ async function renderChat(openId) {
   const convs = await api('/api/portal/conversations');
   const selected = openId ? Number(openId) : null;
   view().innerHTML = `
-    <div class="page-head"><div><h1>Chat</h1><div class="sub">Stuur een bericht naar je sponsorkind. De ouders lezen mee en antwoorden; berichten worden automatisch vertaald.</div></div></div>
+    <div class="page-head"><div><h1>Chat</h1><div class="sub">Hier chat je met de <b>ouders (of verzorgers)</b> van je sponsorkind. Zij lezen je berichten voor aan hun kind en schrijven terug. Berichten worden automatisch vertaald.</div></div></div>
     <div class="callout neutral">${RF.icon(me.anonymous ? 'eye-off' : 'user')}<span>${me.anonymous ? 'Je bent anoniem: je verschijnt als “Anonieme donateur”.' : `Je verschijnt als <b>${esc(me.public_name)}</b>.`} <a href="#/profiel">Wijzigen</a></span></div>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
@@ -321,12 +321,14 @@ async function renderChat(openId) {
   view().querySelectorAll('.chat-list button[data-id]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/chat/${b.dataset.id}`; }));
   const c = convs.find((x) => x.id === selected);
   if (!c) return;
-  $('#thread').innerHTML = `<div class="card-head"><div><h2 style="margin:0">${esc(c.name)}</h2>
-      <div class="small muted">${esc(c.subtitle || '')}</div></div>
+  $('#thread').innerHTML = `<div class="card-head"><div class="chat-with">${c.photo_url ? `<img src="${esc(c.photo_url)}" alt="">` : ''}
+      <div><h2 style="margin:0">${esc(c.name)}</h2><div class="small muted">${esc(c.subtitle || '')}</div></div></div>
       <a class="btn btn-ghost btn-sm" href="#/chat">← Terug</a></div><div id="box"></div>`;
   const noLogin = c.has_login ? '' : 'Je bericht wordt bewaard en komt aan zodra de ouders kunnen inloggen.<br>';
   await RF.chatBox($('#box'), {
     otherName: c.name,
+    to: c.children ? `de ouders van ${c.children}` : 'de ouders',
+    theirLabel: c.parent ? `${c.parent} · ouder van ${c.children}` : `Ouders van ${c.children || 'je sponsorkind'}`,
     notice: noLogin + (c.chat_moderated
       ? 'Berichten worden eerst gecontroleerd voordat ze worden afgeleverd. Deel geen contactgegevens en vraag er niet om.'
       : 'Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.'),
