@@ -2,6 +2,7 @@
 'use strict';
 
 const $ = (s) => document.querySelector(s);
+const KIND = { donateur: 'donor', ontvanger: 'recipient', medewerker: 'staff', veldwerker: 'staff' };
 const ROLES = {
   donateur: {
     login: '/api/donor/login', me: '/api/donor/me', home: '/portal',
@@ -94,6 +95,7 @@ $('#login-form').addEventListener('submit', async (e) => {
     const cfg = ROLES[role];
     await RF.api(cfg.login, { method: 'POST', body: { [cfg.idField]: form.elements.id.value.trim(), password: form.elements.password.value } });
     store.set(role);
+    if (await offerFaceId()) return; // eerst Face ID aanbieden, daarna door
     goHome();
   } catch (ex) {
     err.textContent = ex.message;
@@ -101,6 +103,56 @@ $('#login-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
   }
 });
+
+// ------------------------------------------------------------------ Face ID
+const P = RF.passkeys;
+const faceLabel = P.label();
+// Na inloggen met wachtwoord: op een toestel met Face ID/vingerafdruk één keer aanbieden om dat in te stellen.
+async function offerFaceId() {
+  try {
+    if (!P.supported() || !await P.platform()) return false;
+    let declined = false;
+    try { declined = localStorage.getItem(`rf_faceid_later_${role}`) === '1'; } catch { /* geen opslag */ }
+    if (declined) return false;
+    const existing = await RF.api(`/api/passkeys/${KIND[role]}`);
+    if (existing.length) return false;
+  } catch { return false; }
+  $('#login-form').classList.add('hidden');
+  ['#faceid-login', '#faceid-or', '#faceid-error', '#demo', '#already'].forEach((sel) => { const el = $(sel); if (el) el.hidden = true; el && el.classList.add('hidden'); });
+  document.querySelector('.role-picker').classList.add('hidden');
+  document.querySelector('.login-q').classList.add('hidden');
+  const box = $('#faceid-offer');
+  box.innerHTML = `<div class="faceid-icon">${RF.icon('scan-face')}</div>
+    <h2>Voortaan inloggen met ${RF.esc(faceLabel)}?</h2>
+    <p class="muted small">Sneller en veiliger: geen wachtwoord meer typen. Je gezicht of vingerafdruk blijft op je toestel.</p>
+    <button type="button" class="btn btn-primary btn-lg btn-block" id="faceid-yes">${RF.icon('scan-face')}<span>${RF.esc(faceLabel)} instellen</span></button>
+    <button type="button" class="btn btn-quiet btn-block" id="faceid-no" style="margin-top:8px">Niet nu</button>
+    <p class="form-error" hidden style="margin-top:10px"></p>`;
+  box.classList.remove('hidden');
+  $('#faceid-no').onclick = () => { try { localStorage.setItem(`rf_faceid_later_${role}`, '1'); } catch { /* geen opslag */ } goHome(); };
+  $('#faceid-yes').onclick = async () => {
+    const b = $('#faceid-yes'); b.disabled = true;
+    try { await P.register(KIND[role]); RF.toast(`${faceLabel} is ingesteld`); setTimeout(goHome, 600); }
+    catch (ex) { const e = box.querySelector('.form-error'); e.textContent = ex.message; e.hidden = false; b.disabled = false; }
+  };
+  return true;
+}
+
+if (P.supported()) {
+  const fb = $('#faceid-login');
+  fb.innerHTML = `${RF.icon('scan-face')}<span>Inloggen met ${RF.esc(faceLabel)}</span>`;
+  fb.classList.remove('hidden');
+  $('#faceid-or').classList.remove('hidden');
+  fb.onclick = async () => {
+    const err = $('#faceid-error'); err.hidden = true; fb.disabled = true;
+    try {
+      const r = await P.login();
+      const r2 = Object.keys(KIND).find((k) => KIND[k] === r.kind && (r.kind !== 'staff' || k === (role === 'veldwerker' ? 'veldwerker' : 'medewerker')));
+      if (r2) store.set(r2);
+      location.replace(back && back.startsWith(r.home) ? back : r.home);
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; fb.disabled = false; }
+  };
+}
 
 $('#register-form').addEventListener('submit', async (e) => {
   e.preventDefault();

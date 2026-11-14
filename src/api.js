@@ -303,6 +303,16 @@ function buildRoutes({ db, uploadDir }) {
       }));
   };
 
+  const PK = require('./passkeys');
+  const COOKIES = { staff: STAFF_COOKIE, donor: DONOR_COOKIE, recipient: RECIPIENT_COOKIE };
+  // Eigen account van de ingelogde gebruiker voor het gevraagde soort (staff / donor / recipient).
+  const asKind = (ctx) => {
+    const kind = ctx.params.kind;
+    if (kind === 'staff') { field(ctx); return { kind, id: ctx.user.id }; }
+    if (kind === 'donor') { donor(ctx); return { kind, id: ctx.donor.id }; }
+    if (kind === 'recipient') { recipient(ctx); return { kind, id: ctx.recipient.id }; }
+    throw new AppError(404, 'Onbekend soort account');
+  };
   const setCookie = (ctx, name, token) => { ctx.headers = { 'Set-Cookie': auth.sessionCookie(name, token, ctx.secure) }; };
 
   const categories = () => all(db, 'SELECT * FROM categories ORDER BY sort_order');
@@ -312,6 +322,31 @@ function buildRoutes({ db, uploadDir }) {
   return [
     ...sponsor.routes,
     ...onboardingRoutes,
+
+    // ================================================================ FACE ID / PASSKEYS
+    ['POST', '/api/passkeys/login/options', (ctx) => PK.loginOptions(db, ctx)],
+    ['POST', '/api/passkeys/login/verify', async (ctx) => {
+      const r = await PK.verifyLogin(db, ctx, ctx.body);
+      setCookie(ctx, COOKIES[r.kind], auth.createSession(db, r.kind, r.subject_id));
+      if (r.kind === 'donor') run(db, "UPDATE donors SET last_login_at = datetime('now') WHERE id = ?", r.subject_id);
+      if (r.kind === 'recipient') run(db, "UPDATE recipients SET last_login_at = datetime('now') WHERE id = ?", r.subject_id);
+      if (r.kind === 'staff') {
+        const u = get(db, 'SELECT email FROM users WHERE id = ?', r.subject_id);
+        S.audit(db, `medewerker:${u.email}`, 'ingelogd_face_id', 'user', r.subject_id);
+      }
+      return { kind: r.kind, home: r.home };
+    }],
+    ['GET', '/api/passkeys/:kind', (ctx) => { const who = asKind(ctx); return PK.list(db, who.kind, who.id); }],
+    ['POST', '/api/passkeys/:kind/options', (ctx) => { const who = asKind(ctx); return PK.registrationOptions(db, ctx, who.kind, who.id); }],
+    ['POST', '/api/passkeys/:kind/register', (ctx) => { const who = asKind(ctx); return PK.verifyRegistration(db, ctx, who.kind, who.id, ctx.body, ctx.actor); }],
+    ['DELETE', '/api/passkeys/:kind/:id', (ctx) => { const who = asKind(ctx); return PK.remove(db, who.kind, who.id, id(ctx.params.id), ctx.actor); }],
+    // Beheerder: alle Face ID-koppelingen van een medewerker intrekken (bv. telefoon kwijt).
+    ['DELETE', '/api/admin/users/:id/passkeys', (ctx) => {
+      const uid = id(ctx.params.id);
+      const n = run(db, "DELETE FROM passkeys WHERE kind = 'staff' AND subject_id = ?", uid).changes;
+      S.audit(db, ctx.actor, 'passkeys_ingetrokken', 'user', uid, n);
+      return { removed: n };
+    }, admin],
     // ================================================================ PUBLIEK
     ['GET', '/api/public/translation', () => {
       const T = require('./translate');
@@ -971,7 +1006,8 @@ function buildRoutes({ db, uploadDir }) {
         return { ok: false, ...st, error: err.message, detail: err.detail || '' };
       }
     }, admin],
-    ['GET', '/api/admin/users', () => all(db, 'SELECT id, email, name, role, active, created_at FROM users ORDER BY name'), staff],
+    ['GET', '/api/admin/users', () => all(db, `SELECT id, email, name, role, active, created_at,
+      (SELECT COUNT(*) FROM passkeys p WHERE p.kind = 'staff' AND p.subject_id = users.id) AS passkeys FROM users ORDER BY name`), staff],
     ['POST', '/api/admin/users', (ctx) => {
       const b = ctx.body;
       const email = str(b.email, 200).toLowerCase();

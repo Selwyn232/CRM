@@ -25,6 +25,8 @@ function showApp() {
       <div class="field"><label>Nieuw wachtwoord (min. 8 tekens)</label><input type="password" name="password" minlength="8" required></div>`,
     onSubmit: async (f) => { await api('/api/recipient/password', { method: 'POST', body: f }); toast('Wachtwoord gewijzigd'); },
   });
+  $('#faceid-btn').textContent = RF.passkeys.label().replace(/^./, (c) => c.toUpperCase());
+  $('#faceid-btn').onclick = () => { const m = modal({ title: 'Inloggen zonder wachtwoord', body: '<div id="pk"></div>' }); RF.passkeys.card(m.form.querySelector('#pk'), 'recipient'); };
   render();
 }
 

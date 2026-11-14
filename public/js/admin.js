@@ -193,6 +193,7 @@ async function showApp() {
     { label: 'Ontvangersportaal', icon: 'heart-handshake', href: '/ontvanger', external: true },
     '-',
     { label: 'Menu aanpassen', icon: 'arrow-down-up', onClick: editNav },
+    { label: `Inloggen met ${RF.passkeys.label()}`, icon: 'scan-face', onClick: () => { const m = modal({ title: 'Inloggen zonder wachtwoord', body: '<div id="pk"></div>' }); RF.passkeys.card(m.form.querySelector('#pk'), 'staff'); } },
     { label: 'Wachtwoord wijzigen', icon: 'lock', onClick: changeOwnPassword },
     { label: 'Uitloggen', icon: 'log-out', onClick: async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace(`/login?rol=${isField() ? 'veldwerker' : 'medewerker'}`); } },
   ], { align: 'start' });
@@ -1155,6 +1156,7 @@ async function renderSettings() {
       ${table([
         { label: 'Naam', render: (u) => `<div class="cell-person">${RF.avatar(u.name, 'sm')}<div class="grow"><b>${esc(u.name)}</b><span class="sub">${esc(u.email)}</span></div></div>` },
         { label: 'Rol', render: (u) => (u.role === 'admin' ? '<span class="badge badge-admin">Beheerder</span>' : `<span class="muted">${u.role === 'veldmedewerker' ? 'Veldmedewerker' : 'Medewerker'}</span>`) },
+        { label: 'Face ID', render: (u) => (u.passkeys ? `<span class="tag">${RF.icon('scan-face', 'icon-sm')}&nbsp;${u.passkeys}</span>` : '<span class="muted">—</span>') },
         { label: 'Status', render: (u) => (u.active ? badge('donor', 'actief') : badge('donor', 'inactief')) },
         { label: '', render: (u) => (isAdmin() ? `<button class="icon-btn" data-user="${u.id}" aria-label="Bewerken" title="Bewerken">${RF.icon('pencil')}</button>` : '') },
       ], state.users)}</div>
@@ -1245,7 +1247,16 @@ async function renderSettings() {
       <div class="field"><label>Rol</label><select name="role">${opt('medewerker', 'Medewerker', u.role)}${opt('veldmedewerker', 'Veldmedewerker (alleen onboarding)', u.role)}${opt('admin', 'Beheerder', u.role)}</select></div>
       <div class="field"><label>${u.id ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="password" name="password" ${u.id ? '' : 'required'} minlength="10" autocomplete="new-password">
         <div class="hint">Minimaal 10 tekens. Een korte zin van een paar woorden is sterk en goed te onthouden.</div></div>
-      ${u.id ? `<label class="check"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Actief</label>` : ''}`,
+      ${u.id ? `<label class="check"><input type="checkbox" name="active" ${u.active ? 'checked' : ''}> Actief</label>` : ''}
+      ${u.id && u.passkeys ? `<div class="callout neutral" style="align-items:center">${RF.icon('scan-face')}<span style="flex:1">${u.passkeys} ${u.passkeys === 1 ? 'toestel' : 'toestellen'} gekoppeld voor Face ID</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="revoke-pk">Intrekken</button></div>` : ''}`,
+    onOpen: (form, close) => {
+      const b = form.querySelector('#revoke-pk');
+      if (b) b.onclick = async () => {
+        if (!await confirmDialog(`Alle Face ID-koppelingen van ${u.name} intrekken? Inloggen kan daarna alleen nog met het wachtwoord.`, 'Intrekken')) return;
+        await api(`/api/admin/users/${u.id}/passkeys`, { method: 'DELETE' }); toast('Face ID-koppelingen ingetrokken'); close(); renderSettings();
+      };
+    },
     onSubmit: async (f) => {
       if (u.id && !f.password) delete f.password;
       await api(u.id ? `/api/admin/users/${u.id}` : '/api/admin/users', { method: u.id ? 'PUT' : 'POST', body: f });
