@@ -45,10 +45,130 @@ const NAV = [
 ];
 const NAV_ITEMS = NAV.flatMap((g) => g.items);
 
+// Eigen menuvolgorde toepassen. Onbekende routes vallen weg; nieuwe pagina's komen in hun standaardgroep.
+function navGroups() {
+  const prefs = state.user && state.user.nav;
+  const byRoute = Object.fromEntries(NAV_ITEMS.map((it) => [it.route, it]));
+  if (!Array.isArray(prefs)) return NAV.map((g) => ({ group: g.group || '', items: g.items }));
+  const used = new Set();
+  const groups = prefs.map((g) => ({ group: g.group || '', items: g.items.filter((r) => byRoute[r] && !used.has(r) && used.add(r)).map((r) => byRoute[r]) }));
+  for (const g of NAV) {
+    for (const it of g.items) {
+      if (used.has(it.route)) continue;
+      let target = groups.find((x) => x.group === (g.group || ''));
+      if (!target) { target = { group: g.group || '', items: [] }; groups.push(target); }
+      target.items.push(it);
+    }
+  }
+  return groups;
+}
+
+let navEditing = false;
 function renderNav() {
-  $('#nav').innerHTML = NAV.map((g) => `${g.group ? `<div class="nav-group">${esc(g.group)}</div>` : ''}
-    ${g.items.map((it) => `<a href="#/${it.route}" data-route="${it.route}">${RF.icon(it.icon)}<span>${esc(it.label)}</span>
-      ${it.count ? `<span class="count ${it.attn ? 'attn' : ''}" id="nav-${it.count}"></span>` : ''}</a>`).join('')}`).join('');
+  const groups = navGroups();
+  const current = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('/')[0];
+  $('#nav').classList.toggle('editing', navEditing);
+  $('#nav').innerHTML = `${navEditing ? `<div class="nav-edit-bar"><span>${RF.icon('arrow-down-up', 'icon-sm')} Sleep om te ordenen</span>
+      <button type="button" class="btn btn-quiet btn-sm" id="nav-reset">Standaard</button><button type="button" class="btn btn-primary btn-sm" id="nav-done">Klaar</button></div>` : ''}
+    ${groups.map((g, gi) => `<div class="nav-section" data-group="${esc(g.group)}">
+      ${g.group ? `<div class="nav-group">${esc(g.group)}</div>` : ''}
+      ${g.items.map((it) => `<a href="#/${it.route}" data-route="${it.route}" class="${it.route === current ? 'active' : ''}" ${navEditing ? 'draggable="false"' : ''}>
+        ${navEditing ? `<span class="grip" aria-hidden="true">${RF.icon('ellipsis')}</span>` : ''}${RF.icon(it.icon)}<span>${esc(it.label)}</span>
+        ${navEditing ? `<span class="nav-move"><button type="button" class="icon-btn" data-move="-1" aria-label="${esc(it.label)} omhoog">${RF.icon('chevron-down', 'icon-sm')}</button><button type="button" class="icon-btn" data-move="1" aria-label="${esc(it.label)} omlaag">${RF.icon('chevron-down', 'icon-sm')}</button></span>`
+          : it.count ? `<span class="count ${it.attn ? 'attn' : ''}" id="nav-${it.count}"></span>` : ''}</a>`).join('')}
+      ${navEditing && !g.items.length ? '<div class="nav-empty">Sleep hier een item heen</div>' : ''}
+    </div>`).join('')}`;
+  if (navEditing) bindNavEditing(); else refreshNavCounts();
+}
+
+function navFromDom() {
+  return [...$('#nav').querySelectorAll('.nav-section')].map((sec) => ({
+    group: sec.dataset.group, items: [...sec.querySelectorAll('a[data-route]')].map((a) => a.dataset.route),
+  }));
+}
+async function saveNav(nav) {
+  try {
+    const r = await api('/api/staff/preferences/nav', { method: 'PUT', body: { nav } });
+    state.user.nav = r.nav;
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function bindNavEditing() {
+  const nav = $('#nav');
+  $('#nav-done').onclick = () => { navEditing = false; renderNav(); toast('Menu opgeslagen'); };
+  $('#nav-reset').onclick = async () => { await saveNav(null); renderNav(); toast('Standaardvolgorde hersteld'); };
+  // Klikken in bewerkstand navigeert niet
+  nav.querySelectorAll('a[data-route]').forEach((a) => a.addEventListener('click', (e) => e.preventDefault()));
+  // Pijltjes (toetsenbord/toegankelijkheid)
+  nav.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const items = [...nav.querySelectorAll('a[data-route]')];
+    const el = b.closest('a'); const i = items.indexOf(el); const dir = Number(b.dataset.move);
+    const other = items[i + dir];
+    if (!other) return;
+    if (dir < 0) other.before(el); else other.after(el);
+    saveNav(navFromDom()).then(() => { const route = el.dataset.route; renderNav(); const f = nav.querySelector(`a[data-route="${route}"] [data-move="${dir}"]`); if (f) f.focus(); });
+  }));
+  // Slepen met muis en vinger (Pointer Events; werkt ook op de iPad)
+  nav.querySelectorAll('a[data-route]').forEach((item) => {
+    item.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('[data-move]') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      e.preventDefault();
+      const startY = e.clientY;
+      const rect = item.getBoundingClientRect();
+      let dragging = false;
+      let ghost = null;
+      const begin = () => {
+        dragging = true;
+        ghost = item.cloneNode(true);
+        ghost.classList.add('nav-ghost');
+        Object.assign(ghost.style, { width: `${rect.width}px`, left: `${rect.left}px`, top: `${rect.top}px` });
+        document.body.appendChild(ghost);
+        item.classList.add('nav-placeholder');
+        document.body.classList.add('nav-dragging');
+      };
+      const move = (ev) => {
+        if (!dragging) { if (Math.abs(ev.clientY - startY) < 4) return; begin(); }
+        ghost.style.top = `${rect.top + (ev.clientY - startY)}px`;
+        // Doel bepalen: het item of de groep onder de vinger/muis
+        ghost.style.pointerEvents = 'none';
+        const under = document.elementFromPoint(rect.left + rect.width / 2, ev.clientY);
+        const target = under && under.closest('#nav a[data-route]');
+        if (target && target !== item) {
+          const r = target.getBoundingClientRect();
+          if (ev.clientY < r.top + r.height / 2) target.before(item); else target.after(item);
+        } else if (under) {
+          const sec = under.closest('#nav .nav-section');
+          if (sec && !sec.contains(item)) {
+            const empty = sec.querySelector('.nav-empty'); if (empty) empty.remove();
+            sec.appendChild(item);
+          }
+        }
+        // Automatisch scrollen in een lange zijbalk
+        const sb = $('#sidebar').getBoundingClientRect();
+        if (ev.clientY < sb.top + 40) $('#sidebar').scrollTop -= 8; else if (ev.clientY > sb.bottom - 40) $('#sidebar').scrollTop += 8;
+      };
+      const end = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', end);
+        document.removeEventListener('pointercancel', end);
+        if (!dragging) return;
+        ghost.remove();
+        item.classList.remove('nav-placeholder');
+        document.body.classList.remove('nav-dragging');
+        saveNav(navFromDom()).then(renderNav);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', end);
+      document.addEventListener('pointercancel', end);
+    });
+  });
+}
+
+function editNav() {
+  navEditing = true;
+  if (matchMedia('(max-width: 900px)').matches) { $('#sidebar').classList.add('open'); $('#nav-backdrop').classList.add('open'); }
+  renderNav();
 }
 
 async function showApp() {
@@ -67,6 +187,7 @@ async function showApp() {
     { label: 'Donateursportaal', icon: 'heart', href: '/portal', external: true },
     { label: 'Ontvangersportaal', icon: 'heart-handshake', href: '/ontvanger', external: true },
     '-',
+    { label: 'Menu aanpassen', icon: 'arrow-down-up', onClick: editNav },
     { label: 'Wachtwoord wijzigen', icon: 'lock', onClick: changeOwnPassword },
     { label: 'Uitloggen', icon: 'log-out', onClick: async () => { await api('/api/staff/logout', { method: 'POST', body: {} }); location.replace('/login?rol=medewerker'); } },
   ], { align: 'start' });
@@ -97,9 +218,8 @@ async function loadLookups() {
 async function refreshNavCounts() {
   try {
     const d = await api('/api/admin/dashboard');
-    $('#nav-cells').textContent = d.totals.open_cells || '';
-    $('#nav-tasks').textContent = d.totals.open_tasks || '';
-    $('#nav-chat').textContent = d.totals.pending_chats || '';
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || ''; };
+    set('nav-cells', d.totals.open_cells); set('nav-tasks', d.totals.open_tasks); set('nav-chat', d.totals.pending_chats);
   } catch { /* stil */ }
 }
 
@@ -191,6 +311,7 @@ function openCommandPalette() {
     { label: 'Donatie registreren', icon: 'plus', run: () => donationForm({}, () => route()) },
     { label: 'Geld besteden', icon: 'hand-coins', run: () => spendForm({}, (r) => go(`#/bestedingen/${r.id}`)) },
     { label: 'Nieuwe taak', icon: 'list-checks', run: () => taskForm({}, () => route()) },
+    { label: 'Menu aanpassen', icon: 'arrow-down-up', run: editNav },
   ];
   let items = [];
   let active = 0;

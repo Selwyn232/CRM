@@ -544,3 +544,20 @@ test('Livegang: sterke wachtwoorden verplicht en demodata wissen met waarborgen'
   assert.equal((await (await fetch(`${base}/api/public/config`)).json()).demo, false);
   assert.equal((await fetch(`${base}/api/staff/me`, { headers: h })).status, 200); // nog steeds ingelogd
 });
+
+test('eigen menuvolgorde opslaan, opschonen en herstellen', async (t) => {
+  const db = freshDb();
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'A', 'medewerker', hashPassword('Lange zin met gecko 42'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const cookie = (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'a@rf.org', password: 'Lange zin met gecko 42' }) })).headers.get('set-cookie').split(';')[0];
+  const h = { ...json, cookie };
+  const nav = [{ group: '', items: ['taken', 'dashboard', 'taken', 'X<script>'] }, { group: 'Fondsenwerving', items: ['donateurs'] }];
+  const r = await (await fetch(`${base}/api/staff/preferences/nav`, { method: 'PUT', headers: h, body: JSON.stringify({ nav }) })).json();
+  assert.deepEqual(r.nav[0].items, ['taken', 'dashboard']); // dubbel en ongeldig eruit
+  assert.deepEqual((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).nav, r.nav);
+  await fetch(`${base}/api/staff/preferences/nav`, { method: 'PUT', headers: h, body: JSON.stringify({ nav: null }) });
+  assert.equal((await (await fetch(`${base}/api/staff/me`, { headers: h })).json()).nav, null);
+});

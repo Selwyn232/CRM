@@ -309,8 +309,26 @@ function buildRoutes({ db, uploadDir }) {
       setCookie(ctx, STAFF_COOKIE, '');
     }],
     ['GET', '/api/staff/me', (ctx) => {
-      const u = get(db, 'SELECT password_hash FROM users WHERE id = ?', ctx.user.id);
-      return { ...ctx.user, weak_password: isWeakStored(u.password_hash) };
+      const u = get(db, 'SELECT password_hash, nav_prefs FROM users WHERE id = ?', ctx.user.id);
+      let nav = null;
+      try { nav = u.nav_prefs ? JSON.parse(u.nav_prefs) : null; } catch { nav = null; }
+      return { ...ctx.user, weak_password: isWeakStored(u.password_hash), nav };
+    }, staff],
+    // Eigen menuvolgorde: [{ group: 'Naam', items: ['donateurs', ...] }, ...]; null = standaard.
+    ['PUT', '/api/staff/preferences/nav', (ctx) => {
+      const nav = ctx.body.nav;
+      if (nav === null) { run(db, "UPDATE users SET nav_prefs = '' WHERE id = ?", ctx.user.id); return { nav: null }; }
+      if (!Array.isArray(nav) || nav.length > 20) throw new AppError(400, 'Ongeldige menuvolgorde');
+      const seen = new Set();
+      const clean = nav.map((g) => {
+        if (!g || !Array.isArray(g.items) || g.items.length > 50) throw new AppError(400, 'Ongeldige menuvolgorde');
+        return {
+          group: str(g.group, 40),
+          items: g.items.filter((r) => typeof r === 'string' && /^[a-z]{2,30}$/.test(r) && !seen.has(r) && seen.add(r)),
+        };
+      });
+      run(db, 'UPDATE users SET nav_prefs = ? WHERE id = ?', JSON.stringify(clean), ctx.user.id);
+      return { nav: clean };
     }, staff],
     ['POST', '/api/staff/password', (ctx) => {
       const u = get(db, 'SELECT * FROM users WHERE id = ?', ctx.user.id);
