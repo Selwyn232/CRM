@@ -684,7 +684,11 @@ details[open] > summary::before { transform: rotate(45deg); }
 }
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; background: var(--bg); }
-  .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(280px, 86vw); transform: translateX(-102%); transition: transform .22s var(--ease); box-shadow: var(--shadow-modal); }
+  .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(280px, 86vw); transform: translateX(-102%); transition: transform .22s var(--ease); box-shadow: var(--shadow-modal);
+    height: 100vh; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  /* Menu open: de pagina erachter staat stil, alleen het menu scrolt. */
+  html.menu-open, html.menu-open body { overflow: hidden; height: 100%; }
+  .nav-backdrop.open { touch-action: none; }
   .sidebar.open { transform: none; }
   .nav-backdrop.open { display: block; position: fixed; inset: 0; background: rgba(12, 12, 18, .35); z-index: 45; }
   .main { padding: 0 20px 56px; }
@@ -702,7 +706,8 @@ details[open] > summary::before { transform: rotate(45deg); }
   .topbar-inner .brand { flex: 1; min-width: 0; }
   .topbar-inner .brand > div { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .topnav { display: none; }
-  .topnav.open { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; top: 100%; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-pop); padding: 8px; gap: 2px; }
+  .topnav.open { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; top: 100%; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-pop); padding: 8px; gap: 2px;
+    max-height: calc(100dvh - 64px); overflow-y: auto; overscroll-behavior: contain; }
   .topnav.open a { height: 42px; font-size: 15px; padding: 0 12px; }
   .topnav.open a.mobile-only { display: flex; border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; padding-top: 4px; color: var(--text-3); }
 }

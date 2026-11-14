@@ -32,6 +32,7 @@ function showApp() {
   $('#nav-toggle').onclick = () => {
     const open = !$('#nav').classList.contains('open');
     $('#nav').classList.toggle('open', open);
+    document.documentElement.classList.toggle('menu-open', open);
     $('#nav-toggle').setAttribute('aria-expanded', open);
   };
   window.addEventListener('hashchange', route);
@@ -47,6 +48,7 @@ async function route() {
   const [name, param] = (location.hash.replace(/^#\/?/, '') || 'overzicht').split('/');
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
   $('#nav').classList.remove('open');
+  document.documentElement.classList.remove('menu-open');
   $('#nav-toggle').setAttribute('aria-expanded', 'false');
   view().innerHTML = '<p class="muted">Laden…</p>';
   try {
