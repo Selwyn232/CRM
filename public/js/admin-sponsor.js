@@ -111,7 +111,7 @@ function childForm(c, done) {
         <div class="field"><label>Geslacht</label><select name="gender">${opt('', '—', c.gender)}${opt('meisje', 'Meisje', c.gender)}${opt('jongen', 'Jongen', c.gender)}</select></div>
         <div class="field"><label>Status</label><select name="status" ${c.status === 'gesponsord' ? 'disabled' : ''}>${Object.entries(RF.LABELS.child).filter(([k]) => k !== 'gesponsord' || c.status === 'gesponsord').map(([k, v]) => opt(k, v, c.status || 'beschikbaar')).join('')}</select></div></div>
       <div class="field"><label>Gezin</label><select name="family_id">${opt('', '— kies een gezin —', c.family_id)}${fams.map((f) => opt(f.id, `${f.name}${f.location ? ` (${f.location})` : ''}`, c.family_id)).join('')}</select>
-        <div class="hint">Het gezin is de chatpartner van de sponsor. Nieuw gezin? Voeg het toe bij Gezinnen.</div></div>
+        <div class="hint">De ouders zijn de chatpartner van de sponsor. Nieuwe gezinnen komen binnen via Onboarding.</div></div>
       <div class="field-row"><div class="field"><label>School</label><input type="text" name="school" value="${esc(c.school || '')}"></div>
         <div class="field"><label>Klas / groep</label><input type="text" name="grade" value="${esc(c.grade || '')}" placeholder="bv. Grade 3"></div></div>
       <div class="field"><label>Verhaal van het kind</label><textarea name="story" rows="5">${esc(c.story || '')}</textarea></div>
@@ -130,6 +130,7 @@ function childForm(c, done) {
 async function renderKid(childId) {
   const c = await api(`/api/admin/children/${childId}`);
   const active = c.sponsorships.find((s) => s.status !== 'beeindigd');
+  const fam = state.recipients.find((r) => r.id === c.family_id);
   view().innerHTML = `
     <div class="crumbs"><a href="#/kinderen">Kinderen</a>${RF.icon('chevron-right', 'icon-sm')}<span>${esc(c.first_name)} ${esc(c.last_name)}</span></div>
     <div class="page-head" style="align-items:center">
@@ -148,6 +149,12 @@ async function renderKid(childId) {
             <div class="toolbar" style="margin-top:12px">${btn('pay', 'Betaling registreren', { icon: 'banknote', size: 'sm' })}${btn('end', 'Beëindigen', { icon: 'ban', size: 'sm' })}</div>`
             : `<p class="muted small" style="margin:0">${c.status === 'beschikbaar' ? 'Nog geen sponsor. Het kind staat zichtbaar voor donateurs.' : 'Niet zichtbaar voor donateurs (status: ' + esc(label('child', c.status)) + ').'}</p>`}
         </div>
+        ${fam ? `<div class="card"><div class="card-head"><h2>Ouders &amp; chat</h2></div><dl class="props">
+          <dt>${RF.icon('house')}Gezin</dt><dd>${esc(fam.name)}${fam.barangay || fam.location ? `<span class="sub muted">${esc([fam.barangay, fam.location, fam.province].filter(Boolean).join(', '))}</span>` : ''}</dd>
+          <dt>${RF.icon('key-round')}Inlog</dt><dd>${fam.has_login ? esc(fam.username) : '<span class="muted">Geen inlog</span>'}</dd>
+          <dt>${RF.icon('messages-square')}Chat</dt><dd>${fam.chat_enabled ? (fam.chat_moderated ? 'Aan · gemodereerd' : 'Aan') : 'Uit'}</dd></dl>
+          <div class="toolbar" style="margin-top:10px">${btn('fam-access', 'Inlog & chat', { icon: 'key-round', size: 'sm' })}
+            ${isAdmin() && fam.has_login ? btn('fam-as', 'Meekijken', { icon: 'eye', size: 'sm' }) : ''}</div></div>` : ''}
         <div class="card"><div class="card-head"><h2>Gegevens</h2></div><dl class="props">
           <dt>${RF.icon('calendar')}Geboren</dt><dd>${c.birth_date ? date(c.birth_date) : '<span class="muted">—</span>'}</dd>
           <dt>${RF.icon('school')}School</dt><dd>${esc(c.school) || '<span class="muted">—</span>'}${c.grade ? `<span class="sub muted">${esc(c.grade)}</span>` : ''}</dd>
@@ -169,6 +176,8 @@ async function renderKid(childId) {
       </div>
     </div>`;
   $('#edit').onclick = () => childForm(c, () => renderKid(childId));
+  if ($('#fam-access')) $('#fam-access').onclick = () => accessForm(fam, async () => { await loadLookups(); renderKid(childId); });
+  if ($('#fam-as')) $('#fam-as').onclick = () => loginAs(`/api/admin/recipients/${fam.id}/impersonate`);
   $('#add-update').onclick = () => updateForm(c, () => renderKid(childId));
   if ($('#link')) $('#link').onclick = () => linkSponsorForm([c], () => renderKid(childId));
   if ($('#pay')) $('#pay').onclick = () => paymentForm(active, () => renderKid(childId));
@@ -376,50 +385,56 @@ async function renderSponsorConfig() {
 }
 
 // ======================================================================= NOODFONDS
-async function renderNoodfonds() {
+async function renderNoodfonds(yearParam) {
   const d = await api('/api/admin/noodfonds');
-  const months = [];
-  const now = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
-  }
-  const byMonth = Object.fromEntries(d.monthly.map((r) => [r.month, r.cents]));
+  // Alle mutaties: inleg per maand (+) en ingezette noodhulp (−)
+  const rows = [
+    ...d.monthly.map((m) => ({ in: true, date: `${m.month}-01`, year: m.month.slice(0, 4), title: `Inleg uit sponsorbetalingen · ${monthLabel(m.month)}`,
+      sub: `${m.payments} ${m.payments === 1 ? 'betaling' : 'betalingen'}`, cents: m.cents })),
+    ...d.items.map((e) => ({ in: false, id: e.id, date: e.spent_at, year: String(e.spent_at).slice(0, 4), title: e.description || 'Noodhulp',
+      sub: [e.family_name, [e.location, e.province].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || 'Meerdere gezinnen', cents: e.amount_cents })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.in ? 1 : -1)));
+  const years = [...new Set(rows.map((r) => r.year))].sort().reverse();
+  const year = years.includes(yearParam) ? yearParam : 'alle';
+  const shown = year === 'alle' ? rows : rows.filter((r) => r.year === year);
+  const sumIn = shown.filter((r) => r.in).reduce((s, r) => s + r.cents, 0);
+  const sumOut = shown.filter((r) => !r.in).reduce((s, r) => s + r.cents, 0);
   view().innerHTML = `
     ${pageHead('Noodfonds', { sub: 'Gezamenlijke pot voor orkanen en overstromingen, gevuld met het noodfondsdeel van elke sponsorbetaling.',
     actions: btn('deploy', 'Noodhulp inzetten', { icon: 'cloud-lightning', kind: 'primary' }) })}
-    <div class="kpis">
-      <div class="kpi"><div class="label">${RF.icon('cloud-lightning')}Beschikbaar</div><div class="value">${euro0(d.balance_cents)}</div><div class="sub">direct inzetbaar</div></div>
-      <div class="kpi"><div class="label">${RF.icon('trending-up')}Totaal ingelegd</div><div class="value">${euro0(d.in_cents)}</div><div class="sub">sinds de start</div></div>
-      <div class="kpi"><div class="label">${RF.icon('hand-heart')}Totaal ingezet</div><div class="value">${euro0(d.out_cents)}</div><div class="sub">noodhulp verleend</div></div>
-      <div class="kpi"><div class="label">${RF.icon('house')}Inzetten</div><div class="value">${num(d.deployments)}</div><div class="sub">keer noodhulp</div></div>
+    <div class="card fund-balance">
+      <div class="label">${RF.icon('cloud-lightning')} In het noodfonds</div>
+      <div class="value">${euro(d.balance_cents)}</div>
+      <div class="small muted">In totaal ${euro(d.in_cents)} ingelegd en ${euro(d.out_cents)} ingezet voor noodhulp.</div>
     </div>
-    <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Inleg per maand</h2><div class="small muted">Laatste 12 maanden</div></div></div>
-      ${RF.barChart(months.map((m) => RF.monthName(m.slice(5))), [{ label: 'Inleg', values: months.map((m) => byMonth[m] || 0), color: 'var(--accent)' }], { legend: false })}</div>
-    <div class="card flush" style="margin-top:16px"><div class="card-head"><h2>Ingezette noodhulp</h2></div>
+    <div class="card flush" style="margin-top:16px">
+      <div class="card-head"><div><h2>Inleg en bestedingen</h2>
+        <div class="small muted">${year === 'alle' ? 'Alle jaren' : year}: <span style="color:var(--ok)">+ ${euro(sumIn)}</span> ingelegd · <span style="color:var(--bad)">− ${euro(sumOut)}</span> ingezet</div></div>
+        <select id="f-year" style="width:auto">${opt('alle', 'Alle jaren', year)}${years.map((y) => opt(y, y, year)).join('')}</select></div>
       ${table([
-        { label: 'Datum', render: (e) => `<span class="muted">${date(e.spent_at)}</span>` },
-        { label: 'Gezin', render: (e) => (e.family_name ? `<b>${esc(e.family_name)}</b><span class="sub">${esc([e.location, e.province].filter(Boolean).join(', '))}</span>` : '<span class="muted">Meerdere gezinnen</span>') },
-        { label: 'Omschrijving', render: (e) => `<span class="muted">${esc(e.description)}</span>` },
-        { label: 'Door', render: (e) => `<span class="muted">${esc(e.created_by_name || '')}</span>` },
-        { label: 'Bedrag', num: true, render: (e) => `<b style="font-weight:600">${euro(e.amount_cents)}</b>` },
-        { label: '', render: (e) => (isAdmin() ? `<button class="icon-btn" data-undo="${e.id}" aria-label="Terugdraaien" title="Terugdraaien">${RF.icon('undo-2')}</button>` : '') },
-      ], d.items, { empty: 'Nog geen noodhulp ingezet', emptyIcon: 'cloud-lightning' })}</div>`;
+        { label: 'Datum', render: (r) => `<span class="muted">${r.in ? esc(monthLabel(r.date.slice(0, 7))) : date(r.date)}</span>` },
+        { label: 'Omschrijving', render: (r) => `<span style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--${r.in ? 'ok' : 'bad'})">${RF.icon(r.in ? 'trending-up' : 'hand-heart', 'icon-sm')}</span>
+          <span><b style="font-weight:500">${esc(r.title)}</b><span class="sub">${esc(r.sub)}</span></span></span>` },
+        { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600;color:var(--${r.in ? 'ok' : 'text'})">${r.in ? '+' : '−'} ${euro(r.cents)}</b>` },
+        { label: '', render: (r) => (!r.in && isAdmin() ? `<button class="icon-btn" data-undo="${r.id}" aria-label="Terugdraaien" title="Terugdraaien">${RF.icon('undo-2')}</button>` : '') },
+      ], shown, { empty: 'Nog geen inleg of bestedingen', emptyIcon: 'cloud-lightning' })}
+    </div>`;
+  $('#f-year').onchange = () => { location.hash = `#/noodfonds/${$('#f-year').value}`; };
   $('#deploy').onclick = () => modal({
     title: 'Noodhulp inzetten', submitLabel: 'Vastleggen',
-    body: `<div class="impact-preview">${RF.icon('cloud-lightning')}<span>Beschikbaar in het noodfonds: <b>${euro(d.balance_cents)}</b></span></div>
+    body: `<div class="impact-preview">${RF.icon('cloud-lightning')}<span>In het noodfonds: <b>${euro(d.balance_cents)}</b></span></div>
       <div class="field-row"><div class="field"><label>Bedrag (€)</label><input type="text" name="amount" inputmode="decimal" required></div>
         <div class="field"><label>Datum</label><input type="date" name="spent_at" value="${today()}"></div></div>
       <div class="field"><label>Gezin (optioneel)</label><select name="recipient_id">${opt('', '— meerdere gezinnen / algemeen —', '')}${families().map((f) => opt(f.id, `${f.name}${f.location ? ` (${f.location})` : ''}`, '')).join('')}</select></div>
-      <div class="field"><label>Omschrijving</label><textarea name="description" rows="3" required placeholder="bv. Tyfoon: rijst, drinkwater en zeil voor 40 gezinnen in Borongan"></textarea></div>`,
+      <div class="field"><label>Waarvoor?</label><textarea name="description" rows="3" required placeholder="bv. Tyfoon: rijst, drinkwater en zeil voor 40 gezinnen in Borongan"></textarea></div>`,
     onSubmit: async (f) => {
       await api('/api/admin/noodfonds', { method: 'POST', body: { amount_cents: toCents(f.amount), spent_at: f.spent_at, recipient_id: f.recipient_id || null, description: f.description } });
-      toast('Noodhulp vastgelegd'); renderNoodfonds();
+      toast('Noodhulp vastgelegd'); renderNoodfonds(yearParam);
     },
   });
   view().querySelectorAll('[data-undo]').forEach((b) => b.addEventListener('click', async () => {
     if (!await confirmDialog('Deze inzet terugdraaien? Het bedrag gaat terug in het noodfonds.', 'Terugdraaien')) return;
-    try { await api(`/api/admin/noodfonds/${b.dataset.undo}`, { method: 'DELETE' }); toast('Teruggedraaid'); renderNoodfonds(); }
+    try { await api(`/api/admin/noodfonds/${b.dataset.undo}`, { method: 'DELETE' }); toast('Teruggedraaid'); renderNoodfonds(yearParam); }
     catch (ex) { toast(ex.message, 'error'); }
   }));
 }

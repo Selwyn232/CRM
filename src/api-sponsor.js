@@ -355,8 +355,9 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
         COALESCE((SELECT SUM(amount_cents) FROM cells WHERE category_key = 'noodfonds'),0) AS in_cents,
         COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE category_key = 'noodfonds'),0) AS out_cents,
         (SELECT COUNT(*) FROM expenditures WHERE category_key = 'noodfonds') AS deployments`);
-      const monthly = all(db, `SELECT strftime('%Y-%m', created_at) AS month, SUM(amount_cents) AS cents FROM cells
-        WHERE category_key = 'noodfonds' AND created_at >= date('now','start of month','-11 months') GROUP BY month ORDER BY month`);
+      // Inleg per maand (uit sponsorbetalingen en losse giften), alle jaren.
+      const monthly = all(db, `SELECT strftime('%Y-%m', created_at) AS month, SUM(amount_cents) AS cents, COUNT(*) AS payments FROM cells
+        WHERE category_key = 'noodfonds' GROUP BY month ORDER BY month DESC`);
       const items = all(db, `SELECT e.id, e.amount_cents, e.description, e.spent_at, e.created_at, r.id AS family_id, r.name AS family_name,
           r.location, r.province, u.name AS created_by_name
         FROM expenditures e LEFT JOIN recipients r ON r.id = e.recipient_id LEFT JOIN users u ON u.id = e.created_by
