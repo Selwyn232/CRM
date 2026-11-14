@@ -333,7 +333,7 @@ test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)'
   assert.equal(m.status, 'in_behandeling');
 });
 
-test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', async (t) => {
+test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang of alleen-lezen (instelbaar), gelogd', async (t) => {
   const { db, donor, rid } = chatSetup('school', 0);
   S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Dankjewel!' });
   run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
@@ -357,8 +357,18 @@ test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', asyn
   const thread = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie: as } })).json();
   assert.equal(thread.messages.length, 1);
   assert.equal(get(db, 'SELECT read_at FROM chat_messages').read_at, null); // meekijken markeert niets als gelezen
+  // Standaard: volledige toegang. Chatten namens de donateur lukt en staat met beide namen in het audit log.
+  assert.equal(me.impersonation_write, true);
   const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
-  assert.equal(post.status, 403);
+  assert.equal(post.status, 200);
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'chatbericht_verstuurd' AND actor LIKE 'medewerker:a@rf.org als donateur:%'").n, 1);
+  // Wachtwoord en Face ID nooit namens iemand anders
+  assert.equal((await fetch(`${base}/api/portal/password`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ current: 'x', password: 'nieuwwachtwoord' }) })).status, 403);
+  assert.equal((await fetch(`${base}/api/passkeys/donor/options`, { method: 'POST', headers: { ...json, cookie: as }, body: '{}' })).status, 403);
+  // Medewerker kan de instelling niet wijzigen; beheerder zet hem uit -> alleen-lezen
+  assert.equal((await fetch(`${base}/api/admin/settings/impersonation`, { method: 'PUT', headers: { ...json, cookie: mila }, body: JSON.stringify({ write: true }) })).status, 403);
+  assert.equal((await fetch(`${base}/api/admin/settings/impersonation`, { method: 'PUT', headers: { ...json, cookie: admin }, body: JSON.stringify({ write: false }) })).status, 200);
+  assert.equal((await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'nog een' }) })).status, 403);
   assert.equal((await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ child_ids: [1] }) })).status, 403);
   assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'ingelogd_als'").n, 1);
 

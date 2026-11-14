@@ -801,7 +801,7 @@ function bindUploads(form) {
 }
 
 // ======================================================================= ONTVANGERS
-// "Inloggen als": opent het portaal in een nieuw tabblad (meekijken, alleen-lezen).
+// "Inloggen als": opent het portaal in een nieuw tabblad (alleen-lezen of volledige toegang, zie Instellingen).
 async function loginAs(url) {
   const win = window.open('about:blank', '_blank'); // direct openen, anders blokkeert Safari de pop-up
   try {
@@ -1076,7 +1076,8 @@ async function renderGoLive() {
       ${step(g.moderation, 'Chatmoderatie aan', g.moderation ? 'Berichten met kinderen worden eerst gecontroleerd.' : 'Staat uit: berichten met kinderen worden direct afgeleverd.', '<a class="btn btn-sm btn-ghost" href="#/chat">Aanzetten</a>')}
       ${step(g.payments, 'Echte betalingen (Mollie)', g.payments ? 'Donaties worden via Mollie betaald.' : 'Doneren in het portaal is nog een demo. Vul hieronder je Mollie-sleutel in.')}
       ${step(g.email, 'Echte e-mails (Brevo)', g.email ? 'Bedankjes en meldingen worden echt verstuurd.' : 'E-mails worden nu alleen gelogd. Vul hieronder je Brevo-sleutel in.')}
-      ${step(true, '“Inloggen als” is alleen-lezen', 'Medewerkers kunnen meekijken, maar niets doen namens een donateur of ontvanger.')}
+      ${step(g.impersonation_read_only, '“Inloggen als” is alleen-lezen', g.impersonation_read_only ? 'Medewerkers kunnen meekijken, maar niets doen namens een donateur of ontvanger.'
+        : 'Staat nu op volledige toegang: beheerders kunnen alles doen namens een donateur of ouders. Zet dit uit vóór de livegang.', '<a class="btn btn-sm btn-ghost" href="#imp-card" onclick="document.getElementById(\'imp-card\').scrollIntoView({behavior:\'smooth\'});return false">Wijzigen</a>')}
     </div>`;
   const pw = $('#golive-card [data-act=pw]'); if (pw) pw.onclick = changeOwnPassword;
   $('#golive-card [data-act=wipe]').onclick = () => modal({
@@ -1146,6 +1147,26 @@ async function renderIntegrations() {
   rm('#rm-veriff', { remove_veriff: true });
 }
 
+// "Inloggen als": alleen meekijken of volledige toegang (aan/uit).
+async function renderImpersonationSetting() {
+  const card = $('#imp-card');
+  if (!card) return;
+  const { write } = await api('/api/admin/settings/impersonation');
+  card.innerHTML = `<div class="card-head"><div><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('eye')}Inloggen als donateur of ouders</h2>
+      <div class="small muted">Met “Inloggen als” open je het portaal van een donateur of de ouders, bijvoorbeeld om te helpen of te testen.</div></div></div>
+    <label class="check" style="font-size:15px"><input type="checkbox" id="imp-write" ${write ? 'checked' : ''}>
+      <span><b>Volledige toegang</b><br><span class="small muted">Aan: je kunt alles doen namens de persoon (berichten sturen, kinderen kiezen of stoppen, profiel wijzigen).
+      Uit: je kunt alleen meekijken. Wachtwoord en Face ID van de persoon kun je nooit wijzigen. Alles wat je doet komt in het audit log, met jouw naam erbij.</span></span></label>
+    ${write ? `<div class="callout warn" style="margin-top:10px">${RF.icon('shield-alert')}<span>Zet dit uit vóór de livegang, tenzij je bewust namens donateurs of ouders wilt kunnen handelen.</span></div>` : ''}`;
+  $('#imp-write').onchange = async (e) => {
+    try {
+      await api('/api/admin/settings/impersonation', { method: 'PUT', body: { write: e.target.checked } });
+      toast(e.target.checked ? 'Volledige toegang staat aan' : 'Inloggen als is weer alleen-lezen');
+      renderImpersonationSetting(); renderGoLive();
+    } catch (ex) { toast(ex.message, 'error'); e.target.checked = !e.target.checked; }
+  };
+}
+
 // ======================================================================= INSTELLINGEN
 async function renderSettings() {
   await loadLookups();
@@ -1155,6 +1176,7 @@ async function renderSettings() {
     ${isAdmin() ? '<div class="card" id="golive-card"></div><div class="card" id="int-card"></div>' : ''}
     ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('languages')}Automatisch vertalen</h2>
       ${btn('tr-test', 'Proefvertaling', { icon: 'zap', size: 'sm' })}</div><div id="tr-status"><p class="muted small">Laden…</p></div></div>` : ''}
+    ${isAdmin() ? '<div class="card" id="imp-card"></div>' : ''}
     <div class="card" id="sponsor-cfg-card"></div>
     <div class="card flush"><div class="card-head"><h2>Gebruikers</h2>${isAdmin() ? btn('new-user', 'Gebruiker', { icon: 'plus', size: 'sm' }) : ''}</div>
       ${table([
@@ -1268,7 +1290,7 @@ async function renderSettings() {
     },
   });
   if ($('#new-user')) $('#new-user').onclick = () => userForm();
-  if (isAdmin()) { renderGoLive(); renderIntegrations(); }
+  if (isAdmin()) { renderGoLive(); renderIntegrations(); renderImpersonationSetting(); }
   view().querySelectorAll('[data-user]').forEach((b) => b.addEventListener('click', () => userForm(state.users.find((u) => u.id === Number(b.dataset.user)))));
   if ($('#show-audit')) $('#show-audit').onclick = async () => {
     const rows = await api('/api/admin/audit');
