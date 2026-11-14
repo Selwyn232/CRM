@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
   name TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'medewerker' CHECK (role IN ('admin','medewerker')),
+  role TEXT NOT NULL DEFAULT 'medewerker' CHECK (role IN ('admin','medewerker','veldmedewerker')),
   password_hash TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -264,6 +264,43 @@ CREATE TABLE IF NOT EXISTS child_updates (
 CREATE INDEX IF NOT EXISTS idx_cu_child ON child_updates(child_id, month);
 CREATE INDEX IF NOT EXISTS idx_cu_donor ON child_updates(donor_id);
 
+-- ======================= Onboarding (veldmedewerker meldt een gezin met kinderen aan) =======================
+CREATE TABLE IF NOT EXISTS onboardings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  status TEXT NOT NULL DEFAULT 'concept'
+    CHECK (status IN ('concept','ingediend','aanvulling_nodig','goedgekeurd','afgekeurd')),
+  data TEXT NOT NULL DEFAULT '{}',                 -- gezin, ouder/voogd, kinderen, toestemming (JSON)
+  family_id INTEGER REFERENCES recipients(id) ON DELETE SET NULL,   -- na goedkeuring
+  id_method TEXT NOT NULL DEFAULT 'handmatig' CHECK (id_method IN ('veriff','handmatig')),
+  id_status TEXT NOT NULL DEFAULT 'open' CHECK (id_status IN ('open','in_behandeling','goedgekeurd','afgewezen','opnieuw')),
+  id_session TEXT,
+  id_url TEXT NOT NULL DEFAULT '',
+  id_result TEXT NOT NULL DEFAULT '',              -- samenvatting van de controle (JSON)
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  submitted_at TEXT,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TEXT,
+  review_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_onb_status ON onboardings(status);
+CREATE INDEX IF NOT EXISTS idx_onb_session ON onboardings(id_session);
+
+-- Documenten en foto's van een aanmelding. Staan in een PRIVÉ map, alleen via de API te openen (met audit).
+CREATE TABLE IF NOT EXISTS onboarding_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  onboarding_id INTEGER NOT NULL REFERENCES onboardings(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                              -- id_document, selfie, foto_gezin, adres, toestemming, handtekening, foto_kind, geboorteakte, inschrijving
+  child_index INTEGER,                             -- bij kind-documenten: welk kind (0, 1, …)
+  file TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_onbf ON onboarding_files(onboarding_id);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT '',
@@ -405,6 +442,29 @@ function migrate(db) {
   if (s && !s.sql.includes("'recipient'")) {
     db.exec(`DROP TABLE sessions; CREATE TABLE sessions (token TEXT PRIMARY KEY,
       kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')), subject_id INTEGER NOT NULL, expires_at TEXT NOT NULL);`);
+  }
+  // Rol 'veldmedewerker' toevoegen: de CHECK op users.role vraagt om het opnieuw opbouwen van de tabel.
+  const u = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
+  if (u && !u.sql.includes('veldmedewerker')) {
+    const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name).join(', ');
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.exec('BEGIN');
+      db.exec(`CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'medewerker' CHECK (role IN ('admin','medewerker','veldmedewerker')),
+        password_hash TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        nav_prefs TEXT NOT NULL DEFAULT ''
+      )`);
+      db.exec(`INSERT INTO users_new (${cols}) SELECT ${cols} FROM users`);
+      db.exec('DROP TABLE users');
+      db.exec('ALTER TABLE users_new RENAME TO users');
+      db.exec('COMMIT');
+    } catch (err) { db.exec('ROLLBACK'); throw err; } finally { db.exec('PRAGMA foreign_keys = ON'); }
   }
   if (!sessionCols().includes('impersonator_id')) db.exec('ALTER TABLE sessions ADD COLUMN impersonator_id INTEGER');
 }

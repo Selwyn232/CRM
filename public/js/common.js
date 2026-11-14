@@ -69,6 +69,8 @@ const RF = (() => {
     message: { brief: 'Brief', video: 'Filmpje', foto: 'Foto', tekst: 'Bericht' },
     child: { concept: 'Concept', te_beoordelen: 'Te beoordelen', beschikbaar: 'Beschikbaar', gesponsord: 'Gesponsord', inactief: 'Inactief', afgekeurd: 'Afgekeurd' },
     sponsorship: { actief: 'Actief', betaling_gemist: 'Betaling gemist', beeindigd: 'Beëindigd' },
+    onboarding: { concept: 'Concept', ingediend: 'Te beoordelen', aanvulling_nodig: 'Aanvulling nodig', goedgekeurd: 'Goedgekeurd', afgekeurd: 'Afgekeurd' },
+    idcheck: { open: 'Nog niet gestart', in_behandeling: 'Bezig', goedgekeurd: 'Goedgekeurd', afgewezen: 'Afgewezen', opnieuw: 'Opnieuw nodig' },
     recipient: { kind: 'Kind', gezin: 'Gezin', school: 'School', gemeenschap: 'Gemeenschap', organisatie: 'Organisatie' },
     interaction: { notitie: 'Notitie', telefoon: 'Telefoon', email: 'E-mail', afspraak: 'Afspraak', brief: 'Brief', evenement: 'Evenement' },
   };
