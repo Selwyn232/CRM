@@ -1163,7 +1163,13 @@ function buildRoutes({ db, uploadDir }) {
     ['POST', '/api/admin/integrations/test-mollie', async () => {
       const P = require('./payments');
       if (!P.isEnabled()) return { ok: false, error: 'Vul eerst een Mollie API-sleutel in.' };
-      try { const r = await P.checkKey(); return { ok: true, mode: P.mode(), methods: ((r._embedded && r._embedded.methods) || []).map((m) => m.description) }; }
+      try {
+        const r = await P.checkKey();
+        const list = (x) => ((x && x._embedded && x._embedded.methods) || []).map((m) => m.description);
+        // Automatische incasso: welke methoden geven een machtiging, en kan er daarna automatisch worden afgeschreven?
+        const [first, recurring] = await Promise.all([P.methods('first').catch(() => null), P.methods('recurring').catch(() => null)]);
+        return { ok: true, mode: P.mode(), methods: list(r), first: list(first), recurring: list(recurring), recurring_ready: list(recurring).length > 0 };
+      }
       catch (err) { return { ok: false, error: err.status === 401 ? 'Mollie accepteert deze sleutel niet.' : err.message }; }
     }, admin],
     ['POST', '/api/admin/integrations/test-mail', async (ctx) => {

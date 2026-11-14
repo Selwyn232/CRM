@@ -882,3 +882,43 @@ test('Aanmelden als sponsor: gegevens → beveiligen → kind sponsoren', async 
   // Inloggen met het nieuwe wachtwoord werkt
   assert.equal((await fetch(`${base}/api/donor/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'eva@x.nl', password: 'een goed wachtwoord' }) })).status, 200);
 });
+
+test('Mollie: geweigerde automatische incasso wordt een taak en is later opnieuw te starten', async (t) => {
+  const payments = {}; let subOk = false; let n = 0;
+  const mollie = fakeProvider((c) => {
+    if (c.method === 'POST' && c.url === '/customers') return [201, { id: 'cst_x' }];
+    if (c.method === 'POST' && c.url === '/payments') { const id = `tr_x${++n}`; payments[id] = { id, status: 'open', amount: c.body.amount, customerId: c.body.customerId, webhookUrl: c.body.webhookUrl, _links: { checkout: { href: 'https://m/x' } } }; return [201, payments[id]]; }
+    if (c.method === 'GET' && c.url.startsWith('/payments/')) return [200, payments[c.url.split('/')[2]]];
+    if (c.method === 'POST' && /\/subscriptions$/.test(c.url)) return subOk ? [201, { id: 'sub_x' }] : [422, { detail: 'The customer has no valid mandate' }];
+    if (c.method === 'GET' && /\/mandates$/.test(c.url)) return [200, { _embedded: { mandates: [{ id: 'mdt_1', status: 'valid' }] } }];
+    if (c.method === 'GET' && c.url.startsWith('/methods')) return [200, { _embedded: { methods: c.url.includes('recurring') ? [{ description: 'SEPA-incasso' }] : [{ description: 'iDEAL' }] } }];
+    return [404, {}];
+  });
+  process.env.MOLLIE_API_BASE = mollie.url();
+  const P = require('../src/payments');
+  const { db, donor, kids } = sponsorSetup();
+  run(db, 'UPDATE donors SET password_hash = ?, email = ? WHERE id = ?', hashPassword('welkom123'), 'm@x.nl', donor);
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('k@rf.org','K','medewerker',?)", hashPassword('Sterk wachtwoord 1'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  P.configure({ apiKey: 'test_' + 'a'.repeat(30) });
+  t.after(() => { server.close(); mollie.srv.close(); P.configure({ apiKey: '' }); delete process.env.MOLLIE_API_BASE; });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const login = async (url, body) => (await fetch(`${base}${url}`, { method: 'POST', headers: json, body: JSON.stringify(body) })).headers.get('set-cookie').split(';')[0];
+  const dc = await login('/api/donor/login', { email: 'm@x.nl', password: 'welkom123' });
+  const res = await (await fetch(`${base}/api/portal/sponsor`, { method: 'POST', headers: { ...json, cookie: dc }, body: JSON.stringify({ child_ids: [kids[0]] }) })).json();
+  payments.tr_x1.status = 'paid';
+  await fetch(`${base}/api/webhooks/mollie`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'id=tr_x1' });
+  assert.equal(get(db, 'SELECT status FROM donations WHERE id = ?', res.id).status, 'ontvangen');
+  const task = get(db, "SELECT * FROM tasks WHERE title LIKE 'Automatische incasso niet gestart%'");
+  assert.ok(task, 'taak voor kantoor');
+  assert.match(task.description, /no valid mandate/);
+  // Kantoor start de incasso opnieuw (machtiging is inmiddels geldig)
+  subOk = true;
+  const sc = await login('/api/staff/login', { email: 'k@rf.org', password: 'Sterk wachtwoord 1' });
+  const sid = get(db, 'SELECT id FROM sponsorships WHERE donor_id = ?', donor).id;
+  const r = await fetch(`${base}/api/admin/sponsorships/${sid}/subscription`, { method: 'POST', headers: { ...json, cookie: sc }, body: '{}' });
+  assert.equal(r.status, 200);
+  assert.equal(get(db, 'SELECT subscription_id FROM sponsorships WHERE id = ?', sid).subscription_id, 'sub_x');
+  assert.equal((await fetch(`${base}/api/admin/sponsorships/${sid}/subscription`, { method: 'POST', headers: { ...json, cookie: sc }, body: '{}' })).status, 409);
+});

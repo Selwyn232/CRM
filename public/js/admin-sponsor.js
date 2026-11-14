@@ -259,13 +259,16 @@ async function renderSponsorships(status = '') {
     ${pageHead('Sponsorschappen', { sub: 'Wie sponsort welk kind. Betalingen via Mollie worden automatisch geboekt; na 2 gemiste maanden komt het kind weer vrij.', actions: btn('new', 'Nieuw sponsorschap', { icon: 'plus', kind: 'primary' }) })}
     <div class="toolbar" style="margin-bottom:12px"><select id="f-status">${opt('', 'Lopend', status)}${opt('actief', 'Actief', status)}${opt('betaling_gemist', 'Betaling gemist', status)}${opt('beeindigd', 'Beëindigd', status)}</select></div>
     <div class="card flush" id="tbl">${RF.skeleton('rows')}</div>`;
-  const rows = await api(`/api/admin/sponsorships?status=${encodeURIComponent(status)}`);
+  const [rows, conf] = await Promise.all([api(`/api/admin/sponsorships?status=${encodeURIComponent(status)}`), api('/api/public/config').catch(() => ({}))]);
   $('#tbl').innerHTML = table([
     { label: 'Kind', render: (s) => `<div class="cell-person">${childThumb(s)}<div class="grow"><a href="#/kinderen/${s.child_id}"><b>${esc(s.child_name)}</b></a><span class="sub">${esc(s.family_name || '')}</span></div></div>` },
     { label: 'Sponsor', render: (s) => donorLink(s.donor_id, s.donor_name) },
     { label: 'Sinds', render: (s) => `<span class="muted">${date(s.started_at)}</span>` },
     { label: 'Laatste maand', render: (s) => `<span class="muted">${s.last_month ? esc(monthLabel(s.last_month)) : '—'}</span>` },
     { label: 'Status', render: (s) => badge('sponsorship', s.status) + (s.missed_months ? `<span class="sub muted">${s.missed_months} gemist</span>` : '') },
+    ...(!conf.payments ? [] : [{ label: 'Incasso', render: (s) => (s.status === 'beeindigd' ? '<span class="muted">—</span>' : s.subscription_id
+      ? `<span class="tag" title="Mollie schrijft elke maand automatisch af">${RF.icon('repeat', 'icon-sm')}&nbsp;Automatisch</span>`
+      : `<span class="tag" style="color:var(--warn)" title="Geen automatische incasso: betaling handmatig registreren of incasso starten">${RF.icon('hand-coins', 'icon-sm')}&nbsp;Handmatig</span>`) }]),
     { label: 'Per maand', num: true, render: (s) => euro(s.monthly_cents) },
     { label: '', render: (s) => (s.status !== 'beeindigd' ? `<button class="icon-btn" data-more="${s.id}" aria-label="Acties">${RF.icon('ellipsis')}</button>` : '') },
   ], rows, { empty: 'Geen sponsorschappen', emptyIcon: 'heart-handshake' });
@@ -287,6 +290,10 @@ async function renderSponsorships(status = '') {
     const s = rows.find((x) => x.id === Number(b.dataset.more));
     RF.menu(b, [
       { label: 'Betaling registreren', icon: 'banknote', onClick: () => paymentForm(s, () => renderSponsorships(status)) },
+      ...(conf.payments && !s.subscription_id ? [{ label: 'Automatische incasso starten', icon: 'repeat', onClick: async () => {
+        try { const r = await api(`/api/admin/sponsorships/${s.id}/subscription`, { method: 'POST', body: {} }); toast(`Automatische incasso gestart voor ${r.sponsorships} ${r.sponsorships === 1 ? 'kind' : 'kinderen'}`); renderSponsorships(status); }
+        catch (ex) { toast(ex.message, 'error'); }
+      } }] : []),
       { label: 'Update plaatsen', icon: 'image', onClick: () => updateForm({ id: s.child_id, first_name: s.child_name }, () => renderSponsorships(status)) },
       { label: 'Betaling gemist', icon: 'circle-alert', onClick: async () => {
         if (!await confirmDialog(`Een gemiste betaling registreren voor ${s.child_name}? Na 2 gemiste maanden komt het kind weer vrij.`, 'Registreren')) return;
