@@ -32,6 +32,21 @@
         <a class="btn btn-ghost btn-lg" href="/leaderboard" data-ic="trophy">Leaderboard</a>
       </div>
     </section>
+    <section class="explainer card">
+      <div class="explainer-text">
+        <div class="eyebrow" data-ic="video">In één minuut uitgelegd</div>
+        <h2>Zo werkt Robin Foundation</h2>
+        <p class="muted">Van het kiezen van een kind tot de maandelijkse update: zie hoe jouw € 50 per maand een kind op de Filipijnen helpt.</p>
+        <a class="btn btn-primary" href="/aanmelden" data-ic="heart">Kies een kind</a>
+      </div>
+      <div class="explainer-video">
+        <video id="explainer" src="/media/robin-explainer.mp4" poster="/media/robin-explainer-poster.jpg" preload="none" playsinline controls
+          aria-label="Uitlegvideo: zo werkt Robin Foundation"></video>
+        <button type="button" class="explainer-play" id="explainer-play" aria-label="Video afspelen">
+          <span class="explainer-play-btn" data-ic="play"></span><span class="explainer-len">1:12</span>
+        </button>
+      </div>
+    </section>
     <div class="grid grid-2">
       <div class="card"><div class="card-head"><h2>Waar gaat je geld heen?</h2></div><div class="breakdown" id="bd"></div></div>
       <div class="card"><div class="card-head"><h2>Zij wachten op een sponsor</h2><a href="/aanmelden">Alle kinderen</a></div><div class="child-grid" id="kids"></div></div>
@@ -42,6 +57,14 @@
   <script>
     const { esc, euro } = RF;
     document.querySelectorAll('[data-ic]').forEach((el) => { el.insertAdjacentHTML('afterbegin', RF.icon(el.dataset.ic, el.classList.contains('eyebrow') ? 'icon-sm' : '')); });
+    // Uitlegvideo: eigen grote afspeelknop over de poster; daarna de gewone bediening.
+    (() => {
+      const v = document.getElementById('explainer'); const b = document.getElementById('explainer-play');
+      v.controls = false;
+      b.onclick = () => { b.hidden = true; v.controls = true; v.play().catch(() => {}); };
+      v.addEventListener('play', () => { b.hidden = true; v.controls = true; });
+      v.addEventListener('ended', () => { try { v.currentTime = 0; } catch { /* */ } v.controls = false; b.hidden = false; });
+    })();
     RF.api('/api/public/sponsor').then((s) => {
       const cfg = s.config;
       document.getElementById('amount').textContent = euro(cfg.amount_cents).replace(',00', '');

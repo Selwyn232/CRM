@@ -924,3 +924,20 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
   .signup-steps li.active { flex: 4; }
   .signup-head h1 { font-size: 22px; line-height: 28px; }
 }
+
+/* Homepage: uitlegvideo */
+.explainer { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 28px; align-items: center; padding: 24px; margin-bottom: 16px; }
+.explainer-text h2 { font-size: 24px; line-height: 30px; margin: 6px 0 8px; }
+.explainer-text p { margin: 0 0 16px; }
+.explainer-text .eyebrow { font-size: 12.5px; font-weight: 500; color: var(--accent-text); display: inline-flex; align-items: center; gap: 6px; }
+.explainer-video { position: relative; border-radius: 16px; overflow: hidden; background: #f4ead7; aspect-ratio: 16 / 9; box-shadow: var(--shadow-sm, var(--shadow-xs)); }
+.explainer-video video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.explainer-play { position: absolute; inset: 0; border: 0; background: linear-gradient(to top, rgba(20, 30, 20, .28), rgba(20, 30, 20, 0) 55%); cursor: pointer; display: grid; place-items: center; }
+.explainer-play-btn { width: 76px; height: 76px; border-radius: 99px; display: grid; place-items: center; background: #E8601C; color: #fff; box-shadow: 0 10px 30px rgba(232, 96, 28, .45); transition: transform .15s ease; }
+.explainer-play-btn .icon { width: 30px; height: 30px; margin-left: 4px; fill: currentColor; }
+.explainer-play:hover .explainer-play-btn, .explainer-play:focus-visible .explainer-play-btn { transform: scale(1.07); }
+.explainer-len { position: absolute; right: 12px; bottom: 10px; color: #fff; font-size: 12.5px; font-weight: 600; background: rgba(0, 0, 0, .45); padding: 2px 8px; border-radius: 99px; }
+@media (max-width: 800px) {
+  .explainer { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
+  .explainer-video { order: -1; }
+}
