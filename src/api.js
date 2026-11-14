@@ -879,9 +879,9 @@ function buildRoutes({ db, uploadDir }) {
         const key = String(b.api_key).trim();
         if (/^rnd_/i.test(key)) throw new AppError(400, 'Dit is een Render-sleutel. Gebruik een Anthropic API-sleutel (begint met "sk-ant-api03-") van console.anthropic.com → API Keys.');
         if (/^sk-ant-admin/i.test(key)) throw new AppError(400, 'Dit is een Anthropic admin-sleutel; die kan niet vertalen. Maak een gewone API-sleutel aan (begint met "sk-ant-api03-").');
-        if (/^sk-ant-(oat|ort|sid)/i.test(key)) throw new AppError(400, 'Dit is geen API-sleutel maar een inlogtoken. Maak een API-sleutel aan op console.anthropic.com → API Keys (begint met "sk-ant-api03-").');
+        if (/^sk-ant-(oat|ort|sid|usr)/i.test(key)) throw new AppError(400, 'Dit is geen API-sleutel maar een inlogtoken. Maak een API-sleutel aan op console.anthropic.com → API Keys (begint met "sk-ant-api03-").');
         if (/\s/.test(key)) throw new AppError(400, 'De sleutel bevat een spatie of regeleinde; plak hem opnieuw met de kopieerknop.');
-        if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key)) throw new AppError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-api03-"). Controleer of je hem volledig hebt gekopieerd.');
+        if (!/^sk-ant-api\d\d-[A-Za-z0-9_\-]{20,}$/.test(key)) throw new AppError(400, 'Dit lijkt geen Anthropic API-sleutel (die begint met "sk-ant-api03-"). Controleer of je hem volledig hebt gekopieerd.');
         save('translate_api_key', key);
         T.configure({ apiKey: key });
       }
