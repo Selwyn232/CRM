@@ -66,7 +66,8 @@ async function render(openId) {
     notice: me.chat_moderated
       ? '🛡️ Een begeleider van Robin Foundation leest berichten eerst even mee. Deel nooit je adres, telefoonnummer of social media.'
       : '🛡️ Deel geen adres, telefoonnummer of social media. Zulke berichten worden eerst gecontroleerd.',
-    load: () => api(`/api/recipient/supporters/${p.id}`),
+    scope: 'recipient', defaultLang: 'ht',
+    load: (lang) => api(`/api/recipient/supporters/${p.id}${lang ? `?vertaal=${lang}` : ''}`),
     send: (body) => api(`/api/recipient/supporters/${p.id}`, { method: 'POST', body: { body } }),
   });
 }

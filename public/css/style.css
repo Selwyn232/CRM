@@ -293,6 +293,10 @@ textarea { min-height: 90px; resize: vertical; }
 .bubble-meta { font-size: .72rem; color: var(--ink-3); margin-top: 2px; text-align: right; }
 .chat-status { margin-left: 4px; }
 .chat-status.bad { color: var(--bad); }
+.chat-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chat-tools .translate-toggle[aria-pressed="true"] { border-color: var(--robin); background: var(--robin-soft); color: var(--robin); }
+.chat-tools select { width: auto; padding: 4px 8px; font-size: .85rem; }
+.link-btn { background: none; border: 0; padding: 0; margin-top: 4px; font: inherit; font-size: .75rem; color: var(--ink-3); cursor: pointer; text-decoration: underline; }
 .chat-form { display: flex; gap: 8px; align-items: flex-end; }
 .chat-form textarea { min-height: 46px; flex: 1; }
 .big-ui { font-size: 17px; }

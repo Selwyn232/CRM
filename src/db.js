@@ -236,6 +236,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_pair ON chat_messages(recipient_id, donor_id);
 CREATE INDEX IF NOT EXISTS idx_chat_status ON chat_messages(status);
+
+-- Vertaalcache: elk bericht wordt per taal maar één keer vertaald.
+CREATE TABLE IF NOT EXISTS chat_translations (
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  lang TEXT NOT NULL,
+  text TEXT NOT NULL,
+  source_lang TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (message_id, lang)
+);
 `;
 
 const DEFAULT_CATEGORIES = [

@@ -292,3 +292,35 @@ test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang en gelogd',
   const asR = r2.headers.get('set-cookie').split(';')[0];
   assert.equal((await fetch(`${base}/api/recipient/supporters`, { headers: { cookie: asR } })).status, 200);
 });
+
+test('chat vertalen: alleen berichten van de ander, gecachet, fout breekt chat niet', async () => {
+  const T = require('../src/translate');
+  const orig = T.translateBatch;
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test';
+  let calls = 0;
+  T.translateBatch = async (items, lang) => {
+    calls++;
+    return new Map(items.map((i) => [i.id, { text: `[${lang}] ${i.text}`, source_language: 'ht' }]));
+  };
+  try {
+    const { db, donor, rid } = chatSetup('school', 0);
+    S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Mèsi anpil!' });
+    S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Graag gedaan' });
+    const thread = () => S.chatThread(db, rid, donor, 'donor');
+    const r1 = await S.withTranslations(db, thread(), 'nl');
+    assert.equal(r1.messages.find((m) => !m.mine).translation, '[nl] Mèsi anpil!');
+    assert.equal(r1.messages.find((m) => m.mine).translation, undefined);
+    await S.withTranslations(db, thread(), 'nl');
+    assert.equal(calls, 1); // tweede keer uit cache
+    T.translateBatch = async () => { throw new Error('Vertaaldienst niet bereikbaar'); };
+    const r3 = await S.withTranslations(db, thread(), 'en');
+    assert.equal(r3.translate_error, 'Vertaaldienst niet bereikbaar');
+    assert.equal(r3.messages.length, 2);
+    delete process.env.ANTHROPIC_API_KEY;
+    assert.match((await S.withTranslations(db, thread(), 'nl')).translate_error, /niet ingesteld/);
+  } finally {
+    T.translateBatch = orig;
+    if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+  }
+});

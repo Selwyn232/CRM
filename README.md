@@ -51,6 +51,16 @@ Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
 - Taken, campagnes met doel en voortgang, rapportages (per jaar, bestemming, maand, betaalwijze, donateursbehoud, top 10)
 - E-mail log, gebruikersbeheer (beheerder of medewerker), audit log, instelbare kosten per eenheid
 
+## Automatisch vertalen in de chat
+
+In elk chatvenster staat de knop **🌐 Automatisch vertalen**. Zet je die aan, dan worden de berichten van de ander vertaald naar de taal die je kiest. Ondersteund zijn Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees en Papiaments. Met "origineel" zie je de oorspronkelijke tekst. Je keuze wordt per apparaat onthouden.
+
+- Vertalen gebeurt met Claude (Anthropic). Stel daarvoor de omgevingsvariabele **`ANTHROPIC_API_KEY`** in, in Render via *Environment*. Zonder sleutel is de knop uitgeschakeld.
+- Standaardmodel is `claude-opus-5-5` met lage *effort*. Met **`CRM_TRANSLATE_MODEL`** kies je een ander model, bijvoorbeeld `claude-haiku-5-5` (veel goedkoper).
+- Elk bericht wordt per taal maar één keer vertaald en daarna uit de database gehaald.
+- Server-side *fallback* staat aan: weigert het model een vertaling, dan probeert de API het automatisch met een ander model.
+- Privacy: de chatberichten gaan naar de API van Anthropic om vertaald te worden.
+
 ## Inloggen als donateur of ontvanger (meekijken)
 
 Beheerders zien bij een donateur de knop **👁️ Inloggen als donateur** en bij elke ontvanger **👁️ Inloggen als**. Het portaal opent dan in een nieuw tabblad, precies zoals die persoon het ziet. Een paarse balk bovenaan laat zien dat je meekijkt, met een knop **Stoppen**.

@@ -199,6 +199,10 @@ function buildRoutes({ db, uploadDir }) {
 
   return [
     // ================================================================ PUBLIEK
+    ['GET', '/api/public/translation', () => {
+      const T = require('./translate');
+      return { enabled: T.isEnabled(), languages: T.LANGUAGES };
+    }],
     ['GET', '/api/public/categories', () => categories().filter((c) => c.active)],
     ['GET', '/api/public/stats', () => {
       const t = get(db, `SELECT
@@ -364,7 +368,8 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/portal/conversations/:id', (ctx) => {
       const rid = id(ctx.params.id);
       if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
-      return S.chatThread(db, rid, ctx.donor.id, 'donor');
+      const msgs = S.chatThread(db, rid, ctx.donor.id, 'donor');
+      return ctx.query.vertaal ? S.withTranslations(db, msgs, ctx.query.vertaal) : msgs;
     }, donor],
     ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
       { recipientId: id(ctx.params.id), donorId: ctx.donor.id, sender: 'donor', body: ctx.body.body }, ctx.actor), donor],
@@ -389,7 +394,8 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/recipient/supporters/:id', (ctx) => {
       const did = id(ctx.params.id);
       if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
-      return S.chatThread(db, ctx.recipient.id, did, 'recipient');
+      const msgs = S.chatThread(db, ctx.recipient.id, did, 'recipient');
+      return ctx.query.vertaal ? S.withTranslations(db, msgs, ctx.query.vertaal) : msgs;
     }, recipient],
     ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
       { recipientId: ctx.recipient.id, donorId: id(ctx.params.id), sender: 'recipient', body: ctx.body.body }, ctx.actor), recipient],

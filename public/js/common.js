@@ -213,11 +213,33 @@ const RF = (() => {
   };
 
 
-  // Chatvenster. opts: { load(): Promise<msgs>, send(body): Promise, notice: html, otherName }
-  function chatBox(container, opts) {
+  // Vertaalinstellingen (per apparaat): { on, lang }
+  let translationInfo = null;
+  const getTranslationInfo = () => (translationInfo ||= api('/api/public/translation').catch(() => ({ enabled: false, languages: {} })));
+  const prefKey = (scope) => `rf_vertalen_${scope}`;
+  const loadPref = (scope, fallback) => {
+    try { return { on: false, lang: fallback, ...JSON.parse(localStorage.getItem(prefKey(scope)) || '{}') }; }
+    catch { return { on: false, lang: fallback }; }
+  };
+  const savePref = (scope, pref) => { try { localStorage.setItem(prefKey(scope), JSON.stringify(pref)); } catch { /* geen opslag */ } };
+  const browserLang = () => (navigator.language || 'nl').slice(0, 2).toLowerCase();
+
+  // Chatvenster. opts: { load(lang): Promise<msgs | {messages, translate_error}>, send(body), notice, otherName, scope, defaultLang }
+  async function chatBox(container, opts) {
+    const info = await getTranslationInfo();
+    const scope = opts.scope || 'chat';
+    const pref = loadPref(scope, info.languages[browserLang()] ? browserLang() : (opts.defaultLang || 'nl'));
     container.innerHTML = `
       <div class="chat">
         ${opts.notice ? `<div class="chat-notice">${opts.notice}</div>` : ''}
+        <div class="chat-tools">
+          <button type="button" class="btn btn-ghost btn-sm translate-toggle" aria-pressed="${pref.on && info.enabled}"
+            ${info.enabled ? '' : 'disabled title="Vertalen is nog niet ingesteld door Robin Foundation"'}>🌐 Automatisch vertalen: <b>${pref.on && info.enabled ? 'aan' : 'uit'}</b></button>
+          <select class="translate-lang" aria-label="Vertaal naar" ${pref.on && info.enabled ? '' : 'hidden'}>
+            ${Object.entries(info.languages).map(([k, v]) => `<option value="${k}" ${k === pref.lang ? 'selected' : ''}>naar ${esc(v)}</option>`).join('')}
+          </select>
+          <span class="translate-status small muted"></span>
+        </div>
         <div class="chat-log" aria-live="polite"></div>
         <form class="chat-form">
           <textarea name="body" rows="2" maxlength="2000" placeholder="Schrijf een bericht…" aria-label="Bericht"></textarea>
@@ -226,6 +248,30 @@ const RF = (() => {
         <p class="form-error" hidden style="margin:8px 0 0"></p>
       </div>`;
     const log = container.querySelector('.chat-log');
+    const toggle = container.querySelector('.translate-toggle');
+    const langSel = container.querySelector('.translate-lang');
+    const status = container.querySelector('.translate-status');
+    const showOriginal = new Set();
+    const translating = () => pref.on && info.enabled;
+    toggle.addEventListener('click', () => {
+      pref.on = !pref.on;
+      savePref(scope, pref);
+      toggle.setAttribute('aria-pressed', translating());
+      toggle.querySelector('b').textContent = translating() ? 'aan' : 'uit';
+      langSel.hidden = !translating();
+      lastSig = '';
+      refresh();
+    });
+    langSel.addEventListener('change', () => { pref.lang = langSel.value; savePref(scope, pref); lastSig = ''; refresh(); });
+    log.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-orig]');
+      if (!b) return;
+      const id = Number(b.dataset.orig);
+      if (showOriginal.has(id)) showOriginal.delete(id); else showOriginal.add(id);
+      lastSig = '';
+      refresh();
+    });
+    const langName = (code) => info.languages[code] || code;
     const form = container.querySelector('.chat-form');
     const err = container.querySelector('.form-error');
     let lastSig = '';
@@ -234,13 +280,23 @@ const RF = (() => {
       : m.status === 'afgewezen' ? `<span class="chat-status bad">✗ niet verstuurd${m.reject_reason ? `: ${esc(m.reject_reason)}` : ''}</span>`
         : m.read_at ? '<span class="chat-status">✓✓ gelezen</span>' : '<span class="chat-status">✓ verstuurd</span>');
     async function refresh() {
-      const msgs = await opts.load();
-      const sig = msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}`).join('|');
+      const lang = translating() ? pref.lang : '';
+      if (lang && !lastSig) status.textContent = 'Vertalen…';
+      const res = await opts.load(lang);
+      const msgs = Array.isArray(res) ? res : res.messages;
+      status.textContent = res.translate_error ? `⚠️ ${res.translate_error}` : '';
+      const sig = lang + msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}:${m.translation ? 1 : 0}:${showOriginal.has(m.id) ? 1 : 0}`).join('|');
       if (sig === lastSig) return;
       lastSig = sig;
       const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+      const bodyHtml = (m) => {
+        if (!m.translation) return `<div class="bubble-body">${esc(m.body)}</div>`;
+        const orig = showOriginal.has(m.id);
+        return `<div class="bubble-body">${esc(orig ? m.body : m.translation)}</div>
+          <button type="button" class="link-btn" data-orig="${m.id}">${orig ? '🌐 Vertaling tonen' : `🌐 Vertaald uit ${esc(langName(m.source_lang))} · origineel`}</button>`;
+      };
       log.innerHTML = msgs.length ? msgs.map((m) => `<div class="bubble ${m.mine ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
-          <div class="bubble-body">${esc(m.body)}</div>
+          ${bodyHtml(m)}
           <div class="bubble-meta">${dateTime(m.created_at)} ${statusText(m)}</div></div>`).join('')
         : `<p class="muted" style="text-align:center;margin:auto">Nog geen berichten. Stuur ${esc(opts.otherName || '')} als eerste een berichtje!</p>`;
       if (atBottom || !log.dataset.init) { log.scrollTop = log.scrollHeight; log.dataset.init = '1'; }

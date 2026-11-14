@@ -419,7 +419,45 @@ function chatThread(db, recipientId, donorId, viewer, markRead = true) {
   return rows.map((m) => ({ ...m, mine: m.sender === viewer, reject_reason: m.sender === viewer ? m.reject_reason : '' }));
 }
 
+// Voegt vertalingen toe aan berichten van de andere partij (eigen berichten blijven zoals ze zijn).
+// Vertalingen worden gecachet; mislukt vertalen, dan komt de originele tekst terug met een foutmelding.
+async function withTranslations(db, msgs, lang) {
+  const T = require('./translate');
+  if (!lang) return { messages: msgs };
+  if (!T.isEnabled()) return { messages: msgs, translate_error: 'Vertalen is nog niet ingesteld' };
+  if (!T.LANGUAGES[lang]) throw new AppError(400, 'Onbekende taal');
+  const theirs = msgs.filter((m) => !m.mine);
+  if (!theirs.length) return { messages: msgs };
+  const ids = theirs.map((m) => m.id);
+  const cached = new Map(all(db, `SELECT * FROM chat_translations WHERE lang = ? AND message_id IN (${ids.map(() => '?').join(',')})`, lang, ...ids)
+    .map((r) => [r.message_id, r]));
+  const missing = theirs.filter((m) => !cached.has(m.id));
+  let error = null;
+  if (missing.length) {
+    try {
+      // In porties van 40 berichten om grote verzoeken te vermijden.
+      for (let i = 0; i < missing.length; i += 40) {
+        const part = missing.slice(i, i + 40);
+        const res = await T.translateBatch(part.map((m) => ({ id: m.id, text: m.body })), lang);
+        for (const [id, t] of res) {
+          run(db, 'INSERT OR REPLACE INTO chat_translations (message_id, lang, text, source_lang) VALUES (?,?,?,?)', id, lang, t.text, t.source_language);
+          cached.set(id, { text: t.text, source_lang: t.source_language });
+        }
+      }
+    } catch (err) { error = err.message; }
+  }
+  return {
+    messages: msgs.map((m) => {
+      const t = !m.mine && cached.get(m.id);
+      if (!t || t.source_lang === lang || t.text.trim() === m.body.trim()) return m;
+      return { ...m, translation: t.text, source_lang: t.source_lang };
+    }),
+    translate_error: error,
+  };
+}
+
 module.exports = {
+  withTranslations,
   chatFlags, hasFunded, isModerated, sendChat, moderateChat, chatThread,
   AppError, euro, audit, getCategory, donorFullName, donorPublicName, sendMail,
   createDonation, updateDonation, deleteDonation, spend, reverseExpenditure, addImpactMessage,

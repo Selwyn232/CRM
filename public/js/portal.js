@@ -315,7 +315,8 @@ async function renderChat(openId) {
     notice: noLogin + (c.chat_moderated
       ? '🛡️ Berichten worden eerst door een begeleider gelezen voordat ze worden afgeleverd. Deel geen contactgegevens en vraag niet om die van de ontvanger.'
       : '🛡️ Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.'),
-    load: () => api(`/api/portal/conversations/${c.id}`),
+    scope: 'donor', defaultLang: 'nl',
+    load: (lang) => api(`/api/portal/conversations/${c.id}${lang ? `?vertaal=${lang}` : ''}`),
     send: (body) => api(`/api/portal/conversations/${c.id}`, { method: 'POST', body: { body } }),
   });
   refreshUnread();

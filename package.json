@@ -6,12 +6,15 @@
   "private": true,
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "build": "echo \"Geen build nodig: de app heeft geen dependencies.\"",
+    "build": "echo \"Geen build-stap nodig.\"",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "engines": {
     "node": ">=22.13"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0"
+  }
 }
