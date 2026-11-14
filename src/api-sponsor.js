@@ -121,8 +121,8 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     // ------------------------------------------------------------------ publiek
     ['GET', '/api/public/sponsor', () => {
       const cfg = SP.getConfig(db);
-      // Publiek (zonder inloggen) alleen voornaam, leeftijd en provincie: foto's en verhalen van kinderen pas na inloggen.
-      const available = SP.availableChildren(db).slice(0, 8).map((c) => ({ first_name: c.first_name, age: c.age, province: c.province, country: c.country }));
+      // Publiek (zonder inloggen): voornaam, leeftijd, provincie en foto. Verhaal, school en gezin pas na inloggen.
+      const available = SP.availableChildren(db).slice(0, 8).map((c) => ({ first_name: c.first_name, age: c.age, province: c.province, country: c.country, photo_url: c.photo_url }));
       return { config: cfg, available, counts: get(db, `SELECT
         (SELECT COUNT(*) FROM children WHERE status = 'beschikbaar') AS available,
         (SELECT COUNT(*) FROM children WHERE status = 'gesponsord') AS sponsored,

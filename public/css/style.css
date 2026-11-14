@@ -881,3 +881,13 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
 .faceid-offer h2 { font-size: 19px; margin: 12px 0 6px; }
 .faceid-icon { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
 .faceid-icon .icon { width: 28px; height: 28px; }
+
+/* Homepage: foto's van kinderen in de hero */
+.home-hero { position: relative; overflow: hidden; }
+.home-hero > :not(.hero-photos) { position: relative; max-width: 560px; }
+.hero-photos { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); width: 340px; height: 300px; }
+.hero-photos img { position: absolute; width: 190px; height: 190px; object-fit: cover; object-position: center 30%; border-radius: 22px; border: 5px solid var(--surface); box-shadow: var(--shadow-modal, 0 10px 30px rgba(0,0,0,.15)); }
+.hero-photos img:nth-child(1) { left: 0; top: 10px; transform: rotate(-5deg); }
+.hero-photos img:nth-child(2) { right: 0; top: 0; transform: rotate(4deg); z-index: 1; }
+.hero-photos img:nth-child(3) { left: 80px; bottom: -10px; transform: rotate(-1deg); z-index: 2; }
+@media (max-width: 1000px) { .hero-photos { display: none; } }
