@@ -2,186 +2,99 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Robin Foundation · Sponsor een kind op de Filipijnen</title>
-  <meta name="description" content="Voor € 50 per maand weet je precies welk kind je helpt: elke schooldag een maaltijd, schoolgeld, basisverzorging en een noodfonds voor tyfoons. Kies zelf een kind op de Filipijnen.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robin Foundation</title>
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="apple-mobile-web-app-title" content="Robin Foundation">
   <meta name="application-name" content="Robin Foundation">
-  <meta name="theme-color" content="#FBF7EF">
-  <link rel="preload" href="/fonts/brygada-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/schibsted-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" as="image" href="/img/home/portret-640.webp" imagesrcset="/img/home/portret-480.webp 480w, /img/home/portret-640.webp 640w" imagesizes="(min-width: 900px) 36vw, 100vw">
-  <script>document.documentElement.classList.add('js')</script>
-  <link rel="stylesheet" href="/css/home.css">
+  <meta name="theme-color" content="#faf4e8">
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <a class="skip" href="#inhoud">Naar de inhoud</a>
-
-  <header class="site-head">
-    <div class="wrap head-inner">
-      <a class="mark" href="/" aria-label="Robin Foundation, naar de homepage">
-        <img src="/img/logo.png" alt="" width="34" height="34"><span>Robin Foundation</span>
-      </a>
-      <nav class="head-nav" aria-label="Hoofdmenu">
-        <a href="#zo-werkt-het">Zo werkt het</a>
-        <a href="/leaderboard">Leaderboard</a>
-        <a href="/login">Inloggen</a>
-      </nav>
-      <a class="btn btn-sm" href="/aanmelden">Kies een kind</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/"><img src="/img/logo.png" alt=""><div>Robin Foundation</div></a>
+      <nav class="topnav"><a href="/leaderboard">Leaderboard</a><a href="/privacy">Privacy</a></nav>
+      <a class="btn btn-primary btn-sm" href="/login">Inloggen</a>
     </div>
   </header>
-
-  <main id="inhoud">
-    <!-- 1. HERO -->
-    <section class="hero">
-      <div class="wrap hero-grid">
-        <div class="hero-copy">
-          <p class="label">Sponsor een kind op de Filipijnen</p>
-          <h1>Voor € 50 per maand weet je <em>precies</em> welk kind je helpt.</h1>
-          <p class="lede">Je kiest zelf een kind in Leyte of Samar. Elke schooldag een maaltijd, schoolgeld en basisverzorging, en elke maand hoor je hoe het gaat.</p>
-          <div class="actions">
-            <a class="btn" href="/aanmelden">Kies een kind</a>
-            <a class="link-drawn" href="#video">Bekijk de video<svg aria-hidden="true" viewBox="0 0 120 8" preserveAspectRatio="none"><path d="M1 5.5c18-3 36-3.6 55-2.1 19 1.4 41 2.6 63-1.4"/></svg></a>
-          </div>
-        </div>
-        <figure class="portrait">
-          <img src="/img/home/portret-640.webp" srcset="/img/home/portret-480.webp 480w, /img/home/portret-640.webp 640w" sizes="(min-width: 900px) 36vw, 100vw"
-            width="640" height="800" alt="Een lachend meisje, een van de kinderen in ons programma." fetchpriority="high">
-          <figcaption>Een van de kinderen in ons programma</figcaption>
-        </figure>
+  <main class="container">
+    <section class="hero home-hero" style="padding:48px 40px">
+      <div class="hero-photos" id="hero-photos" aria-hidden="true"></div>
+      <div class="eyebrow" data-ic="sparkles">Sponsor een kind op de Filipijnen</div>
+      <h1 style="font-size:34px;line-height:40px">Voor <span id="amount">€ 50</span> per maand weet je precies welk kind je helpt</h1>
+      <p style="font-size:15.5px">Je kiest zelf een kind. Je geld gaat elke maand naar een dagelijkse schoolmaaltijd, schoolgeld, basisverzorging en het Robin Noodfonds voor orkanen en overstromingen. Elke maand krijg je een update, en je kunt met het gezin chatten, automatisch vertaald.</p>
+      <div class="toolbar" style="margin-top:24px">
+        <a class="btn btn-primary btn-lg" href="/aanmelden" data-ic="heart">Kies een kind</a>
+        <a class="btn btn-ghost btn-lg" href="/leaderboard" data-ic="trophy">Leaderboard</a>
       </div>
     </section>
-
-    <!-- 2. VIDEO -->
-    <section class="band band-green" id="video" aria-labelledby="t-video">
-      <div class="wrap video-grid">
-        <div class="video-copy reveal">
-          <p class="label">In één minuut</p>
-          <h2 id="t-video">Van jouw keuze tot een volle lunchtrommel</h2>
-          <p>Hoe je een kind kiest, waar je € 50 heen gaat, en hoe je elke maand van het gezin hoort.</p>
-        </div>
-        <div class="video-frame reveal">
-          <video id="explainer" poster="/media/robin-explainer-poster.jpg" preload="metadata" playsinline webkit-playsinline controls
-            aria-label="Uitlegvideo: zo werkt Robin Foundation">
-            <source src="/media/robin-explainer.mp4" type="video/mp4">
-            <track kind="subtitles" src="/media/robin-explainer.nl.vtt" srclang="nl" label="Nederlands" default>
-            <track kind="subtitles" src="/media/robin-explainer.en.vtt" srclang="en" label="English">
-          </video>
-          <button type="button" class="play" id="explainer-play" aria-label="Video afspelen (1 minuut 12)">
-            <span class="play-dot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></span><span class="play-len">1:12</span>
-          </button>
-          <p class="video-error" id="explainer-error" hidden>De video kan hier niet worden afgespeeld. <a href="/media/robin-explainer.mp4" target="_blank" rel="noopener">Open de video</a></p>
-        </div>
+    <section class="explainer card">
+      <div class="explainer-text">
+        <div class="eyebrow" data-ic="video">In één minuut uitgelegd</div>
+        <h2>Zo werkt Robin Foundation</h2>
+        <p class="muted">Van het kiezen van een kind tot de maandelijkse update: zie hoe jouw € 50 per maand een kind op de Filipijnen helpt.</p>
+        <a class="btn btn-primary" href="/aanmelden" data-ic="heart">Kies een kind</a>
+      </div>
+      <div class="explainer-video">
+        <video id="explainer" poster="/media/robin-explainer-poster.jpg" preload="metadata" playsinline webkit-playsinline controls
+          aria-label="Uitlegvideo: zo werkt Robin Foundation">
+          <source src="/media/robin-explainer.mp4" type="video/mp4">
+          <track kind="subtitles" src="/media/robin-explainer.nl.vtt" srclang="nl" label="Nederlands" default>
+          <track kind="subtitles" src="/media/robin-explainer.en.vtt" srclang="en" label="English">
+        </video>
+        <p class="explainer-error" id="explainer-error" hidden>De video kan hier niet worden afgespeeld. <a href="/media/robin-explainer.mp4" target="_blank" rel="noopener">Open de video</a></p>
+        <button type="button" class="explainer-play" id="explainer-play" aria-label="Video afspelen">
+          <span class="explainer-play-btn" data-ic="play"></span><span class="explainer-len">1:12</span>
+        </button>
       </div>
     </section>
-
-    <!-- 3. WAAR € 50 HEEN GAAT -->
-    <section class="band" aria-labelledby="t-geld">
-      <div class="wrap money">
-        <div class="money-head reveal">
-          <p class="label">Waar je geld heen gaat</p>
-          <h2 id="t-geld"><span class="big-amount">€ 50</span><span class="per">per kind, per maand</span></h2>
-          <p>Elke maand boeken we jouw bijdrage op naam van jouw kind. Zo ziet de verdeling eruit.</p>
-        </div>
-        <dl class="parts reveal" id="parts">
-          <div><dt>€ 23</dt><dd><b>Schoolmaaltijden</b><span>Elke schooldag een voedzame maaltijd: rijst, groente en vis.</span></dd></div>
-          <div><dt>€ 17</dt><dd><b>Schoolgeld en schoolspullen</b><span>Inschrijving, uniform, schriften en vervoer.</span></dd></div>
-          <div><dt>€ 5</dt><dd><b>Basisverzorging</b><span>Zeep, tandenborstel en tandpasta.</span></dd></div>
-          <div><dt>€ 5</dt><dd><b>Robin Noodfonds</b><span>Een gezamenlijke pot voor als een tyfoon of overstroming toeslaat.</span></dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <!-- 4. ZO WERKT HET -->
-    <section class="band band-sand" id="zo-werkt-het" aria-labelledby="t-werkt">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="label">Zo werkt het</p>
-          <h2 id="t-werkt">Drie stappen, en je bent er voor een kind.</h2>
-        </div>
-        <div class="steps-wrap">
-          <svg class="steps-line" aria-hidden="true"><path d=""/></svg>
-          <ol class="steps">
-            <li class="reveal"><span class="num" aria-hidden="true">1</span><h3>Kies een kind</h3>
-              <p>Je ziet foto, leeftijd en verhaal. Elk kind heeft maar één sponsor: jij.</p></li>
-            <li class="reveal"><span class="num" aria-hidden="true">2</span><h3>Elke maand een update</h3>
-              <p>Een foto, brief of filmpje over hoe het op school en thuis gaat.</p></li>
-            <li class="reveal"><span class="num" aria-hidden="true">3</span><h3>Chat met de ouders</h3>
-              <p>Stuur een bericht. Wij vertalen automatisch naar het Tagalog en weer terug.</p></li>
-          </ol>
-        </div>
-      </div>
-    </section>
-
-    <!-- 5. KINDEREN DIE WACHTEN -->
-    <section class="band" aria-labelledby="t-kids">
-      <div class="wrap">
-        <div class="section-head split reveal">
-          <div><p class="label">Zij wachten op een sponsor</p><h2 id="t-kids">Wie ga jij helpen?</h2></div>
-          <a class="link-drawn" href="/aanmelden">Alle kinderen<svg aria-hidden="true" viewBox="0 0 120 8" preserveAspectRatio="none"><path d="M1 5.5c18-3 36-3.6 55-2.1 19 1.4 41 2.6 63-1.4"/></svg></a>
-        </div>
-        <ul class="kids" id="kids" aria-live="polite"></ul>
-      </div>
-    </section>
-
-    <!-- 6. VERTROUWEN -->
-    <section class="band band-rule" aria-labelledby="t-trust">
-      <div class="wrap trust">
-        <div class="trust-head reveal">
-          <p class="label">Zorgvuldig</p>
-          <h2 id="t-trust">Je hulp komt echt aan.</h2>
-        </div>
-        <ul class="checks reveal">
-          <li><svg aria-hidden="true" viewBox="0 0 28 24"><path d="M3 13.5c2.6 2 4.6 4.3 6.6 7.4C13.4 13 18.6 6.4 25 2.6"/></svg><p><b>Onze veldwerkers bezoeken elk gezin thuis,</b> voordat een kind op de site komt.</p></li>
-          <li><svg aria-hidden="true" viewBox="0 0 28 24"><path d="M3 13.5c2.6 2 4.6 4.3 6.6 7.4C13.4 13 18.6 6.4 25 2.6"/></svg><p><b>We controleren de identiteit van de ouders</b> en documenten zoals de geboorteakte en de inschrijving op school.</p></li>
-          <li><svg aria-hidden="true" viewBox="0 0 28 24"><path d="M3 13.5c2.6 2 4.6 4.3 6.6 7.4C13.4 13 18.6 6.4 25 2.6"/></svg><p><b>Eén kind, één sponsor.</b> Je weet altijd voor wie je geeft.</p></li>
-          <li><svg aria-hidden="true" viewBox="0 0 28 24"><path d="M3 13.5c2.6 2 4.6 4.3 6.6 7.4C13.4 13 18.6 6.4 25 2.6"/></svg><p><b>Stoppen kan altijd.</b> Dan zoeken wij een nieuwe sponsor, zodat de hulp doorgaat.</p></li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 7. SAMEN -->
-    <section class="band band-sand" aria-labelledby="t-samen">
-      <div class="wrap together">
-        <div class="together-head reveal">
-          <p class="label">Samen</p>
-          <h2 id="t-samen">Particulieren en bedrijven, samen voor een volle klas.</h2>
-          <a class="link-drawn" href="/leaderboard">Bekijk het leaderboard<svg aria-hidden="true" viewBox="0 0 120 8" preserveAspectRatio="none"><path d="M1 5.5c18-3 36-3.6 55-2.1 19 1.4 41 2.6 63-1.4"/></svg></a>
-        </div>
-        <dl class="figures reveal" id="figures">
-          <div><dt>kinderen gesponsord</dt><dd data-k="sponsored">–</dd></div>
-          <div><dt>sponsoren</dt><dd data-k="sponsors">–</dd></div>
-          <div><dt>wachten nog op jou</dt><dd data-k="available">–</dd></div>
-        </dl>
-      </div>
-    </section>
-
-    <!-- 8. AFSLUITER -->
-    <section class="band band-green closer" aria-labelledby="t-closer">
-      <div class="wrap closer-inner reveal">
-        <img class="closer-robin" src="/img/logo.png" alt="" width="80" height="80" loading="lazy">
-        <h2 id="t-closer">Kies vandaag een kind.</h2>
-        <p>€ 50 per maand · elke maand een update · stoppen kan altijd</p>
-        <a class="btn" href="/aanmelden">Kies een kind</a>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-foot">
-    <div class="wrap foot-inner">
-      <a class="mark" href="/"><img src="/img/logo.png" alt="" width="28" height="28"><span>Robin Foundation</span></a>
-      <nav aria-label="Voettekst">
-        <a href="/aanmelden">Sponsor worden</a>
-        <a href="/leaderboard">Leaderboard</a>
-        <a href="/login">Inloggen</a>
-        <a href="/privacy">Privacy</a>
-      </nav>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><h2>Waar gaat je geld heen?</h2></div><div class="breakdown" id="bd"></div></div>
+      <div class="card"><div class="card-head"><h2>Zij wachten op een sponsor</h2><a href="/aanmelden">Alle kinderen</a></div><div class="child-grid" id="kids"></div></div>
     </div>
-  </footer>
-
-  <script src="/js/home.js" defer></script>
+  </main>
+  <script src="/js/icons.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    const { esc, euro } = RF;
+    document.querySelectorAll('[data-ic]').forEach((el) => { el.insertAdjacentHTML('afterbegin', RF.icon(el.dataset.ic, el.classList.contains('eyebrow') ? 'icon-sm' : '')); });
+    // Uitlegvideo: eigen grote afspeelknop over de poster; daarna de gewone bediening.
+    (() => {
+      const v = document.getElementById('explainer'); const b = document.getElementById('explainer-play');
+      v.controls = false;
+      const fail = () => { b.hidden = true; v.controls = true; document.getElementById('explainer-error').hidden = false; };
+      const NO_SOURCE = 3; // de video kon niet worden geladen
+      b.onclick = () => {
+        if (v.networkState === NO_SOURCE) return fail();
+        b.hidden = true; v.controls = true;
+        const p = v.play();
+        // Lukt automatisch starten niet (bv. browserbeleid), dan staan de gewone bedieningsknoppen klaar; bij een echte fout een melding.
+        if (p && p.catch) p.catch((err) => { if (err && err.name !== 'NotAllowedError' && err.name !== 'AbortError') fail(); });
+      };
+      // Alleen een fout van de video zelf of de bron telt; een ondertitelbestand dat niet laadt niet.
+      v.addEventListener('error', (e) => { if (e.target === v || e.target.tagName === 'SOURCE') fail(); }, true);
+      v.querySelector('source').addEventListener('error', fail);
+      if (v.networkState === NO_SOURCE) fail();
+      v.addEventListener('play', () => { b.hidden = true; v.controls = true; });
+      v.addEventListener('ended', () => { try { v.currentTime = 0; } catch { /* */ } v.controls = false; b.hidden = false; });
+    })();
+    RF.api('/api/public/sponsor').then((s) => {
+      const cfg = s.config;
+      document.getElementById('amount').textContent = euro(cfg.amount_cents).replace(',00', '');
+      document.getElementById('bd').innerHTML = cfg.parts.map((p) => `<div class="bd-row"><span class="bd-ico">${RF.icon(p.icon || 'circle')}</span>
+        <div class="grow"><div class="t">${esc(p.label)}</div><div class="small muted">${esc(p.description)}</div></div><b class="num">${euro(p.cents)}</b></div>`).join('')
+        + `<div class="bd-row total"><div class="grow">Per kind per maand</div><b class="num">${euro(cfg.amount_cents)}</b></div>`;
+      const withPhoto = s.available.filter((c) => c.photo_url);
+      document.getElementById('hero-photos').innerHTML = withPhoto.slice(0, 3).map((c) => `<img src="${esc(c.photo_url)}" alt="">`).join('');
+      document.getElementById('kids').innerHTML = s.available.slice(0, 4).map((c) => `<a class="card child-card" href="/aanmelden?kind=${c.id}">
+        ${c.photo_url ? `<img class="child-photo" src="${esc(c.photo_url)}" alt="${esc(c.first_name)}" loading="lazy">` : `<div class="child-photo ph">${esc(c.first_name.slice(0, 1))}</div>`}
+        <div class="child-body"><div class="child-name">${esc(c.first_name)}</div><div class="small muted">${c.age != null ? `${c.age} jaar · ` : ''}${esc(c.province || c.country)}</div></div></a>`).join('')
+        || '<p class="muted">Op dit moment heeft elk kind een sponsor. Dank je wel!</p>';
+    });
+  </script>
 </body>
 </html>
