@@ -20,7 +20,7 @@ const MIME = {
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
 };
 
-const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html' };
+const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html' };
 
 function compile(routes) {
   return routes.map(([method, pattern, handler, guard]) => {
@@ -151,6 +151,7 @@ if (require.main === module) {
     console.log(`  Beheer:          http://localhost:${port}/admin`);
     console.log(`  Donateursportaal: http://localhost:${port}/portal`);
     console.log(`  Leaderboard:     http://localhost:${port}/leaderboard`);
+    console.log(`  Ontvangers:      http://localhost:${port}/ontvanger`);
   });
 }
 

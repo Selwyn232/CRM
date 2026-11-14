@@ -24,6 +24,18 @@ Een CRM voor Robin Foundation dat laat zien **waar het gedoneerde geld van ieder
 | Beheeromgeving (CRM) | `/admin` | Medewerkers |
 | Donateursportaal | `/portal` | Donateurs |
 | Publiek leaderboard | `/leaderboard` | Iedereen |
+| Ontvangersportaal | `/ontvanger` | Kinderen (met begeleider), scholen, projecten |
+
+## Chat tussen ontvanger en donateur
+
+Ontvangers kunnen inloggen op `/ontvanger` en chatten met de donateurs van wie geld aan hen is besteed. Donateurs chatten via het tabblad **Chat** in hun portaal. Een medewerker zet de inlog aan bij *Ontvangers → 🔑 Inlog & chat*.
+
+Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
+- Je kunt alleen chatten met een donateur of ontvanger als er echt geld van die donateur aan die ontvanger is besteed.
+- Berichten van en naar **kinderen** worden altijd eerst door een medewerker goedgekeurd (*Chatmoderatie*). Bij een kind is een **begeleider** verplicht.
+- Voor scholen en organisaties kan de moderatie uit. Berichten met **telefoonnummers, e-mailadressen, links, social media, adressen of geldverzoeken** worden altijd eerst tegengehouden.
+- Een anonieme donateur blijft ook in de chat anoniem ("Anonieme donateur 1"). Donateurs zien van de ontvanger alleen de naam, en de foto alleen als daar toestemming voor is.
+- Een donateur krijgt een e-mail als er een nieuw (goedgekeurd) bericht van een ontvanger is.
 
 **Donateursportaal**: overzicht en impact ("4 schooljaren, 7 pakketten"), eigen cellen, *Waar gaat mijn geld heen?* (de hele reis per donatie), berichten-inbox met brieven, foto's en filmpjes, doneren, leaderboard met eigen positie, jaaroverzicht voor de belastingaangifte (ANBI), en profiel- en privacy-instellingen (**anoniem blijven** of een eigen weergavenaam).
 
@@ -50,6 +62,7 @@ npm test           # tests
 Demo-accounts:
 - Beheer: `admin@robinfoundation.org` / `admin123` (of `medewerker@robinfoundation.org` / `medewerker123`)
 - Portaal: `sanne@example.nl` / `welkom123` (de eerste 12 demo-donateurs hebben dit wachtwoord)
+- Ontvangers: `grace` / `welkom123` (kind, gemodereerd), `esperanza` en `santarosa` / `welkom123` (school/kliniek)
 
 Omgevingsvariabelen: `PORT`, `CRM_DB` (pad naar het databasebestand, standaard `data/crm.db`), `CRM_UPLOADS` (standaard `data/uploads`), `CRM_RSIN` (voor het jaaroverzicht).
 

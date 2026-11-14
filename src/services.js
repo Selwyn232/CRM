@@ -335,7 +335,88 @@ function leaderboard(db, { period = 'all', category = '', limit = 50 } = {}) {
   }));
 }
 
+
+// ---------------------------------------------------------------------------
+// Chat tussen ontvanger en donateur
+//  - alleen tussen een donateur en een ontvanger aan wie diens geld is besteed
+//  - kinderen: altijd moderatie; contactgegevens/geldverzoeken: altijd moderatie
+// ---------------------------------------------------------------------------
+const CONTACT_PATTERNS = [
+  [/[^\s@]+@[^\s@]+\.[^\s@]{2,}/, 'e-mailadres'],
+  [/\+?\d[\d\s\-().]{7,}\d/, 'telefoonnummer'],
+  [/(https?:\/\/|www\.)\S+/i, 'link'],
+  [/\b(whatsapp|instagram|insta|facebook|tiktok|snapchat|snap|telegram|signal|discord)\b/i, 'social media'],
+  [/(^|\s)@[a-z0-9_.]{3,}/i, 'social media'],
+  [/\b(adres|address|woon ik|i live)\b/i, 'adres'],
+  [/\b(iban|bankrekening|rekeningnummer|western union|moneygram|paypal|stuur (me |mij )?geld|send (me )?money)\b/i, 'geldverzoek'],
+];
+
+function chatFlags(body) {
+  return [...new Set(CONTACT_PATTERNS.filter(([re]) => re.test(body)).map(([, why]) => why))];
+}
+
+function chatRecipient(db, recipientId) {
+  const r = get(db, 'SELECT * FROM recipients WHERE id = ?', recipientId);
+  if (!r || !r.active || !r.chat_enabled || !r.username) throw new AppError(403, 'Chatten met deze ontvanger is niet mogelijk');
+  return r;
+}
+
+function hasFunded(db, donorId, recipientId) {
+  return !!get(db, `SELECT 1 AS ok FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
+    WHERE a.donor_id = ? AND e.recipient_id = ? LIMIT 1`, donorId, recipientId);
+}
+
+const isModerated = (r) => !!r.chat_moderated || r.kind === 'kind';
+
+function notifyChat(db, msg, recipient) {
+  if (msg.sender !== 'recipient') return; // ontvangers krijgen geen e-mail; zij zien het bij inloggen
+  const donor = get(db, 'SELECT * FROM donors WHERE id = ?', msg.donor_id);
+  sendMail(db, donor, `Nieuw bericht van ${recipient.name}`,
+    `Beste ${donor.first_name || donorFullName(donor)},\n\n${recipient.name} heeft je een bericht gestuurd. ` +
+    `Log in op je donateursportaal (Chat) om het te lezen en te antwoorden.\n\nRobin Foundation`, 'chat');
+}
+
+function sendChat(db, { recipientId, donorId, sender, body }, actor) {
+  const text = String(body || '').trim();
+  if (!text) throw new AppError(400, 'Bericht is leeg');
+  if (text.length > 2000) throw new AppError(400, 'Bericht is te lang (max. 2000 tekens)');
+  const recipient = chatRecipient(db, recipientId);
+  if (!hasFunded(db, donorId, recipientId)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
+  const flags = chatFlags(text);
+  const status = isModerated(recipient) || flags.length ? 'in_behandeling' : 'goedgekeurd';
+  const r = run(db, `INSERT INTO chat_messages (recipient_id, donor_id, sender, body, status, flag_reason) VALUES (?,?,?,?,?,?)`,
+    recipientId, donorId, sender, text, status, flags.join(', '));
+  const msg = get(db, 'SELECT * FROM chat_messages WHERE id = ?', Number(r.lastInsertRowid));
+  if (status === 'goedgekeurd') notifyChat(db, msg, recipient);
+  audit(db, actor, 'chatbericht_verstuurd', 'chat_message', msg.id, { status, flags });
+  return msg;
+}
+
+function moderateChat(db, id, approve, reason, user) {
+  const msg = get(db, 'SELECT * FROM chat_messages WHERE id = ?', id);
+  if (!msg) throw new AppError(404, 'Bericht niet gevonden');
+  if (msg.status !== 'in_behandeling') throw new AppError(409, 'Dit bericht is al beoordeeld');
+  const status = approve ? 'goedgekeurd' : 'afgewezen';
+  run(db, `UPDATE chat_messages SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?`,
+    status, approve ? '' : String(reason || '').slice(0, 500), user ? user.id : null, id);
+  if (approve) notifyChat(db, msg, get(db, 'SELECT * FROM recipients WHERE id = ?', msg.recipient_id));
+  audit(db, user ? `medewerker:${user.email}` : 'systeem', approve ? 'chat_goedgekeurd' : 'chat_afgewezen', 'chat_message', id);
+  return { ...msg, status };
+}
+
+// Gesprek zoals één partij het ziet: goedgekeurde berichten + eigen berichten (met status).
+function chatThread(db, recipientId, donorId, viewer) {
+  const rows = all(db, `SELECT id, sender, body, status, reject_reason, read_at, created_at FROM chat_messages
+    WHERE recipient_id = ? AND donor_id = ? AND (status = 'goedgekeurd' OR sender = ?) ORDER BY created_at, id`,
+    recipientId, donorId, viewer);
+  const other = viewer === 'donor' ? 'recipient' : 'donor';
+  run(db, `UPDATE chat_messages SET read_at = datetime('now') WHERE recipient_id = ? AND donor_id = ?
+    AND sender = ? AND status = 'goedgekeurd' AND read_at IS NULL`, recipientId, donorId, other);
+  return rows.map((m) => ({ ...m, mine: m.sender === viewer, reject_reason: m.sender === viewer ? m.reject_reason : '' }));
+}
+
 module.exports = {
+  chatFlags, hasFunded, isModerated, sendChat, moderateChat, chatThread,
   AppError, euro, audit, getCategory, donorFullName, donorPublicName, sendMail,
   createDonation, updateDonation, deleteDonation, spend, reverseExpenditure, addImpactMessage,
   categoryBalances, donorImpact, leaderboard,

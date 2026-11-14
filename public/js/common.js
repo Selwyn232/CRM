@@ -212,7 +212,63 @@ const RF = (() => {
     return `${num(rounded, 1)} ${rounded === 1 ? cat.unit_label : cat.unit_label_plural}`;
   };
 
+
+  // Chatvenster. opts: { load(): Promise<msgs>, send(body): Promise, notice: html, otherName }
+  function chatBox(container, opts) {
+    container.innerHTML = `
+      <div class="chat">
+        ${opts.notice ? `<div class="chat-notice">${opts.notice}</div>` : ''}
+        <div class="chat-log" aria-live="polite"></div>
+        <form class="chat-form">
+          <textarea name="body" rows="2" maxlength="2000" placeholder="Schrijf een bericht…" aria-label="Bericht"></textarea>
+          <button class="btn btn-primary">Verstuur</button>
+        </form>
+        <p class="form-error" hidden style="margin:8px 0 0"></p>
+      </div>`;
+    const log = container.querySelector('.chat-log');
+    const form = container.querySelector('.chat-form');
+    const err = container.querySelector('.form-error');
+    let lastSig = '';
+    const statusText = (m) => (!m.mine ? '' : m.status === 'in_behandeling'
+      ? '<span class="chat-status">⏳ wacht op controle</span>'
+      : m.status === 'afgewezen' ? `<span class="chat-status bad">✗ niet verstuurd${m.reject_reason ? `: ${esc(m.reject_reason)}` : ''}</span>`
+        : m.read_at ? '<span class="chat-status">✓✓ gelezen</span>' : '<span class="chat-status">✓ verstuurd</span>');
+    async function refresh() {
+      const msgs = await opts.load();
+      const sig = msgs.map((m) => `${m.id}:${m.status}:${m.read_at || ''}`).join('|');
+      if (sig === lastSig) return;
+      lastSig = sig;
+      const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+      log.innerHTML = msgs.length ? msgs.map((m) => `<div class="bubble ${m.mine ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
+          <div class="bubble-body">${esc(m.body)}</div>
+          <div class="bubble-meta">${dateTime(m.created_at)} ${statusText(m)}</div></div>`).join('')
+        : `<p class="muted" style="text-align:center;margin:auto">Nog geen berichten. Stuur ${esc(opts.otherName || '')} als eerste een berichtje!</p>`;
+      if (atBottom || !log.dataset.init) { log.scrollTop = log.scrollHeight; log.dataset.init = '1'; }
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = form.elements.body.value.trim();
+      if (!body) return;
+      err.hidden = true;
+      form.querySelector('button').disabled = true;
+      try {
+        await opts.send(body);
+        form.elements.body.value = '';
+        lastSig = '';
+        await refresh();
+        log.scrollTop = log.scrollHeight;
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      finally { form.querySelector('button').disabled = false; }
+    });
+    form.elements.body.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+    });
+    const timer = setInterval(() => { if (!document.body.contains(container) || !container.querySelector('.chat')) clearInterval(timer); else refresh().catch(() => {}); }, 8000);
+    return refresh();
+  }
+
   return {
+    chatBox,
     api, esc, euro, euro0, num, date, dateTime, today, toCents, centsToInput, monthName, label, badge, LABELS,
     toast, modal, formData, confirmDialog, barChart, splitBar, mediaHtml, readFileBase64, debounce, unitsText,
   };

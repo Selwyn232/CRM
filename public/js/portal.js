@@ -50,15 +50,15 @@ function showApp() {
 
 const ROUTES = {
   overzicht: renderOverview, reis: renderJourney, berichten: renderMessages, doneren: renderDonate,
-  leaderboard: renderLeaderboard, jaaroverzicht: renderAnnual, profiel: renderProfile,
+  chat: renderChat, leaderboard: renderLeaderboard, jaaroverzicht: renderAnnual, profiel: renderProfile,
 };
 
 async function route() {
-  const name = (location.hash.replace(/^#\/?/, '') || 'overzicht').split('/')[0];
+  const [name, param] = (location.hash.replace(/^#\/?/, '') || 'overzicht').split('/');
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === name));
   view().innerHTML = '<p class="muted">Laden…</p>';
   try {
-    await (ROUTES[name] || renderOverview)();
+    await (ROUTES[name] || renderOverview)(param);
   } catch (err) {
     if (err.status === 401) return showAuth();
     view().innerHTML = `<div class="card"><p class="form-error" style="margin:0">${esc(err.message)}</p></div>`;
@@ -73,6 +73,10 @@ async function refreshUnread() {
     const n = msgs.filter((m) => !m.read_at).length;
     $('#unread').textContent = n;
     $('#unread').classList.toggle('hidden', !n);
+    const convs = await api('/api/portal/conversations');
+    const c = convs.reduce((s, x) => s + x.unread, 0);
+    $('#chat-unread').textContent = c;
+    $('#chat-unread').classList.toggle('hidden', !c);
   } catch { /* stil */ }
 }
 
@@ -285,6 +289,43 @@ async function renderDonate() {
       location.hash = '#/overzicht';
     } catch (ex) { err.textContent = ex.message; err.hidden = false; }
   };
+}
+
+// ======================================================================= CHAT
+async function renderChat(openId) {
+  const convs = await api('/api/portal/conversations');
+  const selected = openId ? Number(openId) : null;
+  view().innerHTML = `
+    <div class="page-head"><h1>💬 Chat met wie je hebt geholpen</h1></div>
+    <p class="muted" style="max-width:760px">Je kunt chatten met de kinderen, scholen en projecten waaraan jouw geld is besteed.
+      Berichten met kinderen worden eerst door een begeleider van Robin Foundation gelezen, zodat iedereen veilig blijft.
+      ${me.anonymous ? 'Je bent anoniem: de ontvanger ziet je als “Anonieme donateur”.' : `De ontvanger ziet je als <b>${esc(me.public_name)}</b>.`}</p>
+    <div class="chat-layout ${selected ? 'has-open' : ''}">
+      <div class="card chat-list">
+        ${convs.map((c) => `<button data-id="${c.id}" class="${c.id === selected ? 'active' : ''}">
+          ${c.photo_url ? `<img src="${esc(c.photo_url)}" alt="">` : `<div class="avatar">${esc(c.name.slice(0, 1))}</div>`}
+          <div style="min-width:0"><div class="who">${esc(c.name)}</div>
+          <div class="last">${esc(c.last_message || [c.location, c.country].filter(Boolean).join(', '))}</div></div>
+          ${c.unread ? `<span class="pill">${c.unread}</span>` : ''}</button>`).join('')
+          || '<p class="muted" style="padding:10px">Er is nog niemand om mee te chatten. Zodra je geld is besteed aan een ontvanger met een account, verschijnt die hier.</p>'}
+      </div>
+      <div class="card" id="thread">${selected ? '' : '<p class="muted">Kies links met wie je wilt chatten.</p>'}</div>
+    </div>`;
+  view().querySelectorAll('.chat-list button[data-id]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/chat/${b.dataset.id}`; }));
+  const c = convs.find((x) => x.id === selected);
+  if (!c) return;
+  $('#thread').innerHTML = `<div class="card-head"><div><h2 style="margin:0">${esc(c.name)}</h2>
+      <div class="small muted">${esc([c.age ? `${c.age} jaar` : '', c.location, c.country].filter(Boolean).join(' · '))}</div></div>
+      <a class="btn btn-ghost btn-sm" href="#/chat">← Terug</a></div><div id="box"></div>`;
+  await RF.chatBox($('#box'), {
+    otherName: c.name,
+    notice: c.chat_moderated
+      ? '🛡️ Berichten worden eerst door een begeleider gelezen voordat ze worden afgeleverd. Deel geen contactgegevens en vraag niet om die van de ontvanger.'
+      : '🛡️ Deel geen contactgegevens; berichten met telefoonnummers, adressen of links worden eerst gecontroleerd.',
+    load: () => api(`/api/portal/conversations/${c.id}`),
+    send: (body) => api(`/api/portal/conversations/${c.id}`, { method: 'POST', body: { body } }),
+  });
+  refreshUnread();
 }
 
 // ======================================================================= LEADERBOARD

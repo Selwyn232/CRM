@@ -166,3 +166,68 @@ test('HTTP: publieke leaderboard lekt geen ids of namen, portaal & beheer vereis
   // Mutaties zonder JSON content-type worden geweigerd (CSRF).
   assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { cookie }, body: 'amount_cents=100' })).status, 415);
 });
+
+// ------------------------------------------------------------------ chat
+function chatSetup(kind = 'kind', moderated = 1) {
+  const db = freshDb();
+  const donor = addDonor(db, { first_name: 'Sanne', last_name: 'V', anonymous: 0 });
+  const other = addDonor(db);
+  const rid = Number(run(db, `INSERT INTO recipients (name, kind, username, password_hash, managed_by, chat_moderated)
+    VALUES ('Grace', ?, 'grace', ?, 'Juf Marie', ?)`, kind, hashPassword('welkom123'), moderated).lastInsertRowid);
+  S.createDonation(db, { donor_id: donor, category_key: 'schoolmaaltijd', amount_cents: 1000 });
+  S.createDonation(db, { donor_id: other, category_key: 'noodfonds', amount_cents: 1000 });
+  S.spend(db, { category_key: 'schoolmaaltijd', units: 10, recipient_id: rid });
+  return { db, donor, other, rid };
+}
+
+test('chat alleen tussen donateur en ontvanger die gesteund is', () => {
+  const { db, other, rid } = chatSetup();
+  assert.throws(() => S.sendChat(db, { recipientId: rid, donorId: other, sender: 'donor', body: 'Hoi' }), /gesteund/);
+});
+
+test('chat met kind wordt gemodereerd en pas na goedkeuring zichtbaar', () => {
+  const { db, donor, rid } = chatSetup('kind', 0); // ook als moderatie uit staat: kind = altijd moderatie
+  const msg = S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Hoi Grace!' });
+  assert.equal(msg.status, 'in_behandeling');
+  assert.equal(S.chatThread(db, rid, donor, 'recipient').length, 0);   // ontvanger ziet nog niets
+  assert.equal(S.chatThread(db, rid, donor, 'donor').length, 1);       // afzender ziet eigen bericht (in behandeling)
+  S.moderateChat(db, msg.id, true, '', null);
+  assert.equal(S.chatThread(db, rid, donor, 'recipient').length, 1);
+});
+
+test('chat met school zonder moderatie, maar contactgegevens worden tegengehouden', () => {
+  const { db, donor, rid } = chatSetup('school', 0);
+  assert.equal(S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Veel succes dit jaar!' }).status, 'goedgekeurd');
+  const flagged = S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'donor', body: 'Bel me op 06-12345678 of via WhatsApp' });
+  assert.equal(flagged.status, 'in_behandeling');
+  assert.match(flagged.flag_reason, /telefoonnummer/);
+  // antwoord van ontvanger -> e-mailmelding naar donateur
+  S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Dankjewel!' });
+  assert.equal(get(db, "SELECT COUNT(*) AS n FROM outbox WHERE kind='chat'").n, 1);
+});
+
+test('HTTP: ontvanger logt in, ziet anonieme donateur anoniem en kan niet bij beheer of portaal', async (t) => {
+  const { db, donor, rid } = chatSetup('school', 0);
+  run(db, 'UPDATE donors SET anonymous = 1 WHERE id = ?', donor);
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(`${base}/api/recipient/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'grace', password: 'welkom123' }),
+  });
+  assert.equal(login.status, 200);
+  const me = await login.json();
+  assert.equal(me.password_hash, undefined);
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const supporters = await (await fetch(`${base}/api/recipient/supporters`, { headers: { cookie } })).json();
+  assert.equal(supporters.length, 1);
+  assert.equal(supporters[0].name, 'Anonieme donateur 1');
+  assert.ok(!JSON.stringify(supporters).includes('Sanne'));
+  const sent = await fetch(`${base}/api/recipient/supporters/${donor}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ body: 'Dankjewel!' }),
+  });
+  assert.equal(sent.status, 200);
+  assert.equal((await fetch(`${base}/api/admin/recipients`, { headers: { cookie } })).status, 401);
+  assert.equal((await fetch(`${base}/api/portal/overview`, { headers: { cookie } })).status, 401);
+  assert.equal(rid > 0, true);
+});

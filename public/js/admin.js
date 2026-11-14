@@ -60,6 +60,7 @@ async function refreshNavCounts() {
     const d = await api('/api/admin/dashboard');
     $('#nav-cells').textContent = d.totals.open_cells || '';
     $('#nav-tasks').textContent = d.totals.open_tasks || '';
+    $('#nav-chat').textContent = d.totals.pending_chats || '';
   } catch { /* stil */ }
 }
 
@@ -73,6 +74,7 @@ const ROUTES = {
   cellen: renderCells,
   bestedingen: (id) => (id ? renderExpenditure(id) : renderExpenditures()),
   ontvangers: renderRecipients,
+  chat: renderChatModeration,
   taken: renderTasks,
   campagnes: renderCampaigns,
   leaderboard: renderLeaderboard,
@@ -803,9 +805,11 @@ async function renderRecipients() {
       <div style="display:flex;gap:12px;align-items:center">
         ${r.photo_url ? `<img src="${esc(r.photo_url)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover">` : `<div class="avatar">${esc(initials(r.name))}</div>`}
         <div><b>${esc(r.name)}</b><div class="small muted">${esc(label('recipient', r.kind))}${r.age ? ` · ${r.age} jaar` : ''} · ${esc([r.location, r.country].filter(Boolean).join(', '))}</div>
-        <div class="small">${r.consent ? '✅ toestemming delen' : '🚫 geen toestemming'}</div></div></div>
+        <div class="small">${r.consent ? '✅ toestemming delen' : '🚫 geen toestemming'}</div>
+        <div class="small">${r.has_login ? `🔑 ${esc(r.username)} · ${r.chat_enabled ? (r.chat_moderated ? '💬 chat (gemodereerd)' : '💬 chat') : 'chat uit'}` : '<span class="muted">geen inlog</span>'}</div></div></div>
       <p class="small" style="margin-top:10px">${esc(r.story).slice(0, 160)}</p>
-      <div class="small muted">${r.expenditure_count} bestedingen · ${euro(r.received_cents)}</div></div>`).join('') || '<p class="muted">Nog geen ontvangers.</p>'}</div>`;
+      <div class="small muted">${r.expenditure_count} bestedingen · ${euro(r.received_cents)}${r.chat_count ? ` · ${r.chat_count} chatberichten` : ''}</div>
+      <button class="btn btn-ghost btn-sm" data-access="${r.id}" style="margin-top:8px">🔑 Inlog & chat</button></div>`).join('') || '<p class="muted">Nog geen ontvangers.</p>'}</div>`;
   const form = (r = {}) => modal({
     title: r.id ? 'Ontvanger bewerken' : 'Nieuwe ontvanger', wide: true,
     body: `<div class="field-row"><div class="field"><label>Naam</label><input type="text" name="name" required value="${esc(r.name || '')}"></div>
@@ -826,7 +830,87 @@ async function renderRecipients() {
     },
   });
   $('#new').onclick = () => form();
-  view().querySelectorAll('[data-r]').forEach((el) => el.addEventListener('click', () => form(rows.find((r) => r.id === Number(el.dataset.r)))));
+  view().querySelectorAll('[data-r]').forEach((el) => el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-access]')) return;
+    form(rows.find((r) => r.id === Number(el.dataset.r)));
+  }));
+  view().querySelectorAll('[data-access]').forEach((b) => b.addEventListener('click', () => accessForm(rows.find((r) => r.id === Number(b.dataset.access)))));
+}
+
+function accessForm(r) {
+  const isChild = r.kind === 'kind';
+  modal({
+    title: `Inlog & chat: ${r.name}`,
+    body: `
+      <p class="small muted">Met een inlog kan de ontvanger op <b>/ontvanger</b> chatten met de donateurs van wie geld aan hem/haar is besteed.
+        Donateurs zien alleen de voornaam; ontvangers zien de publieke naam van de donateur (anoniem blijft anoniem).</p>
+      <div class="field"><label>Gebruikersnaam</label><input type="text" name="username" value="${esc(r.username || '')}" placeholder="bv. amara" autocapitalize="none">
+        <div class="hint">Leeg laten = inlog verwijderen.</div></div>
+      <div class="field"><label>${r.has_login ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="text" name="password" minlength="8" autocomplete="off"></div>
+      <div class="field"><label>Begeleider ${isChild ? '(verplicht bij kinderen)' : '(optioneel)'}</label>
+        <input type="text" name="managed_by" value="${esc(r.managed_by || '')}" placeholder="bv. Juf Marie (Escuela Esperanza)" ${isChild ? 'required' : ''}>
+        <div class="hint">De volwassene die het account beheert en het kind helpt met lezen en schrijven.</div></div>
+      <label class="check"><input type="checkbox" name="chat_enabled" ${r.chat_enabled ?? 1 ? 'checked' : ''}> Chat ingeschakeld</label>
+      <label class="check"><input type="checkbox" name="chat_moderated" ${r.chat_moderated || isChild ? 'checked' : ''} ${isChild ? 'disabled' : ''}>
+        <span>Berichten eerst laten goedkeuren door een medewerker ${isChild ? '<span class="muted">(altijd aan bij kinderen)</span>' : ''}</span></label>
+      <p class="hint">Berichten met contactgegevens, links, social media of geldverzoeken worden altijd eerst ter controle aangeboden.</p>`,
+    onSubmit: async (f) => {
+      await api(`/api/admin/recipients/${r.id}/access`, { method: 'PUT', body: f });
+      toast('Inlog & chatinstellingen opgeslagen');
+      renderRecipients();
+    },
+  });
+}
+
+// ======================================================================= CHATMODERATIE
+async function renderChatModeration() {
+  view().innerHTML = `
+    <div class="page-head"><h1>Chatmoderatie</h1>
+      <div class="toolbar"><select id="f-status">${opt('in_behandeling', 'Wacht op controle', 'in_behandeling')}${opt('goedgekeurd', 'Goedgekeurd')}${opt('afgewezen', 'Afgewezen')}${opt('', 'Alle')}</select></div></div>
+    <p class="muted" style="max-width:820px">Berichten tussen donateurs en kinderen (en berichten met contactgegevens, links of geldverzoeken) worden pas afgeleverd na goedkeuring.
+      Controleer of er geen persoonlijke gegevens worden gedeeld en of de toon passend is.</p>
+    <div id="list"></div>`;
+  const load = async () => {
+    const rows = await api(`/api/admin/chat?status=${$('#f-status').value}`);
+    $('#list').innerHTML = rows.length ? rows.map((m) => `<div class="card" style="margin-bottom:12px">
+      <div class="card-head"><div>
+        <b>${m.sender === 'donor' ? `${esc(m.donor_name)} → ${esc(m.recipient_name)}` : `${esc(m.recipient_name)} → ${esc(m.donor_name)}`}</b>
+        <span class="small muted">· ${dateTime(m.created_at)} · ${esc(label('recipient', m.recipient_kind))}${m.managed_by ? ` (begeleider: ${esc(m.managed_by)})` : ''}</span>
+        ${m.flag_reason ? `<div><span class="badge badge-hoog">⚠️ bevat mogelijk: ${esc(m.flag_reason)}</span></div>` : ''}</div>
+        ${m.status === 'in_behandeling' ? '' : `<span class="badge badge-${m.status === 'goedgekeurd' ? 'besteed' : 'geannuleerd'}">${esc(m.status)}${m.reviewed_by_name ? ` · ${esc(m.reviewed_by_name)}` : ''}</span>`}</div>
+      <div class="bubble theirs" style="max-width:100%"><div class="bubble-body">${esc(m.body)}</div></div>
+      ${m.reject_reason ? `<p class="small muted">Reden afwijzing: ${esc(m.reject_reason)}</p>` : ''}
+      <div class="toolbar" style="margin-top:10px">
+        ${m.status === 'in_behandeling' ? `<button class="btn btn-primary btn-sm" data-approve="${m.id}">✓ Goedkeuren</button>
+          <button class="btn btn-danger btn-sm" data-reject="${m.id}">✗ Afwijzen</button>` : ''}
+        <button class="btn btn-ghost btn-sm" data-thread="${m.recipient_id}:${m.donor_id}">Heel gesprek bekijken</button>
+        <a class="btn btn-ghost btn-sm" href="#/donateurs/${m.donor_id}">Donateur</a></div></div>`).join('')
+      : '<div class="card"><p class="empty">Geen berichten 🎉</p></div>';
+    $('#list').querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+      await api(`/api/admin/chat/${b.dataset.approve}/approve`, { method: 'POST', body: {} });
+      toast('Goedgekeurd en afgeleverd'); refreshNavCounts(); load();
+    }));
+    $('#list').querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', () => modal({
+      title: 'Bericht afwijzen',
+      body: '<div class="field"><label>Reden (de afzender ziet deze)</label><input type="text" name="reason" value="Bevat persoonlijke gegevens"></div>',
+      submitLabel: 'Afwijzen',
+      onSubmit: async (f) => {
+        await api(`/api/admin/chat/${b.dataset.reject}/reject`, { method: 'POST', body: f });
+        toast('Afgewezen'); refreshNavCounts(); load();
+      },
+    })));
+    $('#list').querySelectorAll('[data-thread]').forEach((b) => b.addEventListener('click', async () => {
+      const [rid, did] = b.dataset.thread.split(':');
+      const msgs = await api(`/api/admin/chat/thread?recipient_id=${rid}&donor_id=${did}`);
+      modal({
+        title: 'Volledig gesprek', wide: true,
+        body: `<div class="chat-log" style="height:auto;max-height:60vh">${msgs.map((m) => `<div class="bubble ${m.sender === 'donor' ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
+          <div class="bubble-body">${esc(m.body)}</div><div class="bubble-meta">${m.sender === 'donor' ? 'Donateur' : 'Ontvanger'} · ${dateTime(m.created_at)} · ${esc(m.status)}</div></div>`).join('')}</div>`,
+      });
+    }));
+  };
+  $('#f-status').onchange = load;
+  await load();
 }
 
 // ======================================================================= TAKEN

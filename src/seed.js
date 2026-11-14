@@ -73,7 +73,7 @@ const LETTERS = {
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 function seed(db) {
-  db.exec(`DELETE FROM donor_messages; DELETE FROM impact_messages; DELETE FROM allocations; DELETE FROM expenditures;
+  db.exec(`DELETE FROM chat_messages; DELETE FROM donor_messages; DELETE FROM impact_messages; DELETE FROM allocations; DELETE FROM expenditures;
     DELETE FROM cells; DELETE FROM donations; DELETE FROM interactions; DELETE FROM tasks; DELETE FROM campaigns;
     DELETE FROM recipients; DELETE FROM outbox; DELETE FROM sessions; DELETE FROM audit_log; DELETE FROM donors; DELETE FROM users;`);
 
@@ -196,6 +196,38 @@ function seed(db) {
     JOIN expenditures e ON e.id = im.expenditure_id WHERE im.id = donor_messages.impact_message_id)`);
   run(db, `UPDATE impact_messages SET created_at = (SELECT spent_at || ' 15:00:00' FROM expenditures WHERE id = impact_messages.expenditure_id)`);
 
+  // Inlog voor ontvangers + voorbeeldchats
+  const access = [
+    [recipientIds[7], 'grace', 'Juf Marie (Escuela Esperanza)', 1],
+    [recipientIds[5], 'esperanza', 'Directeur Jean-Baptiste', 0],
+    [recipientIds[8], 'santarosa', 'Zuster Rosa', 0],
+  ];
+  for (const [rid, username, managedBy, moderated] of access) {
+    run(db, 'UPDATE recipients SET username = ?, password_hash = ?, managed_by = ?, chat_enabled = 1, chat_moderated = ? WHERE id = ?',
+      username, portalHash, managedBy, moderated, rid);
+  }
+  const pairs = all(db, `SELECT DISTINCT a.donor_id, e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
+    WHERE e.recipient_id IN (?,?,?) ORDER BY a.donor_id = ? DESC, e.recipient_id = ? DESC, a.donor_id`, recipientIds[7], recipientIds[5], recipientIds[8], donorIds[0], recipientIds[7]);
+  const convo = [
+    ['donor', 'Hoi! Ik heb je brief ontvangen, wat leuk om te lezen. Hoe gaat het op school?', 'goedgekeurd', '-20 days'],
+    ['recipient', 'Hallo! Het gaat goed. We leren nu breuken en ik vind het moeilijk maar ook leuk 😊', 'goedgekeurd', '-18 days'],
+    ['donor', 'Breuken vond ik vroeger ook lastig! Wat eet je het liefst bij de lunch?', 'goedgekeurd', '-17 days'],
+    ['recipient', 'Rijst met bonen! En op vrijdag krijgen we soms banaan. Dankjewel voor je hulp!', 'goedgekeurd', '-15 days'],
+  ];
+  pairs.slice(0, 3).forEach((pair, i) => {
+    for (const [sender, body, status, when] of convo.slice(0, i === 0 ? 4 : 2)) {
+      run(db, `INSERT INTO chat_messages (recipient_id, donor_id, sender, body, status, reviewed_by, reviewed_at, read_at, created_at)
+        VALUES (?,?,?,?,?,?, datetime('now', ?), datetime('now', ?), datetime('now', ?))`,
+        pair.recipient_id, pair.donor_id, sender, body, status, adminId, when, when, when);
+    }
+  });
+  if (pairs.length) {
+    // Eén bericht dat nog op moderatie wacht (bevat een telefoonnummer).
+    run(db, `INSERT INTO chat_messages (recipient_id, donor_id, sender, body, status, flag_reason, created_at)
+      VALUES (?,?, 'donor', 'Zullen we via WhatsApp verder praten? Mijn nummer is 06-12345678', 'in_behandeling', 'telefoonnummer, social media', datetime('now','-2 hours'))`,
+      pairs[0].recipient_id, pairs[0].donor_id);
+  }
+
   // Interacties & taken
   const types = ['telefoon', 'email', 'afspraak', 'notitie', 'evenement'];
   const subjects = ['Bedankbelletje', 'Vraag over jaaroverzicht', 'Kennismaking op kantoor', 'Wil graag maandelijks gaan geven',
@@ -236,6 +268,7 @@ if (require.main === module) {
   console.log('Demodata geladen:', stats);
   console.log('Beheer:  admin@robinfoundation.org / admin123   (of medewerker@robinfoundation.org / medewerker123)');
   console.log('Portaal: sanne@example.nl / welkom123');
+  console.log('Ontvangers: grace / welkom123 (kind, gemodereerd) · esperanza / welkom123 (school)');
 }
 
 module.exports = { seed };

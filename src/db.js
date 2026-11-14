@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS outbox (
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('staff','donor')),
+  kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')),
   subject_id INTEGER NOT NULL,
   expires_at TEXT NOT NULL
 );
@@ -218,6 +218,24 @@ CREATE INDEX IF NOT EXISTS idx_alloc_exp ON allocations(expenditure_id);
 CREATE INDEX IF NOT EXISTS idx_alloc_donor ON allocations(donor_id);
 CREATE INDEX IF NOT EXISTS idx_dm_donor ON donor_messages(donor_id);
 CREATE INDEX IF NOT EXISTS idx_interactions_donor ON interactions(donor_id);
+
+-- Chat tussen ontvanger en donateur. Berichten kunnen eerst door een medewerker gemodereerd worden.
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recipient_id INTEGER NOT NULL REFERENCES recipients(id) ON DELETE CASCADE,
+  donor_id INTEGER NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL CHECK (sender IN ('donor','recipient')),
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'goedgekeurd' CHECK (status IN ('in_behandeling','goedgekeurd','afgewezen')),
+  flag_reason TEXT NOT NULL DEFAULT '',
+  reject_reason TEXT NOT NULL DEFAULT '',
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TEXT,
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_pair ON chat_messages(recipient_id, donor_id);
+CREATE INDEX IF NOT EXISTS idx_chat_status ON chat_messages(status);
 `;
 
 const DEFAULT_CATEGORIES = [
@@ -248,6 +266,7 @@ function openDb(file) {
   if (target !== ':memory:') fs.mkdirSync(path.dirname(target), { recursive: true });
   const db = new DatabaseSync(target);
   db.exec(SCHEMA);
+  migrate(db);
   const insertCat = db.prepare(`INSERT OR IGNORE INTO categories
     (key, name, description, unit_label, unit_label_plural, unit_cost_cents, icon, color, sort_order)
     VALUES (?,?,?,?,?,?,?,?,?)`);
@@ -256,6 +275,26 @@ function openDb(file) {
       c.unit_cost_cents, c.icon, c.color, c.sort_order);
   }
   return db;
+}
+
+// Kolommen/constraints toevoegen aan bestaande databases.
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(recipients)').all().map((c) => c.name);
+  const add = (col, def) => { if (!cols.includes(col)) db.exec(`ALTER TABLE recipients ADD COLUMN ${col} ${def}`); };
+  add('username', 'TEXT');                                    // inlognaam ontvanger
+  add('password_hash', 'TEXT');
+  add('managed_by', "TEXT NOT NULL DEFAULT ''");              // begeleider (bij kinderen verplicht)
+  add('chat_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  add('chat_moderated', 'INTEGER NOT NULL DEFAULT 1');        // berichten eerst laten goedkeuren
+  add('last_login_at', 'TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_recipients_username ON recipients(username COLLATE NOCASE)');
+
+  // Oude sessions-tabel kende geen ontvanger-sessies: opnieuw aanmaken (sessies zijn wegwerpdata).
+  const s = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").get();
+  if (s && !s.sql.includes("'recipient'")) {
+    db.exec(`DROP TABLE sessions; CREATE TABLE sessions (token TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK (kind IN ('staff','donor','recipient')), subject_id INTEGER NOT NULL, expires_at TEXT NOT NULL);`);
+  }
 }
 
 // Voert fn uit binnen een transactie; rollback bij een fout.

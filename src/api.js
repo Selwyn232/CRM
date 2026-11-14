@@ -11,6 +11,7 @@ const { AppError } = S;
 
 const STAFF_COOKIE = 'rf_staff';
 const DONOR_COOKIE = 'rf_donor';
+const RECIPIENT_COOKIE = 'rf_recipient';
 const UPLOAD_EXT = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.mov', '.pdf']);
 
 const str = (v, max = 2000) => (v == null ? '' : String(v).trim().slice(0, max));
@@ -62,6 +63,12 @@ function publicDonor(d) {
   if (!d) return d;
   const { password_hash, ...rest } = d;
   return { ...rest, has_portal: !!password_hash, full_name: S.donorFullName(d), public_name: S.donorPublicName(d) };
+}
+
+function publicRecipient(r) {
+  if (!r) return r;
+  const { password_hash, ...rest } = r;
+  return { ...rest, has_login: !!(r.username && password_hash), chat_moderated: S.isModerated(r) ? 1 : 0 };
 }
 
 function annualStatement(db, donorId, year) {
@@ -133,6 +140,38 @@ function buildRoutes({ db, uploadDir }) {
     if (!d) throw new AppError(401, 'Niet ingelogd');
     ctx.donor = d;
     ctx.actor = `donateur:${d.id}`;
+  };
+
+  const recipient = (ctx) => {
+    const s = auth.getSession(db, ctx.cookies[RECIPIENT_COOKIE]);
+    if (!s || s.kind !== 'recipient') throw new AppError(401, 'Niet ingelogd');
+    const r = get(db, 'SELECT * FROM recipients WHERE id = ?', s.subject_id);
+    if (!r || !r.active || !r.password_hash) throw new AppError(401, 'Niet ingelogd');
+    ctx.recipient = r;
+    ctx.actor = `ontvanger:${r.id}`;
+  };
+
+  // Donateurs die een ontvanger hebben gesteund, zoals de ontvanger ze mag zien (anoniem blijft anoniem).
+  const supportersOf = (recipientId) => {
+    let anon = 0;
+    return all(db, `SELECT d.id, d.anonymous, d.display_name, d.first_name, d.last_name, d.company_name, d.donor_type,
+        (SELECT GROUP_CONCAT(DISTINCT c.name) FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
+          JOIN categories c ON c.key = e.category_key WHERE a.donor_id = d.id AND e.recipient_id = ?) AS categories,
+        (SELECT MIN(e.spent_at) FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id
+          WHERE a.donor_id = d.id AND e.recipient_id = ?) AS since,
+        (SELECT body FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ? AND (m.status='goedgekeurd' OR m.sender='recipient')
+          ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
+        (SELECT MAX(created_at) FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ?) AS last_at,
+        (SELECT COUNT(*) FROM chat_messages m WHERE m.donor_id = d.id AND m.recipient_id = ? AND m.sender='donor'
+          AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
+      FROM donors d WHERE d.id IN (SELECT a.donor_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE e.recipient_id = ?)
+      ORDER BY last_at IS NULL, last_at DESC, d.id`, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId)
+      .map((d) => ({
+        id: d.id,
+        name: d.anonymous ? `Anonieme donateur ${++anon}` : S.donorPublicName(d),
+        anonymous: !!d.anonymous,
+        categories: d.categories || '', since: d.since, last_message: d.last_message, last_at: d.last_at, unread: d.unread,
+      }));
   };
 
   const setCookie = (ctx, name, token) => { ctx.headers = { 'Set-Cookie': auth.sessionCookie(name, token, ctx.secure) }; };
@@ -289,6 +328,73 @@ function buildRoutes({ db, uploadDir }) {
       FROM campaigns cp WHERE active = 1 AND (end_date IS NULL OR end_date >= date('now')) ORDER BY id DESC`), donor],
     ['GET', '/api/portal/categories', () => categories().filter((c) => c.active), donor],
 
+    // ================================================================ DONATEURSPORTAAL: CHAT
+    ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated,
+        CASE WHEN r.consent = 1 THEN r.photo_url ELSE '' END AS photo_url,
+        (SELECT body FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ? AND (m.status='goedgekeurd' OR m.sender='donor')
+          ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
+        (SELECT MAX(created_at) FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ?) AS last_at,
+        (SELECT COUNT(*) FROM chat_messages m WHERE m.recipient_id = r.id AND m.donor_id = ? AND m.sender='recipient'
+          AND m.status='goedgekeurd' AND m.read_at IS NULL) AS unread
+      FROM recipients r
+      WHERE r.active = 1 AND r.chat_enabled = 1 AND r.username IS NOT NULL AND r.password_hash IS NOT NULL
+        AND r.id IN (SELECT e.recipient_id FROM allocations a JOIN expenditures e ON e.id = a.expenditure_id WHERE a.donor_id = ?)
+      ORDER BY last_at IS NULL, last_at DESC, r.name`, ctx.donor.id, ctx.donor.id, ctx.donor.id, ctx.donor.id)
+      .map((r) => ({ ...r, chat_moderated: S.isModerated(r) ? 1 : 0 })), donor],
+    ['GET', '/api/portal/conversations/:id', (ctx) => {
+      const rid = id(ctx.params.id);
+      if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
+      return S.chatThread(db, rid, ctx.donor.id, 'donor');
+    }, donor],
+    ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
+      { recipientId: id(ctx.params.id), donorId: ctx.donor.id, sender: 'donor', body: ctx.body.body }, ctx.actor), donor],
+
+    // ================================================================ ONTVANGERSPORTAAL
+    ['POST', '/api/recipient/login', (ctx) => {
+      const r = get(db, 'SELECT * FROM recipients WHERE username = ? AND active = 1', str(ctx.body.username, 100));
+      if (!r || !auth.verifyPassword(ctx.body.password || '', r.password_hash)) throw new AppError(401, 'Onjuiste gebruikersnaam of wachtwoord');
+      run(db, "UPDATE recipients SET last_login_at = datetime('now') WHERE id = ?", r.id);
+      setCookie(ctx, RECIPIENT_COOKIE, auth.createSession(db, 'recipient', r.id));
+      return publicRecipient(r);
+    }],
+    ['POST', '/api/recipient/logout', (ctx) => {
+      auth.destroySession(db, ctx.cookies[RECIPIENT_COOKIE]);
+      setCookie(ctx, RECIPIENT_COOKIE, '');
+    }],
+    ['GET', '/api/recipient/me', (ctx) => publicRecipient(ctx.recipient), recipient],
+    ['GET', '/api/recipient/supporters', (ctx) => {
+      if (!ctx.recipient.chat_enabled) return [];
+      return supportersOf(ctx.recipient.id);
+    }, recipient],
+    ['GET', '/api/recipient/supporters/:id', (ctx) => {
+      const did = id(ctx.params.id);
+      if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
+      return S.chatThread(db, ctx.recipient.id, did, 'recipient');
+    }, recipient],
+    ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
+      { recipientId: ctx.recipient.id, donorId: id(ctx.params.id), sender: 'recipient', body: ctx.body.body }, ctx.actor), recipient],
+    ['POST', '/api/recipient/password', (ctx) => {
+      if (!auth.verifyPassword(ctx.body.current || '', ctx.recipient.password_hash)) throw new AppError(400, 'Huidig wachtwoord klopt niet');
+      if (!ctx.body.password || String(ctx.body.password).length < 8) throw new AppError(400, 'Nieuw wachtwoord moet minimaal 8 tekens zijn');
+      run(db, 'UPDATE recipients SET password_hash = ? WHERE id = ?', auth.hashPassword(ctx.body.password), ctx.recipient.id);
+    }, recipient],
+
+    // ================================================================ BEHEER: CHATMODERATIE
+    ['GET', '/api/admin/chat', (ctx) => {
+      const status = ['in_behandeling', 'goedgekeurd', 'afgewezen'].includes(ctx.query.status) ? ctx.query.status : null;
+      return all(db, `SELECT m.*, r.name AS recipient_name, r.kind AS recipient_kind, r.managed_by,
+          d.first_name, d.last_name, d.company_name, d.donor_type, u.name AS reviewed_by_name
+        FROM chat_messages m JOIN recipients r ON r.id = m.recipient_id JOIN donors d ON d.id = m.donor_id
+        LEFT JOIN users u ON u.id = m.reviewed_by
+        ${status ? 'WHERE m.status = ?' : ''} ORDER BY ${status === 'in_behandeling' ? 'm.created_at ASC' : 'm.created_at DESC'}, m.id LIMIT 500`,
+        ...(status ? [status] : [])).map((m) => ({ ...m, donor_name: S.donorFullName(m) }));
+    }, staff],
+    ['GET', '/api/admin/chat/thread', (ctx) => all(db, `SELECT m.*, u.name AS reviewed_by_name FROM chat_messages m
+      LEFT JOIN users u ON u.id = m.reviewed_by WHERE m.recipient_id = ? AND m.donor_id = ? ORDER BY m.created_at, m.id`,
+      id(ctx.query.recipient_id), id(ctx.query.donor_id)), staff],
+    ['POST', '/api/admin/chat/:id/approve', (ctx) => S.moderateChat(db, id(ctx.params.id), true, '', ctx.user), staff],
+    ['POST', '/api/admin/chat/:id/reject', (ctx) => S.moderateChat(db, id(ctx.params.id), false, ctx.body.reason, ctx.user), staff],
+
     // ================================================================ BEHEER: DASHBOARD
     ['GET', '/api/admin/dashboard', () => {
       const totals = get(db, `SELECT
@@ -304,7 +410,8 @@ function buildRoutes({ db, uploadDir }) {
         (SELECT COUNT(*) FROM cells WHERE remaining_cents > 0) AS open_cells,
         (SELECT COUNT(*) FROM expenditures e WHERE NOT EXISTS (SELECT 1 FROM impact_messages im WHERE im.expenditure_id = e.id)) AS expenditures_without_message,
         (SELECT COUNT(*) FROM tasks WHERE status='open') AS open_tasks,
-        (SELECT COUNT(*) FROM tasks WHERE status='open' AND due_date < date('now')) AS overdue_tasks`);
+        (SELECT COUNT(*) FROM tasks WHERE status='open' AND due_date < date('now')) AS overdue_tasks,
+        (SELECT COUNT(*) FROM chat_messages WHERE status='in_behandeling') AS pending_chats`);
       const monthly = all(db, `SELECT strftime('%Y-%m', received_at) AS month, SUM(amount_cents) AS cents, COUNT(*) AS n
         FROM donations WHERE status='ontvangen' AND received_at >= date('now','start of month','-11 months')
         GROUP BY month ORDER BY month`);
@@ -420,6 +527,7 @@ function buildRoutes({ db, uploadDir }) {
         status='inactief', updated_at=datetime('now') WHERE id = ?`, donorId);
       run(db, 'DELETE FROM sessions WHERE kind = ? AND subject_id = ?', 'donor', donorId);
       run(db, 'DELETE FROM interactions WHERE donor_id = ?', donorId);
+      run(db, 'DELETE FROM chat_messages WHERE donor_id = ?', donorId);
       run(db, 'UPDATE outbox SET to_email = ?, body = ? WHERE donor_id = ?', '', '[verwijderd]', donorId);
       S.audit(db, ctx.actor, 'donateur_geanonimiseerd', 'donor', donorId);
     }, admin],
@@ -537,19 +645,46 @@ function buildRoutes({ db, uploadDir }) {
     // ================================================================ BEHEER: ONTVANGERS
     ['GET', '/api/admin/recipients', () => all(db, `SELECT r.*,
         (SELECT COUNT(*) FROM expenditures WHERE recipient_id = r.id) AS expenditure_count,
-        COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE recipient_id = r.id),0) AS received_cents
-      FROM recipients r ORDER BY r.active DESC, r.name COLLATE NOCASE`), staff],
+        COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE recipient_id = r.id),0) AS received_cents,
+        (SELECT COUNT(*) FROM chat_messages WHERE recipient_id = r.id) AS chat_count
+      FROM recipients r ORDER BY r.active DESC, r.name COLLATE NOCASE`).map(publicRecipient), staff],
     ['POST', '/api/admin/recipients', (ctx) => {
       const b = recipientInput(ctx.body);
       const r = run(db, `INSERT INTO recipients (name, kind, age, school, location, country, story, photo_url, consent, active)
         VALUES (?,?,?,?,?,?,?,?,?,?)`, b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active);
-      return get(db, 'SELECT * FROM recipients WHERE id = ?', Number(r.lastInsertRowid));
+      return publicRecipient(get(db, 'SELECT * FROM recipients WHERE id = ?', Number(r.lastInsertRowid)));
     }, staff],
     ['PUT', '/api/admin/recipients/:id', (ctx) => {
       const b = recipientInput(ctx.body);
       run(db, `UPDATE recipients SET name=?, kind=?, age=?, school=?, location=?, country=?, story=?, photo_url=?, consent=?, active=? WHERE id=?`,
         b.name, b.kind, b.age, b.school, b.location, b.country, b.story, b.photo_url, b.consent, b.active, id(ctx.params.id));
-      return get(db, 'SELECT * FROM recipients WHERE id = ?', id(ctx.params.id));
+      return publicRecipient(get(db, 'SELECT * FROM recipients WHERE id = ?', id(ctx.params.id)));
+    }, staff],
+    // Inlog & chatinstellingen van een ontvanger.
+    ['PUT', '/api/admin/recipients/:id/access', (ctx) => {
+      const rid = id(ctx.params.id);
+      const r = get(db, 'SELECT * FROM recipients WHERE id = ?', rid);
+      if (!r) throw new AppError(404, 'Ontvanger niet gevonden');
+      const b = ctx.body;
+      const username = str(b.username, 60).toLowerCase() || null;
+      if (username && !/^[a-z0-9._-]{3,60}$/.test(username)) throw new AppError(400, 'Gebruikersnaam: minimaal 3 tekens, alleen letters, cijfers, punt, - en _');
+      if (username && get(db, 'SELECT id FROM recipients WHERE username = ? AND id <> ?', username, rid)) throw new AppError(409, 'Gebruikersnaam is al in gebruik');
+      const managedBy = str(b.managed_by, 200);
+      if (username && r.kind === 'kind' && !managedBy) throw new AppError(400, 'Een kind heeft een begeleider nodig die het account beheert');
+      if (b.password && String(b.password).length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
+      if (username && !b.password && !r.password_hash) throw new AppError(400, 'Stel een wachtwoord in');
+      const moderated = r.kind === 'kind' ? 1 : bool(b.chat_moderated);
+      tx(db, () => {
+        run(db, 'UPDATE recipients SET username = ?, managed_by = ?, chat_enabled = ?, chat_moderated = ? WHERE id = ?',
+          username, managedBy, bool(b.chat_enabled), moderated, rid);
+        if (b.password) run(db, 'UPDATE recipients SET password_hash = ? WHERE id = ?', auth.hashPassword(b.password), rid);
+        if (!username) {
+          run(db, 'UPDATE recipients SET password_hash = NULL WHERE id = ?', rid);
+          run(db, "DELETE FROM sessions WHERE kind = 'recipient' AND subject_id = ?", rid);
+        }
+      });
+      S.audit(db, ctx.actor, 'ontvanger_toegang_gewijzigd', 'recipient', rid, { username, chat: bool(b.chat_enabled), moderated });
+      return publicRecipient(get(db, 'SELECT * FROM recipients WHERE id = ?', rid));
     }, staff],
     ['DELETE', '/api/admin/recipients/:id', (ctx) => { run(db, 'DELETE FROM recipients WHERE id = ?', id(ctx.params.id)); }, admin],
 
