@@ -1,4 +1,4 @@
-// Ontvangersportaal: chatten met de donateurs die jou hebben gesteund.
+// Ontvangersportaal: chatten met de sponsoren die jou hebben gesteund.
 'use strict';
 
 const { api, esc, date, dateTime, toast, modal } = RF;
@@ -42,11 +42,11 @@ async function render(openId) {
     <section class="hero">
       <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Robin Foundation</div>
       <h1>Hoi ${esc(me.managed_by ? me.managed_by.replace(/\s*\(.*\)$/, '') : me.name)}!</h1>
-      <p>Hier chat je met de sponsors van jullie kinderen. Vertel hoe het met je kind gaat. Berichten worden automatisch vertaald.</p>
+      <p>Hier chat je met de sponsoren van jullie kinderen. Vertel hoe het met je kind gaat. Berichten worden automatisch vertaald.</p>
     </section>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
-        <h3>Sponsors · ${people.length}</h3>
+        <h3>Sponsoren · ${people.length}</h3>
         ${people.map((p) => `<button data-id="${p.id}" class="${p.id === selected ? 'active' : ''}">
           ${p.anonymous ? `<span class="avatar sm">${RF.icon('eye-off', 'icon-sm')}</span>` : RF.avatar(p.name, 'sm')}
           <div style="min-width:0"><div class="who">${esc(p.name)}</div>

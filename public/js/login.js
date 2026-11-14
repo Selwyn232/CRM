@@ -1,4 +1,4 @@
-// Eén inlogpagina voor donateurs, ontvangers (ouders), medewerkers en veldwerkers.
+// Eén inlogpagina voor sponsoren, ontvangers (ouders), medewerkers en veldwerkers.
 'use strict';
 
 const $ = (s) => document.querySelector(s);
@@ -187,7 +187,7 @@ try {
 let demoMode = false;
 RF.api('/api/public/config').then((c) => { demoMode = !!c.demo; $('#demo').hidden = !demoMode; }).catch(() => {});
 
-// Startrol: ?rol=… > laatst gebruikte rol > donateur
+// Startrol: ?rol=… > laatst gebruikte rol > sponsor
 setRole(params.get('rol') || store.get() || 'donateur');
 if (params.get('registreren') === '1' && role === 'donateur') showRegister(true);
 

@@ -77,7 +77,7 @@ function publicRecipient(r) {
 
 function annualStatement(db, donorId, year) {
   const donor = get(db, 'SELECT * FROM donors WHERE id = ?', donorId);
-  if (!donor) throw new AppError(404, 'Donateur niet gevonden');
+  if (!donor) throw new AppError(404, 'Sponsor niet gevonden');
   const y = /^\d{4}$/.test(String(year)) ? String(year) : String(new Date().getFullYear());
   const donations = all(db, `SELECT dn.*, c.name AS category_name FROM donations dn JOIN categories c ON c.key = dn.category_key
     WHERE dn.donor_id = ? AND dn.status = 'ontvangen' AND strftime('%Y', dn.received_at) = ? ORDER BY dn.received_at`, donorId, y);
@@ -183,7 +183,7 @@ function buildRoutes({ db, uploadDir }) {
       throw new AppError(400, 'Dit wachtwoord is te makkelijk te raden. Kies iets unieks, bijvoorbeeld een zin van een paar woorden.');
     }
   }
-  // Demomodus zolang er nog demo-accounts of voorbeelddonateurs in de database staan.
+  // Demomodus zolang er nog demo-accounts of voorbeeldsponsoren in de database staan.
   const isDemo = () => !!(get(db, "SELECT 1 AS x FROM users WHERE email IN ('robin', 'veld', 'admin@robinfoundation.org', 'medewerker@robinfoundation.org') LIMIT 1")
     || get(db, "SELECT 1 AS x FROM donors WHERE email LIKE '%@example.nl' LIMIT 1"));
   // Vertaalinstellingen die in het CRM zijn ingevoerd laden.
@@ -199,7 +199,7 @@ function buildRoutes({ db, uploadDir }) {
       run(db, `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, k, v);
     }
   }
-  // Eenmalig (op verzoek, nov 2026): alle demodata eruit en opnieuw vullen met 20 kinderen en 10 sponsors.
+  // Eenmalig (op verzoek, nov 2026): alle demodata eruit en opnieuw vullen met 20 kinderen en 10 sponsoren.
   // Alleen op een echte database (CRM_DB) zolang er demo-accounts zijn. Eerst een reservekopie van de database.
   // Medewerkers en instellingen (zoals API-sleutels) blijven staan.
   if (!setting('demo_reset_v2') && process.env.CRM_DB && isDemo()) {
@@ -238,7 +238,7 @@ function buildRoutes({ db, uploadDir }) {
     ctx.user = user;
     ctx.actor = `medewerker:${user.email}`;
   };
-  // Kantoormedewerkers en beheerders: veldmedewerkers hebben geen toegang tot donateurs, betalingen e.d.
+  // Kantoormedewerkers en beheerders: veldmedewerkers hebben geen toegang tot sponsoren, betalingen e.d.
   const staff = (ctx) => {
     field(ctx);
     if (ctx.user.role === 'veldmedewerker') throw new AppError(403, 'Veldmedewerkers hebben alleen toegang tot onboarding');
@@ -267,7 +267,7 @@ function buildRoutes({ db, uploadDir }) {
     readOnlyIfImpersonating(ctx, s);
   };
 
-  // "Inloggen als": beheerder handelt namens de donateur/ontvanger. Alles mag, maar in het
+  // "Inloggen als": beheerder handelt namens de sponsor/ontvanger. Alles mag, maar in het
   // audit log staat wie het echt deed.
   function readOnlyIfImpersonating(ctx, s) {
     if (!s.impersonator_id) return;
@@ -291,7 +291,7 @@ function buildRoutes({ db, uploadDir }) {
     return { url };
   };
 
-  // Donateurs die een ontvanger hebben gesteund, zoals de ontvanger ze mag zien (anoniem blijft anoniem).
+  // Sponsoren die een ontvanger hebben gesteund, zoals de ontvanger ze mag zien (anoniem blijft anoniem).
   const supportersOf = (recipientId) => {
     let anon = 0;
     return all(db, `SELECT d.id, d.anonymous, d.display_name, d.first_name, d.last_name, d.company_name, d.donor_type,
@@ -309,7 +309,7 @@ function buildRoutes({ db, uploadDir }) {
       ORDER BY last_at IS NULL, last_at DESC, d.id`, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId, recipientId)
       .map((d) => ({
         id: d.id,
-        name: d.anonymous ? `Anonieme donateur ${++anon}` : S.donorPublicName(d),
+        name: d.anonymous ? `Anonieme sponsor ${++anon}` : S.donorPublicName(d),
         anonymous: !!d.anonymous,
         categories: d.categories || '', since: d.since, last_message: d.last_message, last_at: d.last_at, unread: d.unread,
       }));
@@ -396,7 +396,7 @@ function buildRoutes({ db, uploadDir }) {
       try { nav = u.nav_prefs ? JSON.parse(u.nav_prefs) : null; } catch { nav = null; }
       return { ...ctx.user, weak_password: isWeakStored(u.password_hash), nav };
     }, field],
-    // Eigen menuvolgorde: [{ group: 'Naam', items: ['donateurs', ...] }, ...]; null = standaard.
+    // Eigen menuvolgorde: [{ group: 'Naam', items: ['sponsoren', ...] }, ...]; null = standaard.
     ['PUT', '/api/staff/preferences/nav', (ctx) => {
       const nav = ctx.body.nav;
       if (nav === null) { run(db, "UPDATE users SET nav_prefs = '' WHERE id = ?", ctx.user.id); return { nav: null }; }
@@ -423,7 +423,7 @@ function buildRoutes({ db, uploadDir }) {
     }, field],
     ['GET', '/api/public/config', () => ({ demo: isDemo(), payments: require('./payments').isEnabled(), payments_mode: require('./payments').mode() })],
 
-    // ================================================================ AUTH DONATEURS
+    // ================================================================ AUTH SPONSOREN
     ['POST', '/api/donor/login', (ctx) => {
       const d = get(db, 'SELECT * FROM donors WHERE email = ?', str(ctx.body.email).toLowerCase());
       if (!d || !auth.verifyPassword(ctx.body.password || '', d.password_hash)) {
@@ -443,7 +443,7 @@ function buildRoutes({ db, uploadDir }) {
       const existing = get(db, 'SELECT * FROM donors WHERE email = ?', email);
       if (existing && existing.password_hash) throw new AppError(409, 'Er bestaat al een account met dit e-mailadres');
       if (existing) {
-        // Bekende donateur zonder portaal: zonder e-mailverificatie kunnen we niet bewijzen dat dit
+        // Bekende sponsor zonder portaal: zonder e-mailverificatie kunnen we niet bewijzen dat dit
         // dezelfde persoon is. Een medewerker stuurt daarom een uitnodiging vanuit het CRM.
         throw new AppError(409, 'Dit e-mailadres is al bij ons bekend. Neem contact op met Robin Foundation; we sturen je dan een uitnodiging voor het portaal.');
       }
@@ -462,7 +462,7 @@ function buildRoutes({ db, uploadDir }) {
     }],
     ['GET', '/api/donor/me', (ctx) => meWith(ctx, publicDonor(ctx.donor)), donor],
 
-    // ================================================================ DONATEURSPORTAAL
+    // ================================================================ SPONSORPORTAAL
     ['GET', '/api/portal/overview', (ctx) => {
       const d = ctx.donor;
       const board = SP.leaderboard(db, { limit: 500 });
@@ -513,7 +513,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/portal/leaderboard', (ctx) => SP.leaderboard(db, ctx.query)
       .map(({ donor_id, ...rest }) => ({ ...rest, is_me: donor_id === ctx.donor.id })), donor],
 
-    // ================================================================ DONATEURSPORTAAL: CHAT
+    // ================================================================ SPONSORPORTAAL: CHAT
     ['GET', '/api/portal/conversations', (ctx) => all(db, `SELECT r.id, r.name, r.kind, r.age, r.location, r.country, r.chat_moderated, r.managed_by,
         (r.username IS NOT NULL AND r.password_hash IS NOT NULL) AS has_login,
         CASE WHEN r.consent = 1 THEN r.photo_url ELSE '' END AS photo_url,
@@ -568,7 +568,7 @@ function buildRoutes({ db, uploadDir }) {
     }, recipient],
     ['GET', '/api/recipient/supporters/:id', async (ctx) => {
       const did = id(ctx.params.id);
-      if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
+      if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze sponsor heeft jou (nog) niet gesteund');
       const T = require('./translate');
       const d = get(db, 'SELECT * FROM donors WHERE id = ?', did);
       const mine = T.recipientLanguage(ctx.recipient);
@@ -640,7 +640,7 @@ function buildRoutes({ db, uploadDir }) {
       return { totals, monthly, monthlySpent, recent, tasks, oldestCells, categories: S.categoryBalances(db) };
     }, staff],
 
-    // ================================================================ BEHEER: DONATEURS
+    // ================================================================ BEHEER: SPONSOREN
     ['GET', '/api/admin/donors', (ctx) => {
       const { q = '', status = '', tag = '', type = '', sort = 'name' } = ctx.query;
       const where = ['1=1'];
@@ -669,7 +669,7 @@ function buildRoutes({ db, uploadDir }) {
       const rows = all(db, `SELECT d.*,
         COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen'),0) AS total_cents
         FROM donors d ORDER BY d.last_name`);
-      return csvResponse('donateurs.csv', csv(rows, [
+      return csvResponse('sponsoren.csv', csv(rows, [
         ['id', 'ID'], ['donor_type', 'Type'], ['first_name', 'Voornaam'], ['last_name', 'Achternaam'],
         ['company_name', 'Organisatie'], ['email', 'E-mail'], ['phone', 'Telefoon'], ['street', 'Adres'],
         ['postal_code', 'Postcode'], ['city', 'Plaats'], ['country', 'Land'], ['status', 'Status'], ['tags', 'Tags'],
@@ -689,7 +689,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/admin/donors/:id', (ctx) => {
       const donorId = id(ctx.params.id);
       const d = get(db, 'SELECT * FROM donors WHERE id = ?', donorId);
-      if (!d) throw new AppError(404, 'Donateur niet gevonden');
+      if (!d) throw new AppError(404, 'Sponsor niet gevonden');
       return {
         donor: publicDonor(d),
         sponsor: get(db, `SELECT COUNT(*) AS children, COALESCE(SUM(monthly_cents),0) AS monthly_cents,
@@ -707,7 +707,7 @@ function buildRoutes({ db, uploadDir }) {
     }, staff],
     ['PUT', '/api/admin/donors/:id', (ctx) => {
       const donorId = id(ctx.params.id);
-      if (!get(db, 'SELECT id FROM donors WHERE id = ?', donorId)) throw new AppError(404, 'Donateur niet gevonden');
+      if (!get(db, 'SELECT id FROM donors WHERE id = ?', donorId)) throw new AppError(404, 'Sponsor niet gevonden');
       const data = cleanDonor(ctx.body, { partial: true });
       if (data.email && get(db, 'SELECT id FROM donors WHERE email = ? AND id <> ?', data.email, donorId)) {
         throw new AppError(409, 'E-mailadres is al in gebruik');
@@ -723,7 +723,7 @@ function buildRoutes({ db, uploadDir }) {
     ['DELETE', '/api/admin/donors/:id', (ctx) => {
       const donorId = id(ctx.params.id);
       if (get(db, 'SELECT id FROM allocations WHERE donor_id = ? LIMIT 1', donorId)) {
-        throw new AppError(409, 'Deze donateur heeft bestedingen; anonimiseer in plaats van verwijderen.');
+        throw new AppError(409, 'Deze sponsor heeft bestedingen; anonimiseer in plaats van verwijderen.');
       }
       run(db, 'DELETE FROM donors WHERE id = ?', donorId);
       S.audit(db, ctx.actor, 'donateur_verwijderd', 'donor', donorId);
@@ -743,20 +743,20 @@ function buildRoutes({ db, uploadDir }) {
     ['POST', '/api/admin/donors/:id/portal', (ctx) => {
       const donorId = id(ctx.params.id);
       const d = get(db, 'SELECT * FROM donors WHERE id = ?', donorId);
-      if (!d) throw new AppError(404, 'Donateur niet gevonden');
-      if (!d.email) throw new AppError(400, 'Donateur heeft geen e-mailadres');
+      if (!d) throw new AppError(404, 'Sponsor niet gevonden');
+      if (!d.email) throw new AppError(400, 'Sponsor heeft geen e-mailadres');
       const password = ctx.body.password ? String(ctx.body.password) : crypto.randomBytes(6).toString('base64url');
       if (password.length < 8) throw new AppError(400, 'Wachtwoord moet minimaal 8 tekens zijn');
       run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', auth.hashPassword(password), donorId);
-      S.sendMail(db, d, 'Je toegang tot het donateursportaal van Robin Foundation',
-        `Beste ${d.first_name || S.donorFullName(d)},\n\nJe kunt nu inloggen op het donateursportaal met je e-mailadres. ` +
+      S.sendMail(db, d, 'Je toegang tot het sponsorportaal van Robin Foundation',
+        `Beste ${d.first_name || S.donorFullName(d)},\n\nJe kunt nu inloggen op het sponsorportaal met je e-mailadres. ` +
         `Je (tijdelijke) wachtwoord is: ${password}\n\nRobin Foundation`, 'portaal');
       S.audit(db, ctx.actor, 'portaaltoegang_ingesteld', 'donor', donorId);
       return { password };
     }, staff],
     ['POST', '/api/admin/donors/:id/impersonate', (ctx) => {
       const did = id(ctx.params.id);
-      if (!get(db, 'SELECT id FROM donors WHERE id = ?', did)) throw new AppError(404, 'Donateur niet gevonden');
+      if (!get(db, 'SELECT id FROM donors WHERE id = ?', did)) throw new AppError(404, 'Sponsor niet gevonden');
       return impersonate(ctx, 'donor', did, DONOR_COOKIE, '/portal');
     }, admin],
     ['POST', '/api/admin/recipients/:id/impersonate', (ctx) => {
@@ -798,7 +798,7 @@ function buildRoutes({ db, uploadDir }) {
         .map((r) => ({ ...r, donor_name: S.donorFullName(r) }));
       if (ctx.query.format === 'csv') {
         return csvResponse('donaties.csv', csv(rows, [
-          ['id', 'ID'], ['received_at', 'Datum'], ['donor_name', 'Donateur'], ['category_name', 'Bestemming'],
+          ['id', 'ID'], ['received_at', 'Datum'], ['donor_name', 'Sponsor'], ['category_name', 'Bestemming'],
           ['amount_cents', 'Bedrag (EUR)', centsToEuro], ['method', 'Betaalwijze'], ['frequency', 'Frequentie'],
           ['status', 'Status'], ['campaign_name', 'Campagne'], ['reference', 'Referentie'],
           ['remaining_cents', 'Nog in cel (EUR)', (v) => (v == null ? '' : centsToEuro(v))], ['cell_status', 'Celstatus'],

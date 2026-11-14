@@ -28,16 +28,16 @@ function getCategory(db, key) {
 function donorFullName(d) {
   if (!d) return '';
   if (d.donor_type !== 'particulier' && d.company_name) return d.company_name;
-  return `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.email || `Donateur #${d.id}`;
+  return `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.email || `Sponsor #${d.id}`;
 }
 
 // Naam zoals die publiek (leaderboard) wordt getoond.
 function donorPublicName(d) {
-  if (d.anonymous) return 'Anonieme donateur';
+  if (d.anonymous) return 'Anonieme sponsor';
   if (d.display_name) return d.display_name;
   if (d.donor_type !== 'particulier' && d.company_name) return d.company_name;
   const initial = d.last_name ? ` ${d.last_name.trim().charAt(0).toUpperCase()}.` : '';
-  return `${d.first_name || 'Donateur'}${initial}`;
+  return `${d.first_name || 'Sponsor'}${initial}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ function createDonation(db, input, actor) {
   const amount = Math.round(Number(input.amount_cents));
   if (!Number.isInteger(amount) || amount <= 0) throw new AppError(400, 'Bedrag moet groter zijn dan 0');
   const donor = get(db, 'SELECT * FROM donors WHERE id = ?', input.donor_id);
-  if (!donor) throw new AppError(404, 'Donateur niet gevonden');
+  if (!donor) throw new AppError(404, 'Sponsor niet gevonden');
   const cat = getCategory(db, input.category_key);
   if (cat.key === 'sponsoring' && !input._sponsor) throw new AppError(400, 'Sponsorbetalingen registreer je bij Sponsorschappen.');
   const status = input.status || 'ontvangen';
@@ -194,7 +194,7 @@ function spend(db, input, actor, userId = null) {
     }
     cells = cells.filter((c) => c.remaining_cents > 0);
   } else if (input.donor_id) {
-    // Alleen uit de cellen van één donateur (oudste eerst).
+    // Alleen uit de cellen van één sponsor (oudste eerst).
     cells = all(db, `SELECT * FROM cells WHERE category_key = ? AND donor_id = ? AND remaining_cents > 0
                      ORDER BY created_at ASC, id ASC`, cat.key, Number(input.donor_id));
   } else {
@@ -213,7 +213,7 @@ function spend(db, input, actor, userId = null) {
   }
   if (!Number.isInteger(amount) || amount <= 0) throw new AppError(400, 'Geef een bedrag of aantal op');
   if (available < amount) {
-    throw new AppError(409, `Onvoldoende saldo in de cellen voor "${cat.name}"${input.donor_id && !cellIds.length ? ' van deze donateur' : ''}: beschikbaar ${euro(available)}, nodig ${euro(amount)}.`);
+    throw new AppError(409, `Onvoldoende saldo in de cellen voor "${cat.name}"${input.donor_id && !cellIds.length ? ' van deze sponsor' : ''}: beschikbaar ${euro(available)}, nodig ${euro(amount)}.`);
   }
   if (input.recipient_id && !get(db, 'SELECT id FROM recipients WHERE id = ?', input.recipient_id)) {
     throw new AppError(400, 'Ontvanger niet gevonden');
@@ -244,7 +244,7 @@ function spend(db, input, actor, userId = null) {
       sendMail(db, donor, `Je donatie is besteed: ${cat.name}`,
         `Beste ${donor.first_name || donorFullName(donor)},\n\n${euro(cents)} uit jouw cel is zojuist besteed aan ` +
         `"${cat.name}"${recipient ? ` voor ${recipient.name}` : ''}.` +
-        `${input.description ? `\n\n${input.description}` : ''}\n\nBekijk in je donateursportaal waar je geld precies heen is gegaan.` +
+        `${input.description ? `\n\n${input.description}` : ''}\n\nBekijk in je sponsorportaal waar je geld precies heen is gegaan.` +
         `\n\nRobin Foundation`, 'besteding');
     }
     audit(db, actor, 'besteding_aangemaakt', 'expenditure', expenditureId,
@@ -273,7 +273,7 @@ function reverseExpenditure(db, id, actor) {
   });
 }
 
-// Brief / filmpje / foto van de ontvanger koppelen en bezorgen bij alle betrokken donateurs.
+// Brief / filmpje / foto van de ontvanger koppelen en bezorgen bij alle betrokken sponsoren.
 function addImpactMessage(db, expenditureId, msg, actor, useTx = true) {
   const exp = get(db, 'SELECT * FROM expenditures WHERE id = ?', expenditureId);
   if (!exp) throw new AppError(404, 'Besteding niet gevonden');
@@ -294,7 +294,7 @@ function addImpactMessage(db, expenditureId, msg, actor, useTx = true) {
       run(db, 'INSERT OR IGNORE INTO donor_messages (donor_id, impact_message_id) VALUES (?,?)', d.id, messageId);
       sendMail(db, d, `Je hebt ${label} ontvangen: ${msg.title}`,
         `Beste ${d.first_name || donorFullName(d)},\n\nDankzij jouw donatie hebben we ${label} ontvangen van ` +
-        `degene die je geholpen hebt. Log in op je donateursportaal om het te bekijken.\n\nRobin Foundation`,
+        `degene die je geholpen hebt. Log in op je sponsorportaal om het te bekijken.\n\nRobin Foundation`,
         'impactbericht');
     }
     audit(db, actor, 'impactbericht_verstuurd', 'impact_message', messageId, { expenditureId, donors: donors.length });
@@ -317,7 +317,7 @@ function categoryBalances(db) {
     FROM categories c ORDER BY c.sort_order`);
 }
 
-// Impact per bestemming voor één donateur.
+// Impact per bestemming voor één sponsor.
 function donorImpact(db, donorId) {
   return all(db, `
     SELECT c.key, c.name, c.icon, c.color, c.unit_label, c.unit_label_plural, c.unit_cost_cents,
@@ -362,8 +362,8 @@ function leaderboard(db, { period = 'all', category = '', limit = 50 } = {}) {
 
 
 // ---------------------------------------------------------------------------
-// Chat tussen ontvanger en donateur
-//  - alleen tussen een donateur en een ontvanger aan wie diens geld is besteed
+// Chat tussen ontvanger en sponsor
+//  - alleen tussen een sponsor en een ontvanger aan wie diens geld is besteed
 //  - kinderen: altijd moderatie; contactgegevens/geldverzoeken: altijd moderatie
 // ---------------------------------------------------------------------------
 const CONTACT_PATTERNS = [
@@ -386,7 +386,7 @@ function chatRecipient(db, recipientId) {
   return r;
 }
 
-// Een donateur mag chatten met een gezin als hij een kind uit dat gezin sponsort (of, vroeger, geld aan hen besteedde).
+// Een sponsor mag chatten met een gezin als hij een kind uit dat gezin sponsort (of, vroeger, geld aan hen besteedde).
 function hasFunded(db, donorId, recipientId) {
   return !!get(db, `SELECT 1 AS ok FROM sponsorships s JOIN children ch ON ch.id = s.child_id
       WHERE s.donor_id = ? AND ch.family_id = ? AND s.status <> 'beeindigd'
@@ -406,7 +406,7 @@ function notifyChat(db, msg, recipient) {
   const donor = get(db, 'SELECT * FROM donors WHERE id = ?', msg.donor_id);
   sendMail(db, donor, `Nieuw bericht van ${recipient.name}`,
     `Beste ${donor.first_name || donorFullName(donor)},\n\n${recipient.name} heeft je een bericht gestuurd. ` +
-    `Log in op je donateursportaal (Chat) om het te lezen en te antwoorden.\n\nRobin Foundation`, 'chat');
+    `Log in op je sponsorportaal (Chat) om het te lezen en te antwoorden.\n\nRobin Foundation`, 'chat');
 }
 
 function sendChat(db, { recipientId, donorId, sender, body }, actor) {

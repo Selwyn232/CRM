@@ -33,7 +33,7 @@ function childInput(db, b) {
 function buildSponsorRoutes({ db, guards, publicBase }) {
   const { staff, admin, donor } = guards;
 
-  // Wat een donateur over zijn eigen sponsorkind ziet.
+  // Wat een sponsor over zijn eigen sponsorkind ziet.
   const myChild = (donorId, s) => {
     const c = get(db, `${SP.CHILD_SELECT} WHERE ch.id = ?`, s.child_id);
     const stats = get(db, 'SELECT COUNT(*) AS months, COALESCE(SUM(amount_cents),0) AS total FROM sponsor_months WHERE sponsorship_id = ?', s.id);
@@ -130,7 +130,7 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     }],
     ['GET', '/api/public/leaderboard', (ctx) => SP.leaderboard(db, ctx.query).map(({ donor_id, ...r }) => r)],
 
-    // ------------------------------------------------------------------ donateursportaal
+    // ------------------------------------------------------------------ sponsorportaal
     ['GET', '/api/portal/sponsor/config', () => SP.getConfig(db), donor],
     ['GET', '/api/portal/children', (ctx) => SP.availableChildren(db, ctx.donor.id), donor],
     ['POST', '/api/portal/sponsor', async (ctx) => {
@@ -191,7 +191,7 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
     ['POST', '/api/portal/my-children/:id/stop', async (ctx) => {
       const s = get(db, "SELECT * FROM sponsorships WHERE donor_id = ? AND child_id = ? AND status <> 'beeindigd'", ctx.donor.id, id(ctx.params.id));
       if (!s) throw new AppError(404, 'Dit kind sponsor je (nu) niet');
-      SP.endSponsorship(db, s.id, str(ctx.body.reason, 200) || 'Gestopt door donateur', ctx.actor);
+      SP.endSponsorship(db, s.id, str(ctx.body.reason, 200) || 'Gestopt door sponsor', ctx.actor);
       await syncSubscription(ctx.donor, s.subscription_id, ctx.actor);
       return { ok: true };
     }, donor],
@@ -286,10 +286,10 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
         LEFT JOIN recipients r ON r.id = ch.family_id WHERE ${where.join(' AND ')} ORDER BY s.started_at DESC, s.id DESC LIMIT 1000`, ...args)
         .map((s) => ({ ...s, donor_name: S.donorFullName(s), age: SP.age(s.birth_date) }));
     }, staff],
-    // Medewerker koppelt een donateur aan kinderen (bv. bij betaling per bankoverschrijving).
+    // Medewerker koppelt een sponsor aan kinderen (bv. bij betaling per bankoverschrijving).
     ['POST', '/api/admin/sponsorships', (ctx) => {
       const did = id(ctx.body.donor_id);
-      if (!get(db, 'SELECT id FROM donors WHERE id = ?', did)) throw new AppError(404, 'Donateur niet gevonden');
+      if (!get(db, 'SELECT id FROM donors WHERE id = ?', did)) throw new AppError(404, 'Sponsor niet gevonden');
       const ids = SP.reserve(db, did, Array.isArray(ctx.body.child_ids) ? ctx.body.child_ids : []);
       const sids = SP.startSponsorships(db, did, ids, { actor: ctx.actor });
       if (ctx.body.book_first) SP.bookPayment(db, { donorId: did, sponsorshipIds: sids, method: str(ctx.body.method, 30) || 'overschrijving', reference: str(ctx.body.reference, 100), actor: ctx.actor });
@@ -339,7 +339,7 @@ function buildSponsorRoutes({ db, guards, publicBase }) {
         const d = get(db, 'SELECT * FROM donors WHERE id = ?', s.donor_id);
         S.sendMail(db, d, `Nieuwe update van ${child.first_name}`,
           `Beste ${d.first_name || S.donorFullName(d)},\n\nEr staat een nieuwe update van ${child.first_name} voor je klaar: “${title}”. `
-          + 'Bekijk hem in je donateursportaal bij Mijn kinderen.\n\nRobin Foundation', 'update');
+          + 'Bekijk hem in je sponsorportaal bij Mijn kinderen.\n\nRobin Foundation', 'update');
       }
       S.audit(db, ctx.actor, 'kindupdate_geplaatst', 'child', cid, title);
       return get(db, 'SELECT * FROM child_updates WHERE id = ?', Number(r.lastInsertRowid));

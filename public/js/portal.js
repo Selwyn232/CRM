@@ -1,4 +1,4 @@
-// Donateursportaal Robin Foundation
+// Sponsorportaal Robin Foundation
 'use strict';
 
 const { api, esc, euro, euro0, num, date, dateTime, today, toCents, label, toast } = RF;
@@ -305,7 +305,7 @@ async function renderChat(openId) {
   const selected = openId ? Number(openId) : null;
   view().innerHTML = `
     <div class="page-head"><div><h1>Chat</h1><div class="sub">Hier chat je met de <b>ouders (of verzorgers)</b> van je sponsorkind. Zij lezen je berichten voor aan hun kind en schrijven terug. Berichten worden automatisch vertaald.</div></div></div>
-    <div class="callout neutral">${RF.icon(me.anonymous ? 'eye-off' : 'user')}<span>${me.anonymous ? 'Je bent anoniem: je verschijnt als “Anonieme donateur”.' : `Je verschijnt als <b>${esc(me.public_name)}</b>.`} <a href="#/profiel">Wijzigen</a></span></div>
+    <div class="callout neutral">${RF.icon(me.anonymous ? 'eye-off' : 'user')}<span>${me.anonymous ? 'Je bent anoniem: je verschijnt als “Anonieme sponsor”.' : `Je verschijnt als <b>${esc(me.public_name)}</b>.`} <a href="#/profiel">Wijzigen</a></span></div>
     <div class="chat-layout ${selected ? 'has-open' : ''}">
       <div class="card chat-list">
         ${convs.map((c) => `<button data-id="${c.id}" class="${c.id === selected ? 'active' : ''}">
@@ -343,7 +343,7 @@ async function renderChat(openId) {
 async function renderLeaderboard() {
   view().innerHTML = `
     <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Wie sponsort de meeste kinderen?</div></div></div>
-    <p class="muted">Je verschijnt hier als <b>${esc(me.anonymous ? 'Anonieme donateur' : me.public_name)}</b>. <a href="#/profiel">Wijzig in je privacy-instellingen</a>.</p>
+    <p class="muted">Je verschijnt hier als <b>${esc(me.anonymous ? 'Anonieme sponsor' : me.public_name)}</b>. <a href="#/profiel">Wijzig in je privacy-instellingen</a>.</p>
     <div class="card" id="lb"></div>`;
   const rows = await api('/api/portal/leaderboard?limit=100');
   $('#lb').innerHTML = leaderboardRows(rows);
@@ -352,7 +352,7 @@ async function renderLeaderboard() {
 }
 
 function leaderboardRows(rows) {
-  if (!rows.length) return '<p class="empty">Nog geen sponsors.</p>';
+  if (!rows.length) return '<p class="empty">Nog geen sponsoren.</p>';
   return rows.map((r) => `<div class="lb-row ${r.rank <= 3 ? `top${r.rank}` : ''} ${r.is_me ? 'me' : ''}">
     <div class="lb-rank">${r.rank <= 3 ? `<span class="medal m${r.rank}">${r.rank}</span>` : r.rank}</div>
     <div><div class="lb-name">${r.anonymous ? `<span class="anon">${RF.icon('eye-off', 'icon-sm')}${esc(r.name)}</span>` : esc(r.name)} ${r.is_me ? '<span class="badge badge-admin">jij</span>' : ''}</div>
@@ -368,7 +368,7 @@ async function renderProfile() {
     <div class="grid grid-2">
       <form class="card" id="privacy">
         <h2>Leaderboard & privacy</h2>
-        <label class="check" style="font-size:1rem"><input type="checkbox" name="anonymous" ${me.anonymous ? 'checked' : ''}> <span><b>Blijf anoniem</b><br><span class="small muted">Op het leaderboard verschijn je dan als “Anonieme donateur”. Je donaties tellen wel mee.</span></span></label>
+        <label class="check" style="font-size:1rem"><input type="checkbox" name="anonymous" ${me.anonymous ? 'checked' : ''}> <span><b>Blijf anoniem</b><br><span class="small muted">Op het leaderboard verschijn je dan als “Anonieme sponsor”. Je donaties tellen wel mee.</span></span></label>
         <div class="field" style="margin-top:10px"><label>Weergavenaam (als je niet anoniem bent)</label><input type="text" name="display_name" value="${esc(me.display_name)}" placeholder="${esc(`${me.first_name} ${me.last_name ? `${me.last_name[0]}.` : ''}`)}">
           <div class="hint">Leeg = je voornaam en de eerste letter van je achternaam.</div></div>
         <p>Voorbeeld: <b id="preview-name"></b></p>
@@ -407,7 +407,7 @@ async function renderProfile() {
   const pf = $('#privacy');
   const preview = () => {
     const anon = pf.elements.anonymous.checked;
-    $('#preview-name').textContent = anon ? 'Anonieme donateur' : (pf.elements.display_name.value || `${me.first_name}${me.last_name ? ` ${me.last_name[0].toUpperCase()}.` : ''}`);
+    $('#preview-name').textContent = anon ? 'Anonieme sponsor' : (pf.elements.display_name.value || `${me.first_name}${me.last_name ? ` ${me.last_name[0].toUpperCase()}.` : ''}`);
   };
   pf.addEventListener('input', preview);
   preview();

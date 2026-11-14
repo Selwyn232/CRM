@@ -121,14 +121,14 @@ test('uitgegeven donatie kan niet meer gewijzigd of verwijderd worden', () => {
   S.updateDonation(db, d.id, { note: 'bijgewerkt' });
 });
 
-test('leaderboard toont anonieme donateurs als "Anonieme donateur"', () => {
+test('leaderboard toont anonieme donateurs als "Anonieme sponsor"', () => {
   const db = freshDb();
   const a = addDonor(db, { first_name: 'Sanne', last_name: 'de Vries', anonymous: 0 });
   const b = addDonor(db, { first_name: 'Geheim', last_name: 'Persoon', anonymous: 1 });
   S.createDonation(db, { donor_id: a, category_key: 'noodfonds', amount_cents: 1000 });
   S.createDonation(db, { donor_id: b, category_key: 'noodfonds', amount_cents: 5000 });
   const lb = S.leaderboard(db);
-  assert.equal(lb[0].name, 'Anonieme donateur');
+  assert.equal(lb[0].name, 'Anonieme sponsor');
   assert.equal(lb[0].city, '');
   assert.equal(lb[1].name, 'Sanne D.');
   assert.ok(!JSON.stringify(lb).includes('Geheim'));
@@ -150,7 +150,7 @@ test('HTTP: publieke leaderboard lekt geen ids of namen, portaal & beheer vereis
   const lb = await (await fetch(`${base}/api/public/leaderboard`)).json();
   assert.equal(lb.length, 1);
   assert.equal(lb[0].donor_id, undefined);
-  assert.equal(lb[0].name, 'Anonieme donateur');
+  assert.equal(lb[0].name, 'Anonieme sponsor');
 
   assert.equal((await fetch(`${base}/api/admin/donors`)).status, 401);
   assert.equal((await fetch(`${base}/api/portal/overview`)).status, 401);
@@ -297,7 +297,7 @@ test('HTTP: ontvanger logt in, ziet anonieme donateur anoniem en kan niet bij be
   const cookie = login.headers.get('set-cookie').split(';')[0];
   const supporters = await (await fetch(`${base}/api/recipient/supporters`, { headers: { cookie } })).json();
   assert.equal(supporters.length, 1);
-  assert.equal(supporters[0].name, 'Anonieme donateur 1');
+  assert.equal(supporters[0].name, 'Anonieme sponsor 1');
   assert.ok(!JSON.stringify(supporters).includes('Sanne'));
   const sent = await fetch(`${base}/api/recipient/supporters/${donor}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ body: 'Dankjewel!' }),
@@ -319,7 +319,7 @@ test('besteding uit cellen van één gekozen donateur (niet FIFO over iedereen)'
   S.spend(db, { category_key: 'schoolgeld', units: 1, recipient_id: rid, donor_id: selwyn });
   assert.equal(S.hasFunded(db, selwyn, rid), true);
   assert.equal(S.hasFunded(db, oud, rid), false);
-  assert.throws(() => S.spend(db, { category_key: 'schoolgeld', units: 1, donor_id: selwyn }), /van deze donateur/);
+  assert.throws(() => S.spend(db, { category_key: 'schoolgeld', units: 1, donor_id: selwyn }), /van deze sponsor/);
 });
 
 test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)', () => {

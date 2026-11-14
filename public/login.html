@@ -20,7 +20,7 @@
       <div class="faceid-offer hidden" id="faceid-offer"></div>
       <p class="login-q">Ik ben een…</p>
       <div class="role-picker" role="radiogroup" aria-label="Kies hoe je inlogt">
-        <button type="button" role="radio" data-role="donateur"><span class="ri" data-ic="heart"></span><b>Donateur</b><small>Volg je sponsorkind</small></button>
+        <button type="button" role="radio" data-role="donateur"><span class="ri" data-ic="heart"></span><b>Sponsor</b><small>Volg je sponsorkind</small></button>
         <button type="button" role="radio" data-role="ontvanger"><span class="ri" data-ic="heart-handshake"></span><b>Ontvanger</b><small>Ouders van een kind</small></button>
         <button type="button" role="radio" data-role="medewerker"><span class="ri" data-ic="building-2"></span><b>Medewerker</b><small>Beheer &amp; CRM</small></button>
         <button type="button" role="radio" data-role="veldwerker"><span class="ri" data-ic="map-pin"></span><b>Veldwerker</b><small>Gezinnen aanmelden</small></button>
@@ -38,21 +38,21 @@
         </div>
         <p class="form-error" hidden style="margin:0 0 12px"></p>
         <button class="btn btn-primary btn-lg btn-block" type="submit">Inloggen</button>
-        <p class="small muted login-extra" data-for="donateur" style="text-align:center;margin-top:12px">
+        <p class="small muted login-extra" data-for="sponsor" style="text-align:center;margin-top:12px">
           Nog geen account? <a href="#" id="to-register">Account aanmaken</a></p>
         <p class="small muted login-extra" data-for="ontvanger" style="text-align:center;margin-top:12px">
           Geen account? De veldwerker van Robin Foundation geeft je je inloggegevens.</p>
       </form>
 
       <form id="register-form" class="hidden">
-        <h3 style="margin-top:4px">Account aanmaken als donateur</h3>
+        <h3 style="margin-top:4px">Account aanmaken als sponsor</h3>
         <div class="field-row">
           <div class="field"><label>Voornaam</label><input name="first_name" type="text" required autocomplete="given-name"></div>
           <div class="field"><label>Achternaam</label><input name="last_name" type="text" autocomplete="family-name"></div>
         </div>
         <div class="field"><label>E-mailadres</label><input name="email" type="email" required autocomplete="email"></div>
         <div class="field"><label>Wachtwoord (min. 8 tekens)</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
-        <label class="check"><input type="checkbox" name="show_on_leaderboard"> Toon mijn naam op het leaderboard (anders verschijn je als “Anonieme donateur”)</label>
+        <label class="check"><input type="checkbox" name="show_on_leaderboard"> Toon mijn naam op het leaderboard (anders verschijn je als “Anonieme sponsor”)</label>
         <label class="check"><input type="checkbox" name="newsletter" checked> Houd me op de hoogte via de nieuwsbrief</label>
         <label class="check"><input type="checkbox" name="privacy" required> <span>Ik ga akkoord met de <a href="/privacy" target="_blank" rel="noopener">privacyverklaring</a></span></label>
         <p class="form-error" hidden style="margin:12px 0"></p>

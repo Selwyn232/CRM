@@ -31,8 +31,8 @@ const NAV = [
     { route: 'updates', label: 'Maandupdates', icon: 'image' },
     { route: 'chat', label: 'Chatmoderatie', icon: 'messages-square', count: 'chat', attn: true },
   ] },
-  { group: 'Donateurs', items: [
-    { route: 'donateurs', label: 'Donateurs', icon: 'users' },
+  { group: 'Sponsoren', items: [
+    { route: 'sponsoren', label: 'Sponsoren', icon: 'users' },
     { route: 'donaties', label: 'Betalingen', icon: 'banknote' },
     { route: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   ] },
@@ -189,7 +189,7 @@ async function showApp() {
   $('#me').onclick = (e) => RF.menu(e.currentTarget, [
     { heading: state.user.email },
     { label: 'Publiek leaderboard', icon: 'globe', href: '/leaderboard', external: true },
-    { label: 'Donateursportaal', icon: 'heart', href: '/portal', external: true },
+    { label: 'Sponsorportaal', icon: 'heart', href: '/portal', external: true },
     { label: 'Ontvangersportaal', icon: 'heart-handshake', href: '/ontvanger', external: true },
     '-',
     { label: 'Menu aanpassen', icon: 'arrow-down-up', onClick: editNav },
@@ -239,7 +239,7 @@ const catByKey = (k) => state.categories.find((c) => c.key === k) || { name: k, 
 const isAdmin = () => state.user && state.user.role === 'admin';
 
 const ROUTES = {
-  donateurs: (id) => (id ? renderDonor(id) : renderDonors()),
+  sponsoren: (id) => (id ? renderDonor(id) : renderDonors()),
   donaties: renderDonations,
   chat: renderChatModeration,
   taken: renderTasks,
@@ -252,6 +252,7 @@ const ROUTES = {
 async function route() {
   let [name, param] = (location.hash.replace(/^#\/?/, '') || (isField() ? 'onboarding' : 'dashboard')).split('/');
   if (isField() && name !== 'onboarding') { name = 'onboarding'; param = undefined; }
+  if (name === 'donateurs') name = 'sponsoren'; // oude links
   const fn = ROUTES[name] || ROUTES.dashboard;
   document.querySelectorAll('#nav a[data-route]').forEach((a) => {
     const on = a.dataset.route === (ROUTES[name] ? name : 'dashboard');
@@ -309,14 +310,14 @@ function openCommandPalette() {
   const wrap = document.createElement('div');
   wrap.className = 'cmdk-backdrop';
   wrap.innerHTML = `<div class="cmdk" role="dialog" aria-modal="true" aria-label="Zoeken">
-    <div class="cmdk-input">${RF.icon('search')}<input type="text" placeholder="Zoek een donateur, of typ een pagina of actie…" aria-label="Zoeken" autocomplete="off"><kbd>esc</kbd></div>
+    <div class="cmdk-input">${RF.icon('search')}<input type="text" placeholder="Zoek een sponsor, of typ een pagina of actie…" aria-label="Zoeken" autocomplete="off"><kbd>esc</kbd></div>
     <div class="cmdk-list" role="listbox"></div>
     <div class="cmdk-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> navigeren</span><span><kbd>↵</kbd> openen</span><span><kbd>esc</kbd> sluiten</span></div></div>`;
   document.body.appendChild(wrap);
   const input = wrap.querySelector('input');
   const list = wrap.querySelector('.cmdk-list');
   const actions = [
-    { label: 'Nieuwe donateur', icon: 'user-plus', run: () => donorForm({}, (d) => go(`#/donateurs/${d.id}`)) },
+    { label: 'Nieuwe sponsor', icon: 'user-plus', run: () => donorForm({}, (d) => go(`#/sponsoren/${d.id}`)) },
     { label: 'Donatie registreren', icon: 'plus', run: () => donationForm({}, () => route()) },
     { label: 'Noodhulp inzetten', icon: 'cloud-lightning', run: () => go('#/noodfonds') },
     { label: 'Nieuwe taak', icon: 'list-checks', run: () => taskForm({}, () => route()) },
@@ -331,7 +332,7 @@ function openCommandPalette() {
     const pages = NAV_ITEMS.filter((p) => !q || p.label.toLowerCase().includes(q))
       .map((p) => ({ group: 'Pagina’s', label: p.label, icon: p.icon, run: () => go(`#/${p.route}`) }));
     const acts = actions.filter((a) => !q || a.label.toLowerCase().includes(q)).map((a) => ({ group: 'Acties', ...a }));
-    const people = donors.map((d) => ({ group: 'Donateurs', label: d.full_name, sub: d.email || d.city || '', avatar: d.full_name, run: () => go(`#/donateurs/${d.id}`) }));
+    const people = donors.map((d) => ({ group: 'Sponsoren', label: d.full_name, sub: d.email || d.city || '', avatar: d.full_name, run: () => go(`#/sponsoren/${d.id}`) }));
     items = [...people, ...acts, ...pages];
     active = Math.min(active, Math.max(0, items.length - 1));
     let last = '';
@@ -386,7 +387,7 @@ const campaignOptions = (sel) => opt('', '— geen campagne —', sel) + state.c
 const langOptions = (sel) => Object.entries(state.languages || {}).map(([k, v]) => opt(k, v, sel)).join('');
 const tags = (s) => String(s || '').split(',').map((t) => t.trim()).filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join('');
 const initials = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
-const donorLink = (id, name) => `<a href="#/donateurs/${id}">${esc(name)}</a>`;
+const donorLink = (id, name) => `<a href="#/sponsoren/${id}">${esc(name)}</a>`;
 
 function table(columns, rows, { empty = 'Geen gegevens', emptyIcon = 'inbox', onRow } = {}) {
   const head = columns.map((c) => `<th class="${c.num ? 'num' : ''}" ${c.width ? `style="width:${c.width}"` : ''}>${esc(c.label)}</th>`).join('');
@@ -412,12 +413,12 @@ function attentionRow(href, ic, title, meta, highlight = true) {
     <div class="grow"><div class="title">${title}</div><div class="meta">${meta}</div></div><span class="muted">${RF.icon('chevron-right', 'icon-sm')}</span></a>`;
 }
 
-// ======================================================================= DONATEURS
+// ======================================================================= SPONSOREN
 async function renderDonors() {
   const params = new URLSearchParams(sessionStorage.getItem('donorFilters') || '');
   view().innerHTML = `
-    ${pageHead('Donateurs', { sub: 'Iedereen die geeft of wil geven', actions:
-      `<a class="btn btn-ghost" href="/api/admin/donors/export">${RF.icon('download')}<span>Exporteren</span></a>` + btn('new-donor', 'Nieuwe donateur', { icon: 'plus', kind: 'primary' }) })}
+    ${pageHead('Sponsoren', { sub: 'Iedereen die geeft of wil geven', actions:
+      `<a class="btn btn-ghost" href="/api/admin/donors/export">${RF.icon('download')}<span>Exporteren</span></a>` + btn('new-donor', 'Nieuwe sponsor', { icon: 'plus', kind: 'primary' }) })}
     <div class="card flush">
       <div class="filters">
         ${searchInput('f-q', 'Zoek op naam, e-mail, plaats of telefoon', params.get('q') || '')}
@@ -434,7 +435,7 @@ async function renderDonors() {
     const rows = await api(`/api/admin/donors?${p}`);
     const total = rows.reduce((a, r) => a + r.total_cents, 0);
     $('#donor-table').innerHTML = table([
-      { label: 'Naam', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}<div class="grow"><a href="#/donateurs/${r.id}">${esc(r.full_name)}</a>
+      { label: 'Naam', render: (r) => `<div class="cell-person">${RF.avatar(r.full_name, 'sm')}<div class="grow"><a href="#/sponsoren/${r.id}">${esc(r.full_name)}</a>
           <span class="sub">${esc(r.email || label('type', r.donor_type))}</span></div></div>` },
       { label: 'Status', render: (r) => badge('donor', r.status) },
       { label: 'Plaats', render: (r) => `<span class="muted">${esc(r.city) || '—'}</span>` },
@@ -447,14 +448,14 @@ async function renderDonors() {
       { label: 'Laatste gift', render: (r) => `<span class="muted">${date(r.last_donation) || '—'}</span>` },
       { label: 'Kinderen', num: true, render: (r) => `<span class="muted">${r.children || '—'}</span>` },
       { label: 'Totaal', num: true, render: (r) => `<b style="font-weight:600">${euro(r.total_cents)}</b>` },
-    ], rows, { empty: 'Geen donateurs gevonden', emptyIcon: 'users', onRow: true }) +
-      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'donateur' : 'donateurs'}</span><span>Samen ${euro(total)} gedoneerd</span></div>`;
-    bindRows($('#donor-table'), rows, (r) => go(`#/donateurs/${r.id}`));
+    ], rows, { empty: 'Geen sponsoren gevonden', emptyIcon: 'users', onRow: true }) +
+      `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'sponsor' : 'sponsoren'}</span><span>Samen ${euro(total)} betaald</span></div>`;
+    bindRows($('#donor-table'), rows, (r) => go(`#/sponsoren/${r.id}`));
   };
   const deb = RF.debounce(load);
   ['#f-q', '#f-tag'].forEach((x) => $(x).addEventListener('input', deb));
   ['#f-status', '#f-type', '#f-sort'].forEach((x) => $(x).addEventListener('change', load));
-  $('#new-donor').onclick = () => donorForm({}, (d) => go(`#/donateurs/${d.id}`));
+  $('#new-donor').onclick = () => donorForm({}, (d) => go(`#/sponsoren/${d.id}`));
   await load();
 }
 
@@ -464,7 +465,7 @@ function donorForm(d, done) {
   const isNew = !d.id;
   const f = (name, labelText, value, attrs = '') => `<div class="field"><label for="df-${name}">${labelText}</label><input type="text" id="df-${name}" name="${name}" value="${esc(value || '')}" ${attrs}></div>`;
   modal({
-    title: isNew ? 'Nieuwe donateur' : 'Donateur bewerken', wide: true, submitLabel: isNew ? 'Donateur toevoegen' : 'Opslaan',
+    title: isNew ? 'Nieuwe sponsor' : 'Sponsor bewerken', wide: true, submitLabel: isNew ? 'Sponsor toevoegen' : 'Opslaan',
     body: `
       ${section('Persoon', `
         <div class="field-row">
@@ -496,7 +497,7 @@ function donorForm(d, done) {
         ${f('tags', 'Tags <span class="muted">(komma-gescheiden)</span>', d.tags, 'placeholder="maandgever, major donor"')}
         <div class="field"><label>Notities</label><textarea name="notes" placeholder="Afspraken, wensen, achtergrond…">${esc(d.notes || '')}</textarea></div>`)}
       ${section('Privacy en voorkeuren', `
-        <label class="check"><input type="checkbox" name="anonymous" ${d.anonymous ?? 1 ? 'checked' : ''}><span>Anoniem op het leaderboard<span class="hint" style="display:block;margin-top:2px">Standaard aan. Zet alleen uit met toestemming van de donateur.</span></span></label>
+        <label class="check"><input type="checkbox" name="anonymous" ${d.anonymous ?? 1 ? 'checked' : ''}><span>Anoniem op het leaderboard<span class="hint" style="display:block;margin-top:2px">Standaard aan. Zet alleen uit met toestemming van de sponsor.</span></span></label>
         <div class="field-row">
           ${f('display_name', 'Weergavenaam op leaderboard', d.display_name, 'placeholder="bv. Familie Jansen"')}
           <div class="field"><label>Taal (chat)</label><select name="language">${langOptions(d.language || 'nl')}</select></div>
@@ -504,7 +505,7 @@ function donorForm(d, done) {
         <label class="check" style="margin-bottom:0"><input type="checkbox" name="newsletter" ${d.newsletter ?? 1 ? 'checked' : ''}><span>Ontvangt de nieuwsbrief</span></label>`)}`,
     onSubmit: async (data) => {
       const saved = await api(isNew ? '/api/admin/donors' : `/api/admin/donors/${d.id}`, { method: isNew ? 'POST' : 'PUT', body: data });
-      toast('Donateur opgeslagen');
+      toast('Sponsor opgeslagen');
       done(saved);
     },
   });
@@ -520,7 +521,7 @@ async function renderDonor(donorId) {
   const prop = (ic, k, v) => `<dt>${RF.icon(ic)}${k}</dt><dd>${v || '<span class="muted">—</span>'}</dd>`;
   const openTasks = data.tasks.filter((t) => t.status !== 'afgerond').length;
   view().innerHTML = `
-    <div class="crumbs"><a href="#/donateurs">Donateurs</a>${RF.icon('chevron-right', 'icon-sm')}<span>${esc(d.full_name)}</span></div>
+    <div class="crumbs"><a href="#/sponsoren">Sponsoren</a>${RF.icon('chevron-right', 'icon-sm')}<span>${esc(d.full_name)}</span></div>
     <div class="page-head" style="align-items:center">
       <div class="profile-head">${RF.avatar(d.full_name, 'lg')}
         <div><h1>${esc(d.full_name)}</h1>
@@ -578,7 +579,7 @@ async function renderDonor(donorId) {
             { label: 'Status', render: (r) => badge('donation', r.status) },
             { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b><span class="sub">${esc(label('frequency', r.frequency))}</span>` },
             { label: '', render: (r) => `<button class="icon-btn" data-edit-donation="${r.id}" aria-label="Donatie bewerken" title="Bewerken">${RF.icon('pencil')}</button>` },
-          ], data.donations, { empty: 'Nog geen donaties', emptyIcon: 'banknote' })}
+          ], data.donations, { empty: 'Nog geen betalingen', emptyIcon: 'banknote' })}
         </div>
         <div id="tab-interactions" class="hidden">
           <div style="margin-bottom:14px">${btn('add-interaction', 'Contactmoment vastleggen', { icon: 'plus', size: 'sm' })}</div>
@@ -611,13 +612,13 @@ async function renderDonor(donorId) {
   $('#add-interaction').onclick = () => interactionForm(d.id, reload);
   const annual = () => annualModal(`/api/admin/donors/${d.id}/annual`, year);
   const portalAccess = () => modal({
-    title: 'Toegang donateursportaal',
-    body: `<p>Stel een wachtwoord in voor <b>${esc(d.email || 'deze donateur (geen e-mail!)')}</b>. Laat leeg voor een willekeurig wachtwoord.
-      De donateur ontvangt een e-mail (zie E-mail log).</p><div class="field"><label>Wachtwoord (min. 8 tekens)</label><input type="text" name="password" minlength="8"></div>`,
+    title: 'Toegang sponsorportaal',
+    body: `<p>Stel een wachtwoord in voor <b>${esc(d.email || 'deze sponsor (geen e-mail!)')}</b>. Laat leeg voor een willekeurig wachtwoord.
+      De sponsor ontvangt een e-mail (zie E-mail log).</p><div class="field"><label>Wachtwoord (min. 8 tekens)</label><input type="text" name="password" minlength="8"></div>`,
     submitLabel: 'Instellen',
     onSubmit: async (f) => {
       const r = await api(`/api/admin/donors/${d.id}/portal`, { method: 'POST', body: f });
-      modal({ title: 'Portaaltoegang ingesteld', body: `<p>Wachtwoord: <code style="font-size:1.1rem">${esc(r.password)}</code></p><p class="small muted">Deel dit veilig met de donateur.</p>` });
+      modal({ title: 'Portaaltoegang ingesteld', body: `<p>Wachtwoord: <code style="font-size:1.1rem">${esc(r.password)}</code></p><p class="small muted">Deel dit veilig met de sponsor.</p>` });
       reload();
     },
   });
@@ -633,19 +634,19 @@ async function renderDonor(donorId) {
     reload();
   }));
   const anonymize = async () => {
-      if (!(await confirmDialog('Alle persoonsgegevens van deze donateur worden onherroepelijk verwijderd. Donaties blijven (anoniem) bewaard.', 'Anonimiseren'))) return;
+      if (!(await confirmDialog('Alle persoonsgegevens van deze sponsor worden onherroepelijk verwijderd. Betalingen blijven (anoniem) bewaard.', 'Anonimiseren'))) return;
       await api(`/api/admin/donors/${d.id}/anonymize`, { method: 'POST', body: {} });
-      toast('Donateur geanonimiseerd'); reload();
+      toast('Sponsor geanonimiseerd'); reload();
     };
   const removeDonor = async () => {
-      if (!(await confirmDialog('Donateur en alle donaties definitief verwijderen?', 'Verwijderen'))) return;
-      try { await api(`/api/admin/donors/${d.id}`, { method: 'DELETE', body: {} }); toast('Verwijderd'); go('#/donateurs'); }
+      if (!(await confirmDialog('Sponsor en alle betalingen definitief verwijderen?', 'Verwijderen'))) return;
+      try { await api(`/api/admin/donors/${d.id}`, { method: 'DELETE', body: {} }); toast('Verwijderd'); go('#/sponsoren'); }
       catch (e) { toast(e.message, 'error'); }
     };
   $('#more').onclick = (e) => RF.menu(e.currentTarget, [
     { label: d.has_portal ? 'Nieuw portaalwachtwoord' : 'Portaaltoegang geven', icon: 'key-round', onClick: portalAccess },
     { label: 'Jaaroverzicht', icon: 'file-text', onClick: annual },
-    ...(isAdmin() ? [{ label: 'Inloggen als donateur', icon: 'eye', onClick: () => loginAs(`/api/admin/donors/${d.id}/impersonate`) },
+    ...(isAdmin() ? [{ label: 'Inloggen als sponsor', icon: 'eye', onClick: () => loginAs(`/api/admin/donors/${d.id}/impersonate`) },
       '-', { heading: 'Privacy (AVG)' },
       { label: 'Anonimiseren', icon: 'user', onClick: anonymize, danger: true },
       { label: 'Verwijderen', icon: 'trash-2', onClick: removeDonor, danger: true }] : []),
@@ -696,7 +697,7 @@ function donationForm(d, done) {
   modal({
     title: isNew ? 'Losse gift aan het noodfonds' : `Betaling #${d.id} bewerken`, wide: true,
     body: `
-      ${isNew && !d.donor_id ? `<div class="field"><label>Donateur</label><input type="search" id="donor-search" placeholder="Zoek donateur…" autocomplete="off">
+      ${isNew && !d.donor_id ? `<div class="field"><label>Sponsor</label><input type="search" id="donor-search" placeholder="Zoek sponsor…" autocomplete="off">
         <input type="hidden" name="donor_id"><div id="donor-results" class="small"></div></div>` : `<input type="hidden" name="donor_id" value="${esc(d.donor_id)}">`}
       <div class="field-row">
         <input type="hidden" name="category_key" value="${esc(d.category_key || 'noodfonds')}">
@@ -710,7 +711,7 @@ function donationForm(d, done) {
       </div>
       <div class="field"><label>Referentie / kenmerk</label><input type="text" name="reference" value="${esc(d.reference || '')}"></div>
       <div class="field"><label>Notitie</label><input type="text" name="note" value="${esc(d.note || '')}"></div>
-      <p class="hint">${(d.category_key || 'noodfonds') === 'noodfonds' ? 'Een losse gift gaat naar het noodfonds; de donateur krijgt een bedankmail.' : 'Sponsorbetalingen beheer je bij Sponsorschappen.'}</p>
+      <p class="hint">${(d.category_key || 'noodfonds') === 'noodfonds' ? 'Een losse gift gaat naar het noodfonds; de sponsor krijgt een bedankmail.' : 'Sponsorbetalingen beheer je bij Sponsorschappen.'}</p>
       ${!isNew && isAdmin() ? '<button type="button" class="btn btn-danger btn-sm" id="del-donation">Donatie verwijderen</button>' : ''}`,
     onOpen: (form, close) => {
       const search = $('#donor-search', form);
@@ -737,7 +738,7 @@ function donationForm(d, done) {
       };
     },
     onSubmit: async (f) => {
-      if (!f.donor_id) throw new Error('Kies een donateur');
+      if (!f.donor_id) throw new Error('Kies een sponsor');
       const body = { ...f, amount_cents: toCents(f.amount) };
       delete body.amount;
       await api(isNew ? '/api/admin/donations' : `/api/admin/donations/${d.id}`, { method: isNew ? 'POST' : 'PUT', body });
@@ -752,7 +753,7 @@ async function renderDonations() {
     ${pageHead('Betalingen', { sub: 'Alle sponsorbetalingen en losse giften aan het noodfonds', actions: btn('export', 'Exporteren', { icon: 'download' }) + btn('new', 'Losse gift', { icon: 'plus', kind: 'primary' }) })}
     <div class="card flush">
       <div class="filters">
-        ${searchInput('f-q', 'Zoek donateur of referentie')}
+        ${searchInput('f-q', 'Zoek sponsor of referentie')}
         <select id="f-cat">${catOptions('', true)}</select>
         <select id="f-status">${labelOptions('donation', '', 'Alle statussen')}</select>
         <select id="f-method">${labelOptions('method', '', 'Alle betaalwijzen')}</select>
@@ -768,12 +769,12 @@ async function renderDonations() {
     const sum = rows.filter((r) => r.status === 'ontvangen').reduce((x, r) => x + r.amount_cents, 0);
     $('#tbl').innerHTML = table([
       { label: 'Datum', render: (r) => `<span class="muted">${date(r.received_at)}</span>` },
-      { label: 'Donateur', render: (r) => `<div class="cell-person">${RF.avatar(r.donor_name, 'sm')}${donorLink(r.donor_id, r.donor_name)}</div>` },
+      { label: 'Sponsor', render: (r) => `<div class="cell-person">${RF.avatar(r.donor_name, 'sm')}${donorLink(r.donor_id, r.donor_name)}</div>` },
       { label: 'Bestemming', render: (r) => `${RF.catLabel(r)}${r.campaign_name ? `<span class="sub">${esc(r.campaign_name)}</span>` : ''}` },
       { label: 'Betaling', render: (r) => `${esc(label('method', r.method))}<span class="sub">${esc(label('frequency', r.frequency))}</span>` },
       { label: 'Status', render: (r) => badge('donation', r.status) },
       { label: 'Bedrag', num: true, render: (r) => `<b style="font-weight:600">${euro(r.amount_cents)}</b>` },
-    ], rows, { empty: 'Geen donaties gevonden', emptyIcon: 'banknote', onRow: true }) +
+    ], rows, { empty: 'Geen betalingen gevonden', emptyIcon: 'banknote', onRow: true }) +
       `<div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'betaling' : 'betalingen'}</span><span>Ontvangen: <b style="color:var(--text)">${euro(sum)}</b></span></div>`;
     bindRows($('#tbl'), rows, (r) => donationForm(r, load));
   };
@@ -818,8 +819,8 @@ function accessForm(r, done = () => {}) {
   modal({
     title: `Inlog & chat: ${r.name}`,
     body: `
-      <p class="small muted">Met een inlog kan de ontvanger op <b>/ontvanger</b> chatten met de donateurs van wie geld aan hem/haar is besteed.
-        Donateurs zien alleen de voornaam; ontvangers zien de publieke naam van de donateur (anoniem blijft anoniem).</p>
+      <p class="small muted">Met een inlog kan de ontvanger op <b>/ontvanger</b> chatten met de sponsoren van wie geld aan hem/haar is besteed.
+        Sponsoren zien alleen de voornaam; ontvangers zien de publieke naam van de sponsor (anoniem blijft anoniem).</p>
       <div class="field"><label>Gebruikersnaam</label><input type="text" name="username" value="${esc(r.username || '')}" placeholder="bv. amara" autocapitalize="none">
         <div class="hint">Leeg laten = inlog verwijderen.</div></div>
       <div class="field"><label>${r.has_login ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord'}</label><input type="text" name="password" minlength="8" autocomplete="off"></div>
@@ -843,7 +844,7 @@ function accessForm(r, done = () => {}) {
 // ======================================================================= CHATMODERATIE
 async function renderChatModeration() {
   view().innerHTML = `
-    <div class="page-head"><div><h1>Chatmoderatie</h1><div class="sub">Berichten tussen donateurs en ontvangers</div></div>
+    <div class="page-head"><div><h1>Chatmoderatie</h1><div class="sub">Berichten tussen sponsoren en ontvangers</div></div>
       <div class="toolbar"><select id="f-status">${opt('in_behandeling', 'Wacht op controle', 'in_behandeling')}${opt('goedgekeurd', 'Goedgekeurd')}${opt('afgewezen', 'Afgewezen')}${opt('', 'Alle')}</select></div></div>
     <div class="card" id="mod-card" style="margin-bottom:14px"></div>
     <div id="list"></div>`;
@@ -877,7 +878,7 @@ async function renderChatModeration() {
         ${m.status === 'in_behandeling' ? `<button class="btn btn-primary btn-sm" data-approve="${m.id}">${RF.icon('check')}<span>Goedkeuren</span></button>
           <button class="btn btn-danger btn-sm" data-reject="${m.id}">${RF.icon('x')}<span>Afwijzen</span></button>` : ''}
         <button class="btn btn-ghost btn-sm" data-thread="${m.recipient_id}:${m.donor_id}">Heel gesprek bekijken</button>
-        <a class="btn btn-ghost btn-sm" href="#/donateurs/${m.donor_id}">Donateur</a></div></div>`).join('')
+        <a class="btn btn-ghost btn-sm" href="#/sponsoren/${m.donor_id}">Sponsor</a></div></div>`).join('')
       : `<div class="card">${RF.emptyState({ icon: 'check-check', title: 'Niets te controleren', text: 'Alle chatberichten in deze selectie zijn afgehandeld.' })}</div>`;
     $('#list').querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
       await api(`/api/admin/chat/${b.dataset.approve}/approve`, { method: 'POST', body: {} });
@@ -898,7 +899,7 @@ async function renderChatModeration() {
       modal({
         title: 'Volledig gesprek', wide: true,
         body: `<div class="chat-log" style="height:auto;max-height:60vh">${msgs.map((m) => `<div class="bubble ${m.sender === 'donor' ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
-          <div class="bubble-body">${esc(m.body)}</div><div class="bubble-meta">${m.sender === 'donor' ? 'Donateur' : 'Ontvanger'} · ${dateTime(m.created_at)} · ${esc(m.status)}</div></div>`).join('')}</div>`,
+          <div class="bubble-body">${esc(m.body)}</div><div class="bubble-meta">${m.sender === 'donor' ? 'Sponsor' : 'Ontvanger'} · ${dateTime(m.created_at)} · ${esc(m.status)}</div></div>`).join('')}</div>`,
       });
     }));
   };
@@ -939,7 +940,7 @@ async function renderTasks() {
     $('#tbl').innerHTML = table([
       { label: '', render: (t) => `<input type="checkbox" data-done="${t.id}" ${t.status === 'afgerond' ? 'checked' : ''} aria-label="Afronden">` },
       { label: 'Taak', render: (t) => `<span style="font-weight:500;${t.status === 'afgerond' ? 'text-decoration:line-through;color:var(--text-3)' : ''}">${esc(t.title)}</span>${t.description ? `<span class="sub">${esc(t.description)}</span>` : ''}` },
-      { label: 'Donateur', render: (t) => (t.donor_id ? donorLink(t.donor_id, t.donor_name) : '<span class="muted">—</span>') },
+      { label: 'Sponsor', render: (t) => (t.donor_id ? donorLink(t.donor_id, t.donor_name) : '<span class="muted">—</span>') },
       { label: 'Deadline', render: (t) => (t.status === 'open' && t.due_date && t.due_date < today() ? `<span class="badge badge-hoog">${date(t.due_date)}</span>` : `<span class="muted">${date(t.due_date) || '—'}</span>`) },
       { label: 'Prioriteit', render: (t) => `<span class="badge badge-${esc(t.priority)}">${esc(t.priority.charAt(0).toUpperCase() + t.priority.slice(1))}</span>` },
       { label: 'Toegewezen', render: (t) => (t.assigned_name ? `<div class="cell-person">${RF.avatar(t.assigned_name, 'sm')}<span>${esc(t.assigned_name)}</span></div>` : '<span class="muted">—</span>') },
@@ -966,7 +967,7 @@ async function renderCampaigns() {
   const rows = await api('/api/admin/campaigns');
   state.campaigns = rows;
   view().innerHTML = `
-    ${pageHead('Campagnes', { sub: 'Acties met een doel, zichtbaar in het donateursportaal', actions: btn('new', 'Nieuwe campagne', { icon: 'plus', kind: 'primary' }) })}
+    ${pageHead('Campagnes', { sub: 'Acties met een doel, zichtbaar in het sponsorportaal', actions: btn('new', 'Nieuwe campagne', { icon: 'plus', kind: 'primary' }) })}
     <div class="grid grid-2">${rows.map((c) => {
       const pct = c.goal_cents ? Math.min(100, (c.raised_cents / c.goal_cents) * 100) : 0;
       return `<div class="card" data-c="${c.id}" style="cursor:pointer;${c.active ? '' : 'opacity:.6'}" tabindex="0">
@@ -978,7 +979,7 @@ async function renderCampaigns() {
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span style="font-size:20px;font-weight:600;letter-spacing:-.02em" class="num">${euro0(c.raised_cents)}</span>
           <span class="small muted">${Math.round(pct)}% van ${euro0(c.goal_cents)}</span></div>
         <div class="meter"><span style="width:${pct}%"></span></div>
-        <div class="small muted" style="margin-top:8px">${c.donor_count} ${c.donor_count === 1 ? 'donateur' : 'donateurs'}</div></div>`;
+        <div class="small muted" style="margin-top:8px">${c.donor_count} ${c.donor_count === 1 ? 'sponsor' : 'sponsoren'}</div></div>`;
     }).join('') || `<div class="card" style="grid-column:1/-1">${RF.emptyState({ icon: 'megaphone', title: 'Nog geen campagnes', text: 'Start een actie met een doelbedrag, bijvoorbeeld voor noodhulp na een orkaan.' })}</div>`}</div>`;
   const form = (c = {}) => modal({
     title: c.id ? 'Campagne bewerken' : 'Nieuwe campagne',
@@ -988,7 +989,7 @@ async function renderCampaigns() {
         <div class="field"><label>Doel (€)</label><input type="text" name="goal" value="${c.goal_cents ? centsToInput(c.goal_cents) : ''}"></div></div>
       <div class="field-row"><div class="field"><label>Start</label><input type="date" name="start_date" value="${esc(c.start_date || today())}"></div>
         <div class="field"><label>Einde</label><input type="date" name="end_date" value="${esc(c.end_date || '')}"></div></div>
-      <label class="check"><input type="checkbox" name="active" ${c.active ?? 1 ? 'checked' : ''}> Actief (zichtbaar in donateursportaal)</label>`,
+      <label class="check"><input type="checkbox" name="active" ${c.active ?? 1 ? 'checked' : ''}> Actief (zichtbaar in sponsorportaal)</label>`,
     onSubmit: async (f) => {
       const body = { ...f, goal_cents: f.goal ? toCents(f.goal) : 0 };
       await api(c.id ? `/api/admin/campaigns/${c.id}` : '/api/admin/campaigns', { method: c.id ? 'PUT' : 'POST', body });
@@ -1011,15 +1012,15 @@ async function renderReports(year) {
     return rows.map((x) => `<div class="hbar"><span>${esc(fmt(x[keyLabel]))}</span><div class="bar"><span style="width:${(x.cents / mx) * 100}%"></span></div><span class="right">${euro0(x.cents)}</span></div>`).join('') || '<p class="muted">Geen data</p>';
   };
   view().innerHTML = `
-    <div class="page-head"><div><h1>Rapportages ${esc(r.year)}</h1><div class="sub">Opbrengst, bestedingen en donateursgedrag per jaar</div></div>
+    <div class="page-head"><div><h1>Rapportages ${esc(r.year)}</h1><div class="sub">Opbrengst, bestedingen en sponsorgedrag per jaar</div></div>
       <div class="toolbar"><select id="f-year">${(r.years.length ? r.years : [r.year]).map((y) => opt(y, y, r.year)).join('')}</select>
         <button class="btn btn-ghost" onclick="window.print()">${RF.icon('printer')}<span>Afdrukken</span></button>
         <a class="btn btn-ghost" href="/api/admin/donations?from=${r.year}-01-01&to=${r.year}-12-31&format=csv">${RF.icon('download')}<span>Donaties ${esc(r.year)}</span></a></div></div>
     <div class="kpis">
       <div class="kpi"><div class="label">${RF.icon('banknote')}Opgehaald</div><div class="value">${euro0(r.totals.raised_cents)}</div><div class="sub">${r.totals.donations} giften</div></div>
       <div class="kpi"><div class="label">${RF.icon('hand-coins')}Besteed</div><div class="value">${euro0(r.spent.cents)}</div><div class="sub">${r.spent.n} bestedingen</div></div>
-      <div class="kpi"><div class="label">${RF.icon('users')}Unieke donateurs</div><div class="value">${r.totals.donors}</div><div class="sub">Gemiddelde gift ${euro(r.totals.avg_cents)}</div></div>
-      <div class="kpi"><div class="label">${RF.icon('repeat')}Donateursbehoud</div><div class="value">${ret == null ? '—' : `${ret}%`}</div><div class="sub">${r.retention.retained} van ${r.retention.last_year} van vorig jaar</div></div>
+      <div class="kpi"><div class="label">${RF.icon('users')}Unieke sponsoren</div><div class="value">${r.totals.donors}</div><div class="sub">Gemiddelde gift ${euro(r.totals.avg_cents)}</div></div>
+      <div class="kpi"><div class="label">${RF.icon('repeat')}Sponsorbehoud</div><div class="value">${ret == null ? '—' : `${ret}%`}</div><div class="sub">${r.retention.retained} van ${r.retention.last_year} van vorig jaar</div></div>
     </div>
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card"><div class="card-head"><h2>Per maand</h2><span class="small muted">Ontvangen giften</span></div>${RF.barChart(months.map(RF.monthName), [{ label: 'Ontvangen', values: months.map((m) => bm[m] || 0), color: 'var(--accent)' }])}</div>
@@ -1030,20 +1031,20 @@ async function renderReports(year) {
       <div class="card"><div class="card-head"><h2>Betaalwijze</h2></div>${hbars(r.byMethod, 'method', (k) => label('method', k))}</div>
       <div class="card"><div class="card-head"><h2>Frequentie en type</h2></div>${hbars(r.byFrequency, 'frequency', (k) => label('frequency', k))}
         <hr>${hbars(r.byType, 'donor_type', (k) => label('type', k))}</div>
-      <div class="card flush"><div class="card-head"><h2>Top 10 donateurs ${esc(r.year)}</h2></div>${table([
-        { label: '#', render: (x) => `<span class="muted num">${x.rank}</span>` }, { label: 'Donateur', render: (x) => `<div class="cell-person">${RF.avatar(x.full_name, 'sm')}${donorLink(x.donor_id, x.full_name)}</div>` },
+      <div class="card flush"><div class="card-head"><h2>Top 10 sponsoren ${esc(r.year)}</h2></div>${table([
+        { label: '#', render: (x) => `<span class="muted num">${x.rank}</span>` }, { label: 'Sponsor', render: (x) => `<div class="cell-person">${RF.avatar(x.full_name, 'sm')}${donorLink(x.donor_id, x.full_name)}</div>` },
         { label: 'Totaal', num: true, render: (x) => `<b style="font-weight:600">${euro(x.total_cents)}</b>` }], r.topDonors, { empty: 'Geen donaties dit jaar', emptyIcon: 'trophy' })}</div>
       <div class="card"><div class="card-head"><h2>Maandupdates</h2></div>
         <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:28px;font-weight:600;letter-spacing:-.02em" class="num">${r.messageStats.delivered ? Math.round((r.messageStats.read / r.messageStats.delivered) * 100) : 0}%</span><span class="muted">gelezen</span></div>
         <div class="meter" style="margin:10px 0"><span style="width:${r.messageStats.delivered ? (r.messageStats.read / r.messageStats.delivered) * 100 : 0}%"></span></div>
-        <p class="small muted" style="margin:0">${num(r.messageStats.read)} van ${num(r.messageStats.delivered)} updates (foto’s, brieven, filmpjes) zijn bekeken door sponsors.</p></div>
+        <p class="small muted" style="margin:0">${num(r.messageStats.read)} van ${num(r.messageStats.delivered)} updates (foto’s, brieven, filmpjes) zijn bekeken door sponsoren.</p></div>
     </div>`;
   $('#f-year').onchange = (e) => renderReports(e.target.value);
 }
 
 // ======================================================================= E-MAIL LOG
 async function renderOutbox() {
-  view().innerHTML = `<div class="page-head"><div><h1>E-mail log</h1><div class="sub">Alle e-mails die het systeem naar donateurs stuurt</div></div>
+  view().innerHTML = `<div class="page-head"><div><h1>E-mail log</h1><div class="sub">Alle e-mails die het systeem naar sponsoren stuurt</div></div>
       <div class="toolbar"><select id="f-kind">${opt('', 'Alle soorten')}${['bedankt', 'besteding', 'impactbericht', 'portaal'].map((k) => opt(k, k)).join('')}</select></div></div>
     <div class="callout neutral">${RF.icon('info')}<span>Zonder e-mailkoppeling worden berichten alleen hier gelogd. Koppel Brevo bij <a href="#/instellingen">Instellingen → Integraties</a> om ze echt te versturen.</span></div>
     <div class="card flush"><div id="tbl">${RF.skeleton('rows')}</div></div>`;
@@ -1071,18 +1072,18 @@ async function renderGoLive() {
     <div class="list">
       ${step(!g.weak_password && !g.weak_users.length, 'Sterke wachtwoorden', g.weak_users.length ? `Zwak of demo-wachtwoord bij: ${g.weak_users.map(esc).join(', ')}` : 'Alle actieve gebruikers hebben een eigen wachtwoord.',
         g.weak_password ? `<button class="btn btn-sm btn-ghost" data-act="pw">Wijzigen</button>` : '')}
-      ${step(!g.demo, 'Demodata verwijderd', g.demo ? `Nu: ${g.counts.donors} donateurs, ${g.counts.donations} donaties, ${g.counts.recipients} ontvangers en ${g.counts.users} gebruikers (voorbeeld). Wis ze vóór je echte gegevens invoert.` : 'Er staan geen demo-accounts of voorbeelddonateurs meer in.',
+      ${step(!g.demo, 'Demodata verwijderd', g.demo ? `Nu: ${g.counts.donors} sponsoren, ${g.counts.donations} betalingen, ${g.counts.recipients} ontvangers en ${g.counts.users} gebruikers (voorbeeld). Wis ze vóór je echte gegevens invoert.` : 'Er staan geen demo-accounts of voorbeeldsponsoren meer in.',
         `<button class="btn btn-sm btn-danger" data-act="wipe">Demodata wissen…</button>`)}
       ${step(g.moderation, 'Chatmoderatie aan', g.moderation ? 'Berichten met kinderen worden eerst gecontroleerd.' : 'Staat uit: berichten met kinderen worden direct afgeleverd.', '<a class="btn btn-sm btn-ghost" href="#/chat">Aanzetten</a>')}
-      ${step(g.payments, 'Echte betalingen (Mollie)', g.payments ? 'Donaties worden via Mollie betaald.' : 'Doneren in het portaal is nog een demo. Vul hieronder je Mollie-sleutel in.')}
+      ${step(g.payments, 'Echte betalingen (Mollie)', g.payments ? 'Sponsorbetalingen gaan via Mollie.' : 'Sponsoren in het portaal is nog een demo. Vul hieronder je Mollie-sleutel in.')}
       ${step(g.email, 'Echte e-mails (Brevo)', g.email ? 'Bedankjes en meldingen worden echt verstuurd.' : 'E-mails worden nu alleen gelogd. Vul hieronder je Brevo-sleutel in.')}
-      ${step(g.impersonation_read_only, '“Inloggen als” is alleen-lezen', g.impersonation_read_only ? 'Medewerkers kunnen meekijken, maar niets doen namens een donateur of ontvanger.'
-        : 'Staat nu op volledige toegang: beheerders kunnen alles doen namens een donateur of ouders. Zet dit uit vóór de livegang.', '<a class="btn btn-sm btn-ghost" href="#imp-card" onclick="document.getElementById(\'imp-card\').scrollIntoView({behavior:\'smooth\'});return false">Wijzigen</a>')}
+      ${step(g.impersonation_read_only, '“Inloggen als” is alleen-lezen', g.impersonation_read_only ? 'Medewerkers kunnen meekijken, maar niets doen namens een sponsor of ontvanger.'
+        : 'Staat nu op volledige toegang: beheerders kunnen alles doen namens een sponsor of ouders. Zet dit uit vóór de livegang.', '<a class="btn btn-sm btn-ghost" href="#imp-card" onclick="document.getElementById(\'imp-card\').scrollIntoView({behavior:\'smooth\'});return false">Wijzigen</a>')}
     </div>`;
   const pw = $('#golive-card [data-act=pw]'); if (pw) pw.onclick = changeOwnPassword;
   $('#golive-card [data-act=wipe]').onclick = () => modal({
     title: 'Alle demodata wissen', submitLabel: 'Definitief wissen',
-    body: `<div class="callout warn" style="font-weight:400">${RF.icon('triangle-alert')}<span>Dit verwijdert <b>alle</b> donateurs, donaties, cellen, bestedingen, ontvangers, berichten, chats, taken, campagnes, de e-mail log en alle andere gebruikers. Alleen jouw account, de bestemmingen en de instellingen (sleutels) blijven. Dit kan niet ongedaan worden gemaakt.</span></div>
+    body: `<div class="callout warn" style="font-weight:400">${RF.icon('triangle-alert')}<span>Dit verwijdert <b>alle</b> sponsoren, donaties, cellen, bestedingen, ontvangers, berichten, chats, taken, campagnes, de e-mail log en alle andere gebruikers. Alleen jouw account, de bestemmingen en de instellingen (sleutels) blijven. Dit kan niet ongedaan worden gemaakt.</span></div>
       <p class="small muted">Voorwaarden: je hebt een eigen, sterk wachtwoord en je inlognaam is je e-mailadres (niet “robin”).</p>
       <div class="field"><label>Typ <b>VERWIJDER</b> om te bevestigen</label><input type="text" name="confirm" autocomplete="off" autocapitalize="characters"></div>`,
     onSubmit: async (f) => {
@@ -1152,12 +1153,12 @@ async function renderImpersonationSetting() {
   const card = $('#imp-card');
   if (!card) return;
   const { write } = await api('/api/admin/settings/impersonation');
-  card.innerHTML = `<div class="card-head"><div><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('eye')}Inloggen als donateur of ouders</h2>
-      <div class="small muted">Met “Inloggen als” open je het portaal van een donateur of de ouders, bijvoorbeeld om te helpen of te testen.</div></div></div>
+  card.innerHTML = `<div class="card-head"><div><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('eye')}Inloggen als sponsor of ouders</h2>
+      <div class="small muted">Met “Inloggen als” open je het portaal van een sponsor of de ouders, bijvoorbeeld om te helpen of te testen.</div></div></div>
     <label class="check" style="font-size:15px"><input type="checkbox" id="imp-write" ${write ? 'checked' : ''}>
       <span><b>Volledige toegang</b><br><span class="small muted">Aan: je kunt alles doen namens de persoon (berichten sturen, kinderen kiezen of stoppen, profiel wijzigen).
       Uit: je kunt alleen meekijken. Wachtwoord en Face ID van de persoon kun je nooit wijzigen. Alles wat je doet komt in het audit log, met jouw naam erbij.</span></span></label>
-    ${write ? `<div class="callout warn" style="margin-top:10px">${RF.icon('shield-alert')}<span>Zet dit uit vóór de livegang, tenzij je bewust namens donateurs of ouders wilt kunnen handelen.</span></div>` : ''}`;
+    ${write ? `<div class="callout warn" style="margin-top:10px">${RF.icon('shield-alert')}<span>Zet dit uit vóór de livegang, tenzij je bewust namens sponsoren of ouders wilt kunnen handelen.</span></div>` : ''}`;
   $('#imp-write').onchange = async (e) => {
     try {
       await api('/api/admin/settings/impersonation', { method: 'PUT', body: { write: e.target.checked } });

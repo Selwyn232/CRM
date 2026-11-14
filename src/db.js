@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS recipients (
   country TEXT NOT NULL DEFAULT '',
   story TEXT NOT NULL DEFAULT '',
   photo_url TEXT NOT NULL DEFAULT '',
-  consent INTEGER NOT NULL DEFAULT 0,          -- toestemming om foto/verhaal te delen met donateurs
+  consent INTEGER NOT NULL DEFAULT 0,          -- toestemming om foto/verhaal te delen met sponsoren
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS impact_messages (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Inbox van de donateur.
+-- Inbox van de sponsor.
 CREATE TABLE IF NOT EXISTS donor_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   donor_id INTEGER NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
@@ -358,7 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_alloc_donor ON allocations(donor_id);
 CREATE INDEX IF NOT EXISTS idx_dm_donor ON donor_messages(donor_id);
 CREATE INDEX IF NOT EXISTS idx_interactions_donor ON interactions(donor_id);
 
--- Chat tussen ontvanger en donateur. Berichten kunnen eerst door een medewerker gemodereerd worden.
+-- Chat tussen ontvanger en sponsor. Berichten kunnen eerst door een medewerker gemodereerd worden.
 CREATE TABLE IF NOT EXISTS chat_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   recipient_id INTEGER NOT NULL REFERENCES recipients(id) ON DELETE CASCADE,

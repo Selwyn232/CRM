@@ -1,5 +1,5 @@
 'use strict';
-// Demodata voor Robin Foundation CRM: 20 kinderen in 8 gezinnen en 10 sponsors.
+// Demodata voor Robin Foundation CRM: 20 kinderen in 8 gezinnen en 10 sponsoren.
 // Gebruik: npm run seed  (wist de bestaande database!)
 
 const path = require('node:path');
@@ -115,7 +115,7 @@ function clearData(db) {
     DELETE FROM passkeys WHERE kind <> 'staff'; DELETE FROM sessions WHERE kind <> 'staff'; DELETE FROM webauthn_challenges;`);
 }
 
-// Demo-inhoud: sponsors, gezinnen, kinderen, betalingen, updates, noodfonds, chats, taken.
+// Demo-inhoud: sponsoren, gezinnen, kinderen, betalingen, updates, noodfonds, chats, taken.
 function seedContent(db) {
   seedValue = 42;
   const SP = require('./sponsoring');

@@ -47,7 +47,7 @@ function takeChallenge(db, id, purpose) {
 // Wie is dit account, zoals het toestel het toont?
 function accountInfo(db, kind, id) {
   if (kind === 'staff') { const u = get(db, 'SELECT email, name FROM users WHERE id = ?', id); return { name: u.email, display: u.name }; }
-  if (kind === 'donor') { const d = get(db, 'SELECT * FROM donors WHERE id = ?', id); return { name: d.email || `donateur-${id}`, display: S.donorFullName(d) }; }
+  if (kind === 'donor') { const d = get(db, 'SELECT * FROM donors WHERE id = ?', id); return { name: d.email || `sponsor-${id}`, display: S.donorFullName(d) }; }
   const r = get(db, 'SELECT username, name FROM recipients WHERE id = ?', id);
   return { name: r.username || `ontvanger-${id}`, display: r.name };
 }
