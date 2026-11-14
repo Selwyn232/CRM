@@ -1201,7 +1201,10 @@ async function renderSettings() {
     const showStatus = (st) => {
       $('#tr-status').innerHTML = `
         ${line(st.sdk_installed, 'Vertaalpakket is geïnstalleerd', 'Vertaalpakket ontbreekt → zet in Render het <b>Build Command</b> op <code>npm install</code> en deploy opnieuw')}
-        ${line(st.api_key_set, `API-sleutel is ingesteld ${st.key_source === 'render' ? 'in Render' : 'hier in het CRM'} (<code>${esc(st.key_hint)}</code>)`, 'API-sleutel ontbreekt → vul hem hieronder in')}
+        ${st.key_problem ? '' : line(st.api_key_set, `API-sleutel is ingesteld ${st.key_source === 'render' ? 'in Render' : 'hier in het CRM'} (<code>${esc(st.key_hint)}</code>)`, 'API-sleutel ontbreekt → vul hem hieronder in')}
+        ${st.key_problem ? `<div class="form-error" style="margin:6px 0">❌ ${esc(st.key_problem)} ${st.key_source === 'render'
+          ? 'Pas in Render bij <b>Environment</b> de waarde van <code>ANTHROPIC_API_KEY</code> aan (of verwijder hem en vul de sleutel hieronder in).'
+          : 'Plak hieronder een nieuwe sleutel.'}</div>` : ''}
         ${st.api_key_has_spaces ? '<div>⚠️ De API-sleutel begint of eindigt met een spatie: verwijder die in Render.</div>' : ''}
         <div>🤖 Model: <code>${esc(st.model)}</code>${st.model_from_env ? ' (ingesteld in Render)' : ''}</div>
         ${st.lookalikes && st.lookalikes.length ? `<div style="margin-top:6px">⚠️ Gevonden variabelen met een <b>bijna</b> goede naam: ${st.lookalikes.map((k) => `<code>${esc(k)}</code>`).join(', ')}

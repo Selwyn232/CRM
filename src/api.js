@@ -898,7 +898,7 @@ function buildRoutes({ db, uploadDir }) {
     ['POST', '/api/admin/translation/test', async () => {
       const T = require('./translate');
       const st = T.status();
-      if (!st.enabled) return { ok: false, ...st, error: 'Vertalen staat uit (zie hierboven wat ontbreekt).' };
+      if (!st.enabled) return { ok: false, ...st, error: st.key_problem ? `Ongeldige API-sleutel${st.key_source === 'render' ? ' in Render' : ''}: ${st.key_problem}` : 'Vertalen staat uit (zie hierboven wat ontbreekt).' };
       const started = Date.now();
       try {
         const res = await T.translateBatch([{ id: 1, text: 'Bonjou! Mèsi anpil pou manje a, mwen kontan anpil.' }], 'nl');

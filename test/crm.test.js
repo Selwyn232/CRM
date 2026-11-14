@@ -299,7 +299,7 @@ test('chat vertalen: alleen berichten van de ander, gecachet, fout breekt chat n
   const T = require('../src/translate');
   const orig = T.translateBatch;
   const prevKey = process.env.ANTHROPIC_API_KEY;
-  process.env.ANTHROPIC_API_KEY = 'test';
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-api03-' + 't'.repeat(30);
   let calls = 0;
   T.translateBatch = async (items, lang) => {
     calls++;

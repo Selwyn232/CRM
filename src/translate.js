@@ -63,7 +63,18 @@ function getClient() {
   return client;
 }
 
-const isEnabled = () => !!currentKey() && !!loadSdk();
+// Controleer de vorm van de sleutel (vooral handig voor waarden uit Render, die we niet bij het opslaan zien).
+function keyProblem(key = currentKey()) {
+  if (!key) return null;
+  if (/[^\x21-\x7e]/.test(key)) {
+    const bad = [...key].find((ch) => !/[\x21-\x7e]/.test(ch));
+    return `De sleutel bevat een ongeldig teken (${bad === ' ' ? 'een spatie' : `"${bad}"`}). Waarschijnlijk is er iets anders geplakt dan de sleutel.`;
+  }
+  if (/^rnd_/i.test(key)) return 'Dit is een Render-sleutel, geen Anthropic API-sleutel.';
+  if (!/^sk-ant-api\d\d-[A-Za-z0-9_\-]{20,}$/.test(key)) return 'Dit is geen Anthropic API-sleutel (die begint met "sk-ant-api03-").';
+  return null;
+}
+const isEnabled = () => !!currentKey() && !keyProblem() && !!loadSdk();
 
 const SYSTEM = `Je bent een vertaler voor de chat van Robin Foundation, een goed doel. Donateurs chatten
 met kinderen, scholen en projecten die ze steunen (o.a. in Haïti en Honduras).
@@ -98,6 +109,7 @@ const SCHEMA = {
 
 // items: [{ id, text }] -> Map(id -> { text, source_language })
 async function translateBatch(items, target) {
+  if (keyProblem()) throw Object.assign(new Error(`Ongeldige API-sleutel${envKey() ? ' in Render' : ''}: ${keyProblem()}`), { status: 503 });
   if (!isEnabled()) throw Object.assign(new Error('Vertalen is niet ingesteld (ANTHROPIC_API_KEY ontbreekt)'), { status: 503 });
   if (!LANGUAGES[target]) throw Object.assign(new Error('Onbekende taal'), { status: 400 });
   if (!items.length) return new Map();
@@ -159,7 +171,8 @@ function status() {
     sdk_installed: !!loadSdk(),
     api_key_set: !!currentKey(),
     key_source: envKey() ? 'render' : runtime.apiKey ? 'crm' : null,
-    key_hint: currentKey() ? `…${currentKey().slice(-4)}` : '',
+    key_hint: currentKey() && !keyProblem() ? `…${currentKey().slice(-4)}` : '',
+    key_problem: keyProblem(),
     api_key_has_spaces: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== process.env.ANTHROPIC_API_KEY.trim(),
     model_from_env: envModel() || null,
     model: currentModel(),
