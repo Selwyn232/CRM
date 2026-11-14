@@ -53,7 +53,7 @@ Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
 
 ## Automatisch vertalen in de chat
 
-In elk chatvenster staat de knop **🌐 Automatisch vertalen**. Zet je die aan, dan worden de berichten van de ander vertaald naar de taal die je kiest. Ondersteund zijn Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees en Papiaments. Met "origineel" zie je de oorspronkelijke tekst. Je keuze wordt per apparaat onthouden.
+In elk chatvenster staat de knop **🌐 Automatisch vertalen**. Zet je die aan, dan worden de berichten van de ander vertaald naar de taal die je kiest. Ondersteund zijn Nederlands, Engels, Frans, Haïtiaans Creools, Spaans, Duits, Portugees, Papiaments en Tagalog. Met "origineel" zie je de oorspronkelijke tekst. Je keuze wordt per apparaat onthouden.
 
 - Vertalen gebeurt met Claude (Anthropic). Stel daarvoor de omgevingsvariabele **`ANTHROPIC_API_KEY`** in, in Render via *Environment*. Zonder sleutel is de knop uitgeschakeld.
 - Standaardmodel is `claude-opus-5-5` met lage *effort*. Met **`CRM_TRANSLATE_MODEL`** kies je een ander model, bijvoorbeeld `claude-haiku-5-5` (veel goedkoper).
