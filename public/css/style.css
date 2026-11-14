@@ -943,3 +943,5 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
 }
 .explainer-video video::cue { background: rgba(20, 24, 20, .72); color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 0.95em; line-height: 1.35; }
 .explainer-play[hidden] { display: none; }
+.explainer-error { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 10px 14px; border-radius: 10px; background: rgba(255, 255, 255, .95); color: var(--text); font-size: 14px; z-index: 2; }
+.explainer-error[hidden] { display: none; }
