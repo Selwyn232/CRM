@@ -22,6 +22,7 @@ function showAuth() {
 
 function showApp() {
   $('#app').classList.remove('hidden');
+  RF.markLoggedIn();
   RF.impersonationBanner(me, '/api/donor/logout');
   const logout = async () => { await api('/api/donor/logout', { method: 'POST', body: {} }); location.replace('/login?rol=donateur'); };
   $('#logout').onclick = logout;

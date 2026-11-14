@@ -111,6 +111,18 @@ $('#register-form').addEventListener('submit', async (e) => {
 $('#to-register').onclick = (e) => { e.preventDefault(); showRegister(true); };
 $('#to-login').onclick = (e) => { e.preventDefault(); showRegister(false); };
 
+// Melding als je automatisch bent uitgelogd.
+try {
+  if (sessionStorage.getItem('rf_session_expired')) {
+    sessionStorage.removeItem('rf_session_expired');
+    const n = document.createElement('div');
+    n.className = 'already';
+    n.style.background = 'var(--warn-soft)'; n.style.color = 'var(--warn)';
+    n.textContent = 'Je bent uitgelogd (bijvoorbeeld na een update van de app). Log opnieuw in; je komt daarna terug waar je was.';
+    document.querySelector('#already').before(n);
+  }
+} catch { /* geen opslag */ }
+
 // Startrol: ?rol=… > laatst gebruikte rol > donateur
 setRole(params.get('rol') || store.get() || 'donateur');
 if (params.get('registreren') === '1' && role === 'donateur') showRegister(true);

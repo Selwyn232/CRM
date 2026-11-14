@@ -12,12 +12,31 @@ const RF = (() => {
     const isJson = (res.headers.get('content-type') || '').includes('application/json');
     const data = isJson ? await res.json() : await res.text();
     if (!res.ok) {
+      if (res.status === 401 && sessionExpired(path)) return new Promise(() => {}); // we gaan naar de inlogpagina
       const err = new Error((data && data.error) || `Fout ${res.status}`);
       err.status = res.status;
       throw err;
     }
     return data;
   }
+
+  // Sessie verlopen (bv. na een update waarbij de database opnieuw is opgebouwd) terwijl je op een
+  // ingelogde pagina zat: stuur naar de inlogpagina en daarna terug naar dezelfde plek.
+  const ROLE_BY_PAGE = { '/portal': 'donateur', '/ontvanger': 'ontvanger', '/admin': 'medewerker' };
+  let redirecting = false;
+  function sessionExpired(path) {
+    const role = ROLE_BY_PAGE[location.pathname.replace(/\/$/, '')];
+    if (!role || /\/(login|register|logout)$/.test(path) || !wasLoggedIn) return false;
+    if (!redirecting) {
+      redirecting = true;
+      try { sessionStorage.setItem('rf_session_expired', '1'); } catch { /* geen opslag */ }
+      location.replace(`/login?rol=${role}&terug=${encodeURIComponent(location.pathname + location.hash)}`);
+    }
+    return true;
+  }
+  // Pas na een geslaagde "wie ben ik"-check weten we dat er een sessie was die nu verlopen is.
+  let wasLoggedIn = false;
+  const markLoggedIn = () => { wasLoggedIn = true; };
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const euroFmt = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
@@ -242,6 +261,10 @@ const RF = (() => {
     const langSel = container.querySelector('.translate-lang');
     const status = container.querySelector('.translate-status');
     const textarea = container.querySelector('textarea');
+    // Concept bewaren, zodat een half getypt bericht niet verloren gaat (bv. als je opnieuw moet inloggen).
+    const draftKey = `rf_concept_${location.pathname}${location.hash}`;
+    try { textarea.value = sessionStorage.getItem(draftKey) || ''; } catch { /* geen opslag */ }
+    textarea.addEventListener('input', () => { try { sessionStorage.setItem(draftKey, textarea.value); } catch { /* geen opslag */ } });
     const showOriginal = new Set();
     const langName = (code) => info.languages[code] || code;
     langSel.addEventListener('change', async () => {
@@ -304,6 +327,7 @@ const RF = (() => {
       try {
         await opts.send(body);
         form.elements.body.value = '';
+        try { sessionStorage.removeItem(draftKey); } catch { /* geen opslag */ }
         lastSig = '';
         await refresh();
         log.scrollTop = log.scrollHeight;
@@ -334,6 +358,7 @@ const RF = (() => {
   }
 
   return {
+    markLoggedIn,
     impersonationBanner,
     chatBox,
     api, esc, euro, euro0, num, date, dateTime, today, toCents, centsToInput, monthName, label, badge, LABELS,

@@ -22,6 +22,7 @@ function showLogin() {
 }
 
 async function showApp() {
+  RF.markLoggedIn();
   $('#app').classList.remove('hidden');
   $('#me').innerHTML = `<div><b>${esc(state.user.name)}</b></div><div class="muted">${esc(state.user.email)}</div>
     <div><span class="badge badge-admin">${state.user.role === 'admin' ? 'Beheerder' : 'Medewerker'}</span></div>

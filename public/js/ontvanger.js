@@ -15,6 +15,7 @@ function showAuth() {
 
 function showApp() {
   $('#app').classList.remove('hidden');
+  RF.markLoggedIn();
   RF.impersonationBanner(me, '/api/recipient/logout');
   $('#who').textContent = me.name + (me.managed_by ? ` · begeleid door ${me.managed_by}` : '');
   $('#logout').onclick = async () => { await api('/api/recipient/logout', { method: 'POST', body: {} }); location.replace('/login?rol=ontvanger'); };
