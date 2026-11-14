@@ -40,11 +40,13 @@
         <a class="btn btn-primary" href="/aanmelden" data-ic="heart">Kies een kind</a>
       </div>
       <div class="explainer-video">
-        <video id="explainer" src="/media/robin-explainer.mp4" poster="/media/robin-explainer-poster.jpg" preload="none" playsinline controls
+        <video id="explainer" poster="/media/robin-explainer-poster.jpg" preload="metadata" playsinline webkit-playsinline controls
           aria-label="Uitlegvideo: zo werkt Robin Foundation">
+          <source src="/media/robin-explainer.mp4" type="video/mp4">
           <track kind="subtitles" src="/media/robin-explainer.nl.vtt" srclang="nl" label="Nederlands" default>
           <track kind="subtitles" src="/media/robin-explainer.en.vtt" srclang="en" label="English">
         </video>
+        <p class="explainer-error" id="explainer-error" hidden>De video kan hier niet worden afgespeeld. <a href="/media/robin-explainer.mp4" target="_blank" rel="noopener">Open de video</a></p>
         <button type="button" class="explainer-play" id="explainer-play" aria-label="Video afspelen">
           <span class="explainer-play-btn" data-ic="play"></span><span class="explainer-len">1:12</span>
         </button>
@@ -64,7 +66,18 @@
     (() => {
       const v = document.getElementById('explainer'); const b = document.getElementById('explainer-play');
       v.controls = false;
-      b.onclick = () => { b.hidden = true; v.controls = true; v.play().catch(() => {}); };
+      const fail = () => { b.hidden = true; v.controls = true; document.getElementById('explainer-error').hidden = false; };
+      const NO_SOURCE = 3; // de video kon niet worden geladen
+      b.onclick = () => {
+        if (v.networkState === NO_SOURCE) return fail();
+        b.hidden = true; v.controls = true;
+        const p = v.play();
+        // Lukt automatisch starten niet (bv. browserbeleid), dan staan de gewone bedieningsknoppen klaar; bij een echte fout een melding.
+        if (p && p.catch) p.catch((err) => { if (err && err.name !== 'NotAllowedError' && err.name !== 'AbortError') fail(); });
+      };
+      v.addEventListener('error', fail, true);
+      v.querySelector('source').addEventListener('error', fail);
+      if (v.networkState === NO_SOURCE) fail();
       v.addEventListener('play', () => { b.hidden = true; v.controls = true; });
       v.addEventListener('ended', () => { try { v.currentTime = 0; } catch { /* */ } v.controls = false; b.hidden = false; });
     })();
