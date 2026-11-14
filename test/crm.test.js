@@ -759,3 +759,21 @@ test('Noodfonds: inzet verlaagt het saldo, zonder mail aan donateurs; terugdraai
   assert.equal((await fetch(`${base}/api/admin/noodfonds/${depId}`, { method: 'DELETE', headers: h })).status, 200);
   assert.equal((await (await fetch(`${base}/api/admin/noodfonds`, { headers: h })).json()).balance_cents, 1500);
 });
+
+test('Oude bestemmingen (vóór het sponsormodel) zijn verborgen in beheer, maar blijven bewaard', async (t) => {
+  const { db, donor, kids } = sponsorSetup();
+  SP.bookPayment(db, { donorId: donor, sponsorshipIds: SP.startSponsorships(db, donor, [kids[0]]) });
+  run(db, "INSERT INTO donations (donor_id, category_key, amount_cents, status) VALUES (?, 'schoolmaaltijd', 1500, 'ontvangen')", donor);
+  run(db, "INSERT INTO users (email, name, role, password_hash) VALUES ('c@rf.org','C','admin',?)", hashPassword('Sterk wachtwoord 1'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const h = { cookie: (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'c@rf.org', password: 'Sterk wachtwoord 1' }) })).headers.get('set-cookie').split(';')[0] };
+  const list = await (await fetch(`${base}/api/admin/donations`, { headers: h })).json();
+  assert.deepEqual(list.map((d) => d.category_key), ['sponsoring']);
+  const detail = await (await fetch(`${base}/api/admin/donors/${donor}`, { headers: h })).json();
+  assert.equal(detail.donations.length, 1);
+  const donors = await (await fetch(`${base}/api/admin/donors`, { headers: h })).json();
+  assert.equal(donors.find((d) => d.id === donor).total_cents, 5000);
+  assert.equal(get(db, 'SELECT COUNT(*) AS n FROM donations').n, 2); // niets verwijderd
+});

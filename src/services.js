@@ -330,7 +330,7 @@ function donorImpact(db, donorId) {
 }
 
 function leaderboard(db, { period = 'all', category = '', limit = 50 } = {}) {
-  const where = ["dn.status = 'ontvangen'"];
+  const where = ["dn.status = 'ontvangen'", 'dn.category_key IN (SELECT key FROM categories WHERE active = 1)'];
   const params = [];
   if (period === 'year') where.push("dn.received_at >= date('now','start of year')");
   else if (period === 'month') where.push("dn.received_at >= date('now','start of month')");
