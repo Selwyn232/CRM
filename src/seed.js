@@ -78,7 +78,7 @@ function seed(db) {
     DELETE FROM recipients; DELETE FROM outbox; DELETE FROM sessions; DELETE FROM audit_log; DELETE FROM donors; DELETE FROM users;`);
 
   const adminId = Number(run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)',
-    'admin@robinfoundation.org', 'Robin Admin', 'admin', hashPassword('admin123')).lastInsertRowid);
+    'robin', 'Robin Admin', 'admin', hashPassword('robin')).lastInsertRowid);
   const staffId = Number(run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)',
     'medewerker@robinfoundation.org', 'Mila Medewerker', 'medewerker', hashPassword('medewerker123')).lastInsertRowid);
 
@@ -266,7 +266,7 @@ if (require.main === module) {
   const db = openDb(file);
   const stats = seed(db);
   console.log('Demodata geladen:', stats);
-  console.log('Beheer:  admin@robinfoundation.org / admin123   (of medewerker@robinfoundation.org / medewerker123)');
+  console.log('Beheer:  robin / robin   (of medewerker@robinfoundation.org / medewerker123)');
   console.log('Portaal: sanne@example.nl / welkom123');
   console.log('Ontvangers: grace / welkom123 (kind, gemodereerd) · esperanza / welkom123 (school)');
 }

@@ -148,6 +148,12 @@ if (require.main === module) {
     console.log('Lege database gedetecteerd — demodata wordt geladen…');
     require('./src/seed').seed(db);
   }
+  // Eenmalig: het oude demo-beheeraccount omzetten naar gebruikersnaam "robin" met wachtwoord "robin".
+  const { run } = require('./src/db');
+  if (get(db, "SELECT id FROM users WHERE email = 'admin@robinfoundation.org'") && !get(db, "SELECT id FROM users WHERE email = 'robin'")) {
+    run(db, "UPDATE users SET email = 'robin', password_hash = ? WHERE email = 'admin@robinfoundation.org'", require('./src/auth').hashPassword('robin'));
+    console.log('Demo-beheeraccount omgezet naar robin / robin');
+  }
   createServer({ db }).listen(port, () => {
     console.log(`Robin Foundation CRM draait op http://localhost:${port}`);
     console.log(`  Inloggen:        http://localhost:${port}/login`);

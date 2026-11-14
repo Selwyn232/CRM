@@ -15,8 +15,8 @@ const ROLES = {
   },
   medewerker: {
     login: '/api/staff/login', me: '/api/staff/me', home: '/admin',
-    idLabel: 'E-mailadres', idType: 'email', idField: 'email',
-    demo: 'Demo: <b>admin@robinfoundation.org</b> / <b>admin123</b>',
+    idLabel: 'E-mail of gebruikersnaam', idType: 'text', idField: 'email',
+    demo: 'Demo: <b>robin</b> / <b>robin</b>',
   },
 };
 

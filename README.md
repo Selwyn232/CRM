@@ -84,7 +84,7 @@ npm test           # tests
 ```
 
 Demo-accounts:
-- Beheer: `admin@robinfoundation.org` / `admin123` (of `medewerker@robinfoundation.org` / `medewerker123`)
+- Beheer: `robin` / `robin` (of `medewerker@robinfoundation.org` / `medewerker123`)
 - Portaal: `sanne@example.nl` / `welkom123` (de eerste 12 demo-donateurs hebben dit wachtwoord)
 - Ontvangers: `grace` / `welkom123` (kind, gemodereerd), `esperanza` en `santarosa` / `welkom123` (school/kliniek)
 
