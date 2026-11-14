@@ -20,7 +20,7 @@ const MIME = {
   '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
 };
 
-const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html', '/login': 'login.html', '/privacy': 'privacy.html' };
+const PAGES = { '/': 'index.html', '/admin': 'admin.html', '/portal': 'portal.html', '/leaderboard': 'leaderboard.html', '/ontvanger': 'ontvanger.html', '/login': 'login.html', '/privacy': 'privacy.html', '/aanmelden': 'aanmelden.html' };
 
 function compile(routes) {
   return routes.map(([method, pattern, handler, guard]) => {

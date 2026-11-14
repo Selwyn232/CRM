@@ -69,6 +69,12 @@ function publicDonor(d) {
   return { ...rest, has_portal: !!password_hash, full_name: S.donorFullName(d), public_name: S.donorPublicName(d) };
 }
 
+// Sponsor zoals hij zichzelf ziet, plus of het account nog beveiligd moet worden (geen wachtwoord én geen Face ID).
+function meDonorFor(db) {
+  return (d) => ({ ...publicDonor(d),
+    needs_credential: !d.password_hash && !get(db, "SELECT 1 AS x FROM passkeys WHERE kind = 'donor' AND subject_id = ?", d.id) });
+}
+
 function publicRecipient(r) {
   if (!r) return r;
   const { password_hash, ...rest } = r;
@@ -322,6 +328,7 @@ function buildRoutes({ db, uploadDir }) {
       && (!Number.isInteger(data.label_id) || !get(db, 'SELECT id FROM sponsor_labels WHERE id = ?', data.label_id))) throw new AppError(400, 'Onbekend label');
     return data;
   };
+  const meDonor = meDonorFor(db);
   const PK = require('./passkeys');
   const COOKIES = { staff: STAFF_COOKIE, donor: DONOR_COOKIE, recipient: RECIPIENT_COOKIE };
   // Eigen account van de ingelogde gebruiker voor het gevraagde soort (staff / donor / recipient).
@@ -463,11 +470,50 @@ function buildRoutes({ db, uploadDir }) {
       setCookie(ctx, DONOR_COOKIE, auth.createSession(db, 'donor', donorId));
       return publicDonor(get(db, 'SELECT * FROM donors WHERE id = ?', donorId));
     }],
+    // Aanmelden als sponsor zonder wachtwoord: eerst gegevens, daarna beveiligen met Face ID of een wachtwoord.
+    ['POST', '/api/donor/signup', (ctx) => {
+      const b = ctx.body;
+      const email = str(b.email, 200).toLowerCase();
+      if (!str(b.first_name)) throw new AppError(400, 'Vul je voornaam in');
+      if (!isEmail(email)) throw new AppError(400, 'Vul een geldig e-mailadres in');
+      if (b.privacy !== true) throw new AppError(400, 'Ga akkoord met de privacyverklaring');
+      const type = b.donor_type === 'bedrijf' ? 'bedrijf' : 'particulier';
+      if (type === 'bedrijf' && !str(b.company_name)) throw new AppError(400, 'Vul de naam van het bedrijf in');
+      const fields = [str(b.first_name, 80), str(b.last_name, 80), type, type === 'bedrijf' ? str(b.company_name, 120) : '',
+        b.show_on_leaderboard ? 0 : 1, bool(b.newsletter)];
+      const existing = get(db, 'SELECT * FROM donors WHERE email = ?', email);
+      let donorId;
+      if (existing) {
+        // Een eerder begonnen aanmelding (nog geen inlog, niets gesponsord) mag opnieuw; anders is het een bestaand account.
+        const unfinished = existing.source === 'aanmelding' && !existing.password_hash
+          && !get(db, "SELECT 1 AS x FROM passkeys WHERE kind = 'donor' AND subject_id = ?", existing.id)
+          && !get(db, 'SELECT 1 AS x FROM sponsorships WHERE donor_id = ?', existing.id);
+        if (!unfinished) throw new AppError(409, existing.password_hash || get(db, "SELECT 1 AS x FROM passkeys WHERE kind = 'donor' AND subject_id = ?", existing.id)
+          ? 'Je hebt al een account met dit e-mailadres. Log in om verder te gaan.'
+          : 'Dit e-mailadres is al bij ons bekend. Neem contact op met Robin Foundation; we sturen je een uitnodiging.');
+        run(db, `UPDATE donors SET first_name=?, last_name=?, donor_type=?, company_name=?, anonymous=?, newsletter=?, updated_at=datetime('now') WHERE id=?`, ...fields, existing.id);
+        donorId = existing.id;
+      } else {
+        donorId = Number(run(db, `INSERT INTO donors (first_name, last_name, donor_type, company_name, anonymous, newsletter, email, status, source)
+          VALUES (?,?,?,?,?,?,?, 'prospect', 'aanmelding')`, ...fields, email).lastInsertRowid);
+        S.audit(db, `donateur:${donorId}`, 'aangemeld', 'donor', donorId);
+      }
+      setCookie(ctx, DONOR_COOKIE, auth.createSession(db, 'donor', donorId));
+      return meDonor(get(db, 'SELECT * FROM donors WHERE id = ?', donorId));
+    }],
     ['POST', '/api/donor/logout', (ctx) => {
       auth.destroySession(db, ctx.cookies[DONOR_COOKIE]);
       setCookie(ctx, DONOR_COOKIE, '');
     }],
-    ['GET', '/api/donor/me', (ctx) => meWith(ctx, publicDonor(ctx.donor)), donor],
+    ['GET', '/api/donor/me', (ctx) => meWith(ctx, meDonor(ctx.donor)), donor],
+    // Eerste wachtwoord instellen (alleen voor een account dat er nog geen heeft, bv. na aanmelden).
+    ['POST', '/api/portal/set-password', (ctx) => {
+      if (ctx.donor.password_hash) throw new AppError(409, 'Je hebt al een wachtwoord. Wijzig het bij Profiel.');
+      if (!ctx.body.password || String(ctx.body.password).length < 8) throw new AppError(400, 'Kies een wachtwoord van minimaal 8 tekens');
+      run(db, 'UPDATE donors SET password_hash = ? WHERE id = ?', auth.hashPassword(ctx.body.password), ctx.donor.id);
+      S.audit(db, ctx.actor, 'wachtwoord_ingesteld', 'donor', ctx.donor.id);
+      return meDonor(get(db, 'SELECT * FROM donors WHERE id = ?', ctx.donor.id));
+    }, donor],
 
     // ================================================================ SPONSORPORTAAL
     ['GET', '/api/portal/overview', (ctx) => {

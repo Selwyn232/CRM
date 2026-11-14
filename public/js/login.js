@@ -166,7 +166,7 @@ $('#register-form').addEventListener('submit', async (e) => {
   } catch (ex) { err.textContent = ex.message; err.hidden = false; }
 });
 
-$('#to-register').onclick = (e) => { e.preventDefault(); showRegister(true); };
+if ($('#to-register')) $('#to-register').onclick = (e) => { e.preventDefault(); showRegister(true); };
 $('#to-login').onclick = (e) => { e.preventDefault(); showRegister(false); };
 
 document.querySelectorAll('[data-ic]').forEach((el) => { el.innerHTML = RF.icon(el.dataset.ic); });

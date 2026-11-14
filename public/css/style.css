@@ -894,3 +894,33 @@ details.month summary > span:first-child { flex: 1; text-align: left; margin-lef
 .bubble-from { font-size: 11.5px; font-weight: 600; color: var(--accent-text); margin-bottom: 3px; }
 .chat-with { display: flex; align-items: center; gap: 12px; }
 .chat-with img, .chat-with .avatar { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; flex: none; }
+
+/* ======================= Aanmelden als sponsor ======================= */
+.signup { padding-bottom: 40px; }
+.signup-steps { list-style: none; padding: 0; margin: 4px 0 22px; display: flex; gap: 8px; }
+.signup-steps li { flex: 1; display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 3px solid var(--border); color: var(--text-3); font-size: 13px; font-weight: 500; min-width: 0; }
+.signup-steps li.active { border-color: var(--accent); color: var(--text); }
+.signup-steps li.done { border-color: var(--accent-muted); color: var(--text-2); }
+.signup-steps .n { flex: none; width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center; font-size: 12px; background: var(--surface-3); }
+.signup-steps .active .n { background: var(--accent); color: #fff; }
+.signup-steps .done .n { background: var(--accent-soft); color: var(--accent-text); }
+.signup-steps .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.signup-head { margin-bottom: 16px; }
+.signup-head h1 { font-size: 26px; line-height: 32px; margin-bottom: 6px; }
+.signup-head p { max-width: 640px; margin: 0; }
+.signup-narrow { max-width: 520px; margin: 0 auto; }
+.seg.seg-block { display: flex; width: 100%; }
+.seg.seg-block button { flex: 1; height: 38px; font-size: 14px; }
+.signup-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; }
+.signup-kids { display: grid; gap: 10px; }
+.signup-kid { display: flex; align-items: center; gap: 12px; }
+.child-photo.sm { width: 52px; height: 52px; border-radius: 14px; aspect-ratio: auto; flex: none; font-size: 20px; }
+.signup-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 14px 0; margin: 4px 0 14px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.signup-total b { font-size: 18px; white-space: nowrap; }
+.signup-total span { color: var(--text-2); }
+@media (max-width: 700px) {
+  .signup-steps .t { display: none; }
+  .signup-steps li.active .t { display: inline; }
+  .signup-steps li.active { flex: 4; }
+  .signup-head h1 { font-size: 22px; line-height: 28px; }
+}
