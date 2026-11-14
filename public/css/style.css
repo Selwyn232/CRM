@@ -133,7 +133,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
   padding: 12px 10px;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--text); letter-spacing: -0.01em; }
-.brand img { width: 26px; height: 26px; border-radius: 7px; }
+.brand img { width: 30px; height: 30px; object-fit: contain; }
 .brand small { display: block; font-weight: 400; font-size: 12px; color: var(--text-3); letter-spacing: 0; }
 .sidebar .brand { padding: 6px 8px 10px; }
 .side-search {
@@ -539,7 +539,7 @@ details[open] > summary::before { transform: rotate(45deg); }
   background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 0); background-size: 22px 22px; }
 .auth-card { width: min(420px, 100%); padding: 28px; box-shadow: var(--shadow-sm); }
 .auth-card .brand { justify-content: center; padding-bottom: 6px; }
-.auth-card .brand img { width: 36px; height: 36px; border-radius: 10px; }
+.auth-card .brand img { width: 64px; height: 64px; object-fit: contain; }
 .auth-card h1 { text-align: center; font-size: 20px; margin: 12px 0 4px; }
 .auth-card .lead-c { text-align: center; color: var(--text-3); font-size: 13.5px; margin-bottom: 20px; }
 .login-card { width: min(440px, 100%); }
