@@ -123,7 +123,9 @@ async function translateBatch(items, target) {
   } catch (err) {
     const A = loadSdk();
     let msg = 'Vertalen is mislukt';
-    if (err instanceof A.AuthenticationError) msg = 'Vertalen mislukt: de API-sleutel is ongeldig';
+    if (err instanceof A.AuthenticationError) msg = `Vertalen mislukt: Anthropic accepteert de API-sleutel (eindigend op …${currentKey().slice(-4)}) niet. Controleer of deze sleutel nog actief is op console.anthropic.com → API Keys, of maak een nieuwe aan.`;
+    else if (err instanceof A.PermissionDeniedError) msg = 'Vertalen mislukt: deze sleutel heeft geen toegang tot het model. Controleer je workspace/rechten op console.anthropic.com.';
+    else if (err instanceof A.BadRequestError && /credit|balance|billing/i.test(err.message)) msg = 'Vertalen mislukt: er staat geen tegoed op je Anthropic-account. Voeg tegoed toe bij Billing op console.anthropic.com.';
     else if (err instanceof A.RateLimitError) msg = 'Vertalen is even druk, probeer het zo opnieuw';
     else if (err instanceof A.APIConnectionError) msg = 'Vertaaldienst niet bereikbaar';
     else if (err instanceof A.APIError) msg = `Vertalen mislukt (${err.status})`;
