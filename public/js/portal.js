@@ -216,7 +216,7 @@ async function renderMessages() {
   // Markeer als gelezen zodra het bericht in beeld komt.
   const io = new IntersectionObserver((entries) => {
     entries.forEach(async (e) => {
-      if (!e.isIntersecting || e.target.dataset.read === '1' || me.impersonated_by) return;
+      if (!e.isIntersecting || e.target.dataset.read === '1') return;
       e.target.dataset.read = '1';
       io.unobserve(e.target);
       await api(`/api/portal/messages/${e.target.dataset.id}/read`, { method: 'POST', body: {} });

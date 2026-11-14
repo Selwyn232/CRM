@@ -153,13 +153,14 @@ function buildRoutes({ db, uploadDir }) {
     readOnlyIfImpersonating(ctx, s);
   };
 
-  // "Inloggen als": medewerker kijkt mee, maar kan niets doen namens de donateur/ontvanger.
+  // "Inloggen als": beheerder handelt namens de donateur/ontvanger. Alles mag, maar in het
+  // audit log staat wie het echt deed.
   function readOnlyIfImpersonating(ctx, s) {
     if (!s.impersonator_id) return;
     const u = get(db, 'SELECT id, name, email, role, active FROM users WHERE id = ?', s.impersonator_id);
-    if (!u || !u.active || u.role !== 'admin') throw new AppError(401, 'Meekijksessie verlopen');
+    if (!u || !u.active || u.role !== 'admin') throw new AppError(401, 'Sessie "inloggen als" is verlopen');
     ctx.impersonator = u;
-    if (ctx.req.method !== 'GET') throw new AppError(403, `Je kijkt mee als ${u.name} (alleen-lezen). Je kunt niets doen namens deze persoon.`);
+    ctx.actor = `medewerker:${u.email} als ${ctx.actor}`;
   }
   const meWith = (ctx, obj) => (ctx.impersonator ? { ...obj, impersonated_by: ctx.impersonator.name } : obj);
 
@@ -363,7 +364,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/portal/conversations/:id', (ctx) => {
       const rid = id(ctx.params.id);
       if (!S.hasFunded(db, ctx.donor.id, rid)) throw new AppError(403, 'Je kunt alleen chatten met wie je hebt gesteund');
-      return S.chatThread(db, rid, ctx.donor.id, 'donor', !ctx.impersonator);
+      return S.chatThread(db, rid, ctx.donor.id, 'donor');
     }, donor],
     ['POST', '/api/portal/conversations/:id', (ctx) => S.sendChat(db,
       { recipientId: id(ctx.params.id), donorId: ctx.donor.id, sender: 'donor', body: ctx.body.body }, ctx.actor), donor],
@@ -388,7 +389,7 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/recipient/supporters/:id', (ctx) => {
       const did = id(ctx.params.id);
       if (!S.hasFunded(db, did, ctx.recipient.id)) throw new AppError(403, 'Deze donateur heeft jou (nog) niet gesteund');
-      return S.chatThread(db, ctx.recipient.id, did, 'recipient', !ctx.impersonator);
+      return S.chatThread(db, ctx.recipient.id, did, 'recipient');
     }, recipient],
     ['POST', '/api/recipient/supporters/:id', (ctx) => S.sendChat(db,
       { recipientId: ctx.recipient.id, donorId: id(ctx.params.id), sender: 'recipient', body: ctx.body.body }, ctx.actor), recipient],

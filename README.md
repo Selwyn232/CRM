@@ -53,7 +53,8 @@ Veiligheid staat voorop, omdat veel ontvangers kinderen zijn:
 
 Beheerders zien bij een donateur de knop **👁️ Inloggen als donateur** en bij elke ontvanger **👁️ Inloggen als**. Het portaal opent dan in een nieuw tabblad, precies zoals die persoon het ziet. Een paarse balk bovenaan laat zien dat je meekijkt, met een knop **Stoppen**.
 - Het werkt alleen voor beheerders, ook als de persoon zelf nog geen wachtwoord heeft.
-- Het is **alleen-lezen**: je kunt niet doneren of chatten namens iemand, en berichten worden niet als gelezen gemarkeerd.
+- Je kunt **alles** doen wat die persoon kan, zoals doneren, chatten en het profiel wijzigen. In het audit log staat welke beheerder het namens wie deed (bv. `medewerker:admin@… als donateur:1`).
+- ⚠️ Overweeg dit voor productie terug te zetten naar alleen-lezen. Anders kan een medewerker namens een donateur met kinderen chatten.
 - Een meekijksessie verloopt na 1 uur en wordt vastgelegd in het audit log.
 
 ## Starten

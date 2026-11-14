@@ -273,7 +273,7 @@ const RF = (() => {
     document.body.classList.add('impersonating');
     const bar = document.createElement('div');
     bar.className = 'impersonation-bar';
-    bar.innerHTML = `<span>👁️ Je kijkt mee als <b>${esc(me.full_name || me.name)}</b> — ingelogd door ${esc(me.impersonated_by)} · alleen-lezen</span>
+    bar.innerHTML = `<span>👁️ Je kijkt mee als <b>${esc(me.full_name || me.name)}</b> — ingelogd door ${esc(me.impersonated_by)} · je handelt namens deze persoon</span>
       <button type="button" class="btn btn-sm">Stoppen</button>`;
     bar.querySelector('button').onclick = async () => {
       await api(logoutPath, { method: 'POST', body: {} });

@@ -399,9 +399,7 @@ textarea { min-height: 90px; resize: vertical; }
   background: #6b46c1; color: #fff; padding: 8px 14px; font-size: .9rem; text-align: center; }
 .impersonation-bar .btn { background: #fff; color: #6b46c1; }
 .impersonating .topbar { top: 40px; }
-.impersonating .chat-form { display: none; }
-.impersonating #pw-btn, .impersonating #logout, .impersonating #logout-m { display: none !important; }
-.impersonating .chat::after { content: 'Meekijken is alleen-lezen: je kunt geen berichten sturen namens deze persoon.'; font-size: .85rem; color: var(--ink-3); }
+.impersonating #logout, .impersonating #logout-m { display: none !important; }
 
 /* ---------- print ---------- */
 @media print {

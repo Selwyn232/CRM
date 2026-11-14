@@ -256,7 +256,7 @@ test('donateur kan chatten met gesteunde ontvanger zonder inlog (bericht wacht)'
   assert.equal(m.status, 'in_behandeling');
 });
 
-test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', async (t) => {
+test('HTTP: "inloggen als" alleen voor beheerders, volledige toegang en gelogd', async (t) => {
   const { db, donor, rid } = chatSetup('school', 0);
   S.sendChat(db, { recipientId: rid, donorId: donor, sender: 'recipient', body: 'Dankjewel!' });
   run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
@@ -277,15 +277,14 @@ test('HTTP: "inloggen als" alleen voor beheerders, alleen-lezen en gelogd', asyn
   const as = res.headers.get('set-cookie').split(';')[0];
   const me = await (await fetch(`${base}/api/donor/me`, { headers: { cookie: as } })).json();
   assert.equal(me.impersonated_by, 'Admin');
-  // lezen mag, maar markeert niets als gelezen
   const thread = await (await fetch(`${base}/api/portal/conversations/${rid}`, { headers: { cookie: as } })).json();
   assert.equal(thread.length, 1);
-  assert.equal(get(db, 'SELECT read_at FROM chat_messages').read_at, null);
-  // schrijven mag niet
+  // namens de donateur chatten en doneren mag; audit log laat zien wie het deed
   const post = await fetch(`${base}/api/portal/conversations/${rid}`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ body: 'hoi' }) });
-  assert.equal(post.status, 403);
-  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 403);
+  assert.equal(post.status, 200);
+  assert.equal((await fetch(`${base}/api/portal/donate`, { method: 'POST', headers: { ...json, cookie: as }, body: JSON.stringify({ category_key: 'noodfonds', amount_cents: 1000 }) })).status, 200);
   assert.equal(get(db, "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'ingelogd_als'").n, 1);
+  assert.match(get(db, "SELECT actor FROM audit_log WHERE action = 'donatie_aangemaakt' ORDER BY id DESC").actor, /^medewerker:a@rf\.org als donateur:/);
 
   // ontvanger zonder eigen wachtwoord kan ook bekeken worden
   run(db, 'UPDATE recipients SET password_hash = NULL, username = NULL WHERE id = ?', rid);
