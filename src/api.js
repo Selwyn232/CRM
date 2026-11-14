@@ -320,10 +320,10 @@ function buildRoutes({ db, uploadDir }) {
     ['GET', '/api/public/categories', () => categories().filter((c) => c.active)],
     ['GET', '/api/public/stats', () => {
       const t = get(db, `SELECT
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE status='ontvangen'),0) AS raised_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen'),0) AS raised_cents,
         COALESCE((SELECT SUM(amount_cents) FROM expenditures),0) AS spent_cents,
         COALESCE((SELECT SUM(remaining_cents) FROM cells),0) AS waiting_cents,
-        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE status='ontvangen') AS donors,
+        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen') AS donors,
         (SELECT COUNT(*) FROM impact_messages) AS messages`);
       return { ...t, categories: S.categoryBalances(db).map(({ key, name, icon, color, unit_label_plural, received_cents, spent_cents, units_spent }) =>
         ({ key, name, icon, color, unit_label_plural, received_cents, spent_cents, units_spent })) };
@@ -559,28 +559,28 @@ function buildRoutes({ db, uploadDir }) {
     // ================================================================ BEHEER: DASHBOARD
     ['GET', '/api/admin/dashboard', () => {
       const totals = get(db, `SELECT
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE status='ontvangen'),0) AS raised_cents,
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE status='ontvangen' AND received_at >= date('now','start of year')),0) AS raised_ytd_cents,
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE status='in_afwachting'),0) AS pending_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen'),0) AS raised_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND received_at >= date('now','start of year')),0) AS raised_ytd_cents,
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='in_afwachting'),0) AS pending_cents,
         COALESCE((SELECT SUM(remaining_cents) FROM cells),0) AS waiting_cents,
         COALESCE((SELECT SUM(amount_cents) FROM expenditures),0) AS spent_cents,
         (SELECT COUNT(*) FROM donors) AS donors,
         (SELECT COUNT(*) FROM donors WHERE status='actief') AS active_donors,
         (SELECT COUNT(*) FROM donors WHERE created_at >= date('now','-30 days')) AS new_donors_30d,
-        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE frequency <> 'eenmalig' AND status='ontvangen') AS recurring_donors,
+        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND frequency <> 'eenmalig' AND status='ontvangen') AS recurring_donors,
         (SELECT COUNT(*) FROM cells WHERE remaining_cents > 0) AS open_cells,
         (SELECT COUNT(*) FROM expenditures e WHERE NOT EXISTS (SELECT 1 FROM impact_messages im WHERE im.expenditure_id = e.id)) AS expenditures_without_message,
         (SELECT COUNT(*) FROM tasks WHERE status='open') AS open_tasks,
         (SELECT COUNT(*) FROM tasks WHERE status='open' AND due_date < date('now')) AS overdue_tasks,
         (SELECT COUNT(*) FROM chat_messages WHERE status='in_behandeling') AS pending_chats`);
       const monthly = all(db, `SELECT strftime('%Y-%m', received_at) AS month, SUM(amount_cents) AS cents, COUNT(*) AS n
-        FROM donations WHERE status='ontvangen' AND received_at >= date('now','start of month','-11 months')
+        FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND received_at >= date('now','start of month','-11 months')
         GROUP BY month ORDER BY month`);
       const monthlySpent = all(db, `SELECT strftime('%Y-%m', spent_at) AS month, SUM(amount_cents) AS cents
         FROM expenditures WHERE spent_at >= date('now','start of month','-11 months') GROUP BY month`);
       const recent = all(db, `SELECT dn.*, c.name AS category_name, c.icon, d.first_name, d.last_name, d.company_name, d.donor_type
         FROM donations dn JOIN donors d ON d.id = dn.donor_id JOIN categories c ON c.key = dn.category_key
-        ORDER BY dn.received_at DESC, dn.id DESC LIMIT 8`).map((r) => ({ ...r, donor_name: S.donorFullName(r) }));
+        WHERE c.active = 1 ORDER BY dn.received_at DESC, dn.id DESC LIMIT 8`).map((r) => ({ ...r, donor_name: S.donorFullName(r) }));
       const tasks = all(db, `SELECT t.*, d.first_name, d.last_name, d.company_name, d.donor_type FROM tasks t
         LEFT JOIN donors d ON d.id = t.donor_id WHERE t.status='open' ORDER BY t.due_date IS NULL, t.due_date LIMIT 8`)
         .map((t) => ({ ...t, donor_name: t.donor_id ? S.donorFullName(t) : '' }));
@@ -609,16 +609,16 @@ function buildRoutes({ db, uploadDir }) {
         total: 'total_cents DESC', recent: 'last_donation DESC', created: 'd.created_at DESC',
       }[sort] || 'd.last_name';
       return all(db, `SELECT d.*,
-          COALESCE((SELECT SUM(amount_cents) FROM donations WHERE donor_id=d.id AND status='ontvangen'),0) AS total_cents,
+          COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen'),0) AS total_cents,
           (SELECT COUNT(*) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd') AS children,
-          (SELECT COUNT(*) FROM donations WHERE donor_id=d.id AND status='ontvangen') AS donation_count,
-          (SELECT MAX(received_at) FROM donations WHERE donor_id=d.id AND status='ontvangen') AS last_donation,
-          (SELECT COUNT(*) FROM donations WHERE donor_id=d.id AND frequency<>'eenmalig' AND status='ontvangen') AS recurring
+          (SELECT COUNT(*) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen') AS donation_count,
+          (SELECT MAX(received_at) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen') AS last_donation,
+          (SELECT COUNT(*) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND frequency<>'eenmalig' AND status='ontvangen') AS recurring
         FROM donors d WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT 1000`, ...params).map(publicDonor);
     }, staff],
     ['GET', '/api/admin/donors/export', () => {
       const rows = all(db, `SELECT d.*,
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE donor_id=d.id AND status='ontvangen'),0) AS total_cents
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen'),0) AS total_cents
         FROM donors d ORDER BY d.last_name`);
       return csvResponse('donateurs.csv', csv(rows, [
         ['id', 'ID'], ['donor_type', 'Type'], ['first_name', 'Voornaam'], ['last_name', 'Achternaam'],
@@ -647,7 +647,7 @@ function buildRoutes({ db, uploadDir }) {
           (SELECT COUNT(*) FROM sponsor_months WHERE donor_id = ?) AS months FROM sponsorships WHERE donor_id = ? AND status <> 'beeindigd'`, donorId, donorId),
         donations: all(db, `SELECT dn.*, c.name AS category_name, c.icon, cp.name AS campaign_name
           FROM donations dn JOIN categories c ON c.key = dn.category_key LEFT JOIN campaigns cp ON cp.id = dn.campaign_id
-          WHERE dn.donor_id = ? ORDER BY dn.received_at DESC, dn.id DESC`, donorId),
+          WHERE dn.donor_id = ? AND c.active = 1 ORDER BY dn.received_at DESC, dn.id DESC`, donorId),
         interactions: all(db, `SELECT i.*, u.name AS user_name FROM interactions i LEFT JOIN users u ON u.id = i.user_id
           WHERE i.donor_id = ? ORDER BY i.occurred_at DESC, i.id DESC`, donorId),
         tasks: all(db, `SELECT t.*, u.name AS assigned_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to
@@ -731,7 +731,7 @@ function buildRoutes({ db, uploadDir }) {
     // ================================================================ BEHEER: DONATIES
     ['GET', '/api/admin/donations', (ctx) => {
       const { q = '', category = '', status = '', from = '', to = '', method = '', frequency = '', campaign = '' } = ctx.query;
-      const where = ['1=1'];
+      const where = ['c.active = 1']; // oude bestemmingen (vóór het sponsormodel) blijven bewaard maar verborgen
       const p = [];
       if (q) { where.push(`(d.first_name || ' ' || d.last_name LIKE ? OR d.company_name LIKE ? OR dn.reference LIKE ?)`); p.push(`%${q}%`, `%${q}%`, `%${q}%`); }
       if (category) { where.push('dn.category_key = ?'); p.push(category); }
@@ -845,8 +845,8 @@ function buildRoutes({ db, uploadDir }) {
 
     // ================================================================ BEHEER: CAMPAGNES
     ['GET', '/api/admin/campaigns', () => all(db, `SELECT cp.*, c.name AS category_name,
-        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE campaign_id = cp.id AND status='ontvangen'),0) AS raised_cents,
-        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE campaign_id = cp.id AND status='ontvangen') AS donor_count
+        COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND campaign_id = cp.id AND status='ontvangen'),0) AS raised_cents,
+        (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND campaign_id = cp.id AND status='ontvangen') AS donor_count
       FROM campaigns cp LEFT JOIN categories c ON c.key = cp.category_key ORDER BY cp.active DESC, cp.id DESC`), staff],
     ['POST', '/api/admin/campaigns', (ctx) => {
       const b = campaignInput(ctx.body);
@@ -869,24 +869,24 @@ function buildRoutes({ db, uploadDir }) {
         year,
         years: all(db, `SELECT DISTINCT strftime('%Y', received_at) AS y FROM donations ORDER BY y DESC`).map((r) => r.y),
         totals: get(db, `SELECT COALESCE(SUM(amount_cents),0) AS raised_cents, COUNT(*) AS donations, COUNT(DISTINCT donor_id) AS donors,
-            COALESCE(AVG(amount_cents),0) AS avg_cents FROM donations WHERE status='ontvangen' AND ${yf}`, year),
+            COALESCE(AVG(amount_cents),0) AS avg_cents FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND ${yf}`, year),
         spent: get(db, `SELECT COALESCE(SUM(amount_cents),0) AS cents, COUNT(*) AS n FROM expenditures WHERE strftime('%Y', spent_at) = ?`, year),
         byCategory: all(db, `SELECT c.key, c.name, c.icon, c.color, c.unit_label_plural,
-            COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key=c.key AND status='ontvangen' AND ${yf}),0) AS raised_cents,
+            COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND category_key=c.key AND status='ontvangen' AND ${yf}),0) AS raised_cents,
             COALESCE((SELECT SUM(amount_cents) FROM expenditures WHERE category_key=c.key AND strftime('%Y', spent_at) = ?),0) AS spent_cents,
             COALESCE((SELECT SUM(units) FROM expenditures WHERE category_key=c.key AND strftime('%Y', spent_at) = ?),0) AS units
           FROM categories c ORDER BY c.sort_order`, year, year, year),
         byMonth: all(db, `SELECT strftime('%m', received_at) AS m, SUM(amount_cents) AS cents, COUNT(*) AS n
-          FROM donations WHERE status='ontvangen' AND ${yf} GROUP BY m ORDER BY m`, year),
+          FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND ${yf} GROUP BY m ORDER BY m`, year),
         byMethod: all(db, `SELECT method, SUM(amount_cents) AS cents, COUNT(*) AS n FROM donations
-          WHERE status='ontvangen' AND ${yf} GROUP BY method ORDER BY cents DESC`, year),
+          WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND ${yf} GROUP BY method ORDER BY cents DESC`, year),
         byFrequency: all(db, `SELECT frequency, SUM(amount_cents) AS cents, COUNT(*) AS n FROM donations
-          WHERE status='ontvangen' AND ${yf} GROUP BY frequency ORDER BY cents DESC`, year),
+          WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND ${yf} GROUP BY frequency ORDER BY cents DESC`, year),
         byType: all(db, `SELECT d.donor_type, SUM(dn.amount_cents) AS cents, COUNT(DISTINCT d.id) AS n FROM donations dn
-          JOIN donors d ON d.id = dn.donor_id WHERE dn.status='ontvangen' AND strftime('%Y', dn.received_at) = ? GROUP BY d.donor_type`, year),
+          JOIN donors d ON d.id = dn.donor_id WHERE dn.status='ontvangen' AND dn.category_key IN (SELECT key FROM categories WHERE active = 1) AND strftime('%Y', dn.received_at) = ? GROUP BY d.donor_type`, year),
         retention: get(db, `SELECT
-            (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE status='ontvangen' AND strftime('%Y', received_at) = ?) AS this_year,
-            (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE status='ontvangen' AND strftime('%Y', received_at) = ?) AS last_year,
+            (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND strftime('%Y', received_at) = ?) AS this_year,
+            (SELECT COUNT(DISTINCT donor_id) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND status='ontvangen' AND strftime('%Y', received_at) = ?) AS last_year,
             (SELECT COUNT(DISTINCT a.donor_id) FROM donations a JOIN donations b ON a.donor_id = b.donor_id
               WHERE a.status='ontvangen' AND b.status='ontvangen' AND strftime('%Y', a.received_at) = ? AND strftime('%Y', b.received_at) = ?) AS retained`,
           year, String(Number(year) - 1), year, String(Number(year) - 1)),
