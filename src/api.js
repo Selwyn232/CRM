@@ -44,13 +44,14 @@ const centsToEuro = (c) => ((c || 0) / 100).toFixed(2).replace('.', ',');
 
 const DONOR_FIELDS = ['donor_type', 'first_name', 'last_name', 'company_name', 'email', 'phone', 'street',
   'postal_code', 'city', 'country', 'status', 'source', 'tags', 'notes', 'anonymous', 'display_name',
-  'newsletter', 'preferred_channel', 'language'];
+  'newsletter', 'preferred_channel', 'language', 'label_id'];
 
 function cleanDonor(body, { partial = false } = {}) {
   const out = {};
   for (const f of DONOR_FIELDS) {
     if (body[f] === undefined) continue;
     if (f === 'anonymous' || f === 'newsletter') out[f] = bool(body[f]);
+    else if (f === 'label_id') out[f] = body[f] === '' || body[f] == null ? null : Number(body[f]);
     else if (f === 'email') out[f] = str(body[f], 200).toLowerCase() || null;
     else out[f] = str(body[f], f === 'notes' ? 10000 : 300);
   }
@@ -315,6 +316,12 @@ function buildRoutes({ db, uploadDir }) {
       }));
   };
 
+  // Bestaat het gekozen sponsorlabel?
+  const checkLabel = (data) => {
+    if (data.label_id !== undefined && data.label_id !== null
+      && (!Number.isInteger(data.label_id) || !get(db, 'SELECT id FROM sponsor_labels WHERE id = ?', data.label_id))) throw new AppError(400, 'Onbekend label');
+    return data;
+  };
   const PK = require('./passkeys');
   const COOKIES = { staff: STAFF_COOKIE, donor: DONOR_COOKIE, recipient: RECIPIENT_COOKIE };
   // Eigen account van de ingelogde gebruiker voor het gevraagde soort (staff / donor / recipient).
@@ -652,6 +659,7 @@ function buildRoutes({ db, uploadDir }) {
       }
       if (status) { where.push('d.status = ?'); params.push(status); }
       if (type) { where.push('d.donor_type = ?'); params.push(type); }
+      if (ctx.query.label) { where.push('d.label_id = ?'); params.push(Number(ctx.query.label)); }
       if (tag) { where.push("(',' || REPLACE(d.tags, ' ', '') || ',') LIKE ?"); params.push(`%,${tag.replace(/\s/g, '')},%`); }
       const order = {
         name: 'd.last_name COLLATE NOCASE, d.first_name COLLATE NOCASE, d.company_name COLLATE NOCASE',
@@ -659,6 +667,7 @@ function buildRoutes({ db, uploadDir }) {
       }[sort] || 'd.last_name';
       return all(db, `SELECT d.*,
           COALESCE((SELECT SUM(amount_cents) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen'),0) AS total_cents,
+          (SELECT name FROM sponsor_labels WHERE id = d.label_id) AS label_name,
           (SELECT COUNT(*) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd') AS children,
           COALESCE((SELECT SUM(monthly_cents) FROM sponsorships WHERE donor_id=d.id AND status<>'beeindigd'),0) AS monthly_cents,
           (SELECT COUNT(*) FROM donations WHERE category_key IN (SELECT key FROM categories WHERE active = 1) AND donor_id=d.id AND status='ontvangen') AS donation_count,
@@ -679,7 +688,7 @@ function buildRoutes({ db, uploadDir }) {
       ]));
     }, staff],
     ['POST', '/api/admin/donors', (ctx) => {
-      const data = cleanDonor(ctx.body);
+      const data = checkLabel(cleanDonor(ctx.body));
       if (data.email && get(db, 'SELECT id FROM donors WHERE email = ?', data.email)) throw new AppError(409, 'E-mailadres is al in gebruik');
       const keys = Object.keys(data);
       const r = run(db, `INSERT INTO donors (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`, ...keys.map((k) => data[k]));
@@ -709,7 +718,7 @@ function buildRoutes({ db, uploadDir }) {
     ['PUT', '/api/admin/donors/:id', (ctx) => {
       const donorId = id(ctx.params.id);
       if (!get(db, 'SELECT id FROM donors WHERE id = ?', donorId)) throw new AppError(404, 'Sponsor niet gevonden');
-      const data = cleanDonor(ctx.body, { partial: true });
+      const data = checkLabel(cleanDonor(ctx.body, { partial: true }));
       if (data.email && get(db, 'SELECT id FROM donors WHERE email = ? AND id <> ?', data.email, donorId)) {
         throw new AppError(409, 'E-mailadres is al in gebruik');
       }

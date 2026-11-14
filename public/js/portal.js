@@ -340,12 +340,18 @@ async function renderChat(openId) {
 }
 
 // ======================================================================= LEADERBOARD
-async function renderLeaderboard() {
+async function renderLeaderboard(labelParam) {
+  const labels = await api('/api/public/labels');
+  // Standaard de groep van de sponsor zelf (bv. Particulieren of Bedrijven)
+  const label = labelParam === 'alle' ? '' : labels.some((l) => String(l.id) === String(labelParam)) ? String(labelParam)
+    : (labels.some((l) => l.id === me.label_id) ? String(me.label_id) : '');
   view().innerHTML = `
     <div class="page-head"><div><h1>Leaderboard</h1><div class="sub">Wie sponsort de meeste kinderen?</div></div></div>
+    <div class="seg" style="margin-bottom:12px">${[{ id: 'alle', name: 'Iedereen' }, ...labels].map((l) => `<button type="button" data-label="${l.id}" class="${String(l.id) === (label || 'alle') ? 'active' : ''}">${esc(l.name)}</button>`).join('')}</div>
     <p class="muted">Je verschijnt hier als <b>${esc(me.anonymous ? 'Anonieme sponsor' : me.public_name)}</b>. <a href="#/profiel">Wijzig in je privacy-instellingen</a>.</p>
     <div class="card" id="lb"></div>`;
-  const rows = await api('/api/portal/leaderboard?limit=100');
+  view().querySelectorAll('[data-label]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/leaderboard/${b.dataset.label}`; }));
+  const rows = await api(`/api/portal/leaderboard?limit=100${label ? `&label=${label}` : ''}`);
   $('#lb').innerHTML = leaderboardRows(rows);
   const mine = $('#lb .me');
   if (mine) mine.scrollIntoView({ block: 'nearest' });

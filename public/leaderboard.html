@@ -25,7 +25,7 @@
       <div class="hero-stats" id="stats"></div>
     </section>
     <div class="card">
-      <div class="card-head"><h2>Top sponsoren</h2></div>
+      <div class="card-head"><h2>Top sponsoren</h2><div class="seg" id="f-label" role="tablist" aria-label="Groep"></div></div>
       <div id="podium"></div>
       <div id="lb"></div>
     </div>
@@ -37,7 +37,7 @@
       const { api, esc, euro0, num } = RF;
       document.querySelectorAll('[data-ic]').forEach((el) => { el.insertAdjacentHTML('afterbegin', RF.icon(el.dataset.ic, 'icon-sm')); });
       document.getElementById('lb').innerHTML = RF.skeleton('rows');
-      const [sp, rows] = await Promise.all([api('/api/public/sponsor'), api('/api/public/leaderboard?limit=50')]);
+      const [sp, labels] = await Promise.all([api('/api/public/sponsor'), api('/api/public/labels')]);
       document.getElementById('stats').innerHTML = `
         <div><div class="label">Gesponsorde kinderen</div><div class="value">${num(sp.counts.sponsored)}</div></div>
         <div><div class="label">Sponsoren</div><div class="value">${num(sp.counts.sponsors)}</div></div>
@@ -45,14 +45,28 @@
         <div><div class="label">Per kind per maand</div><div class="value">${euro0(sp.config.amount_cents)}</div></div>`;
       const nameHtml = (r) => (r.anonymous ? `<span class="anon">${RF.icon('eye-off', 'icon-sm')}${esc(r.name)}</span>` : esc(r.name));
       const kids = (n) => `${n} ${n === 1 ? 'kind' : 'kinderen'}`;
-      const top = rows.slice(0, 3);
-      const order = [top[1], top[0], top[2]];
-      document.getElementById('podium').innerHTML = top.length >= 3 ? `<div class="podium">${order.map((r, i) => `<div class="p ${i === 1 ? 'first' : ''}">
-        <span class="medal m${[2, 1, 3][i]}">${[2, 1, 3][i]}</span><div class="n lb-name" style="justify-content:center">${nameHtml(r)}</div><div class="a">${kids(r.children)}</div></div>`).join('')}</div>` : '';
-      document.getElementById('lb').innerHTML = rows.length ? rows.map((r) => `<div class="lb-row">
-        <div class="lb-rank">${r.rank <= 3 ? `<span class="medal m${r.rank}">${r.rank}</span>` : r.rank}</div>
-        <div><div class="lb-name">${nameHtml(r)}</div><div class="lb-meta">${r.months} ${r.months === 1 ? 'maand' : 'maanden'} gesponsord${r.city ? ' · ' + esc(r.city) : ''}</div></div>
-        <div class="lb-amount">${kids(r.children)}</div></div>`).join('') : RF.emptyState({ icon: 'trophy', title: 'Nog geen sponsoren' });
+      const tabs = [{ id: '', name: 'Iedereen' }, ...labels];
+      let label = new URLSearchParams(location.search).get('groep') || '';
+      const seg = document.getElementById('f-label');
+      const load = async () => {
+        seg.innerHTML = tabs.map((l) => `<button type="button" data-label="${l.id}" class="${String(l.id) === label ? 'active' : ''}">${esc(l.name)}</button>`).join('');
+        const rows = await api(`/api/public/leaderboard?limit=50${label ? `&label=${label}` : ''}`);
+        const top = rows.slice(0, 3);
+        const order = [top[1], top[0], top[2]];
+        document.getElementById('podium').innerHTML = top.length >= 3 ? `<div class="podium">${order.map((r, i) => `<div class="p ${i === 1 ? 'first' : ''}">
+          <span class="medal m${[2, 1, 3][i]}">${[2, 1, 3][i]}</span><div class="n lb-name" style="justify-content:center">${nameHtml(r)}</div><div class="a">${kids(r.children)}</div></div>`).join('')}</div>` : '';
+        document.getElementById('lb').innerHTML = rows.length ? rows.map((r) => `<div class="lb-row">
+          <div class="lb-rank">${r.rank <= 3 ? `<span class="medal m${r.rank}">${r.rank}</span>` : r.rank}</div>
+          <div><div class="lb-name">${nameHtml(r)}</div><div class="lb-meta">${r.months} ${r.months === 1 ? 'maand' : 'maanden'} gesponsord${r.city ? ' · ' + esc(r.city) : ''}${!label && r.label_name ? ' · ' + esc(r.label_name) : ''}</div></div>
+          <div class="lb-amount">${kids(r.children)}</div></div>`).join('') : RF.emptyState({ icon: 'trophy', title: 'Nog geen sponsoren in deze groep' });
+      };
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-label]'); if (!b) return;
+        label = b.dataset.label;
+        history.replaceState(null, '', label ? `?groep=${label}` : location.pathname);
+        load();
+      });
+      load();
     })();
   </script>
 </body>
