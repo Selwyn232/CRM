@@ -1208,6 +1208,29 @@ async function renderImpersonationSetting() {
   };
 }
 
+// Standaardtaal voor alle pagina's (masterswitch). Bezoekers kunnen met de NL/EN-knop zelf wisselen.
+async function renderLanguageSetting() {
+  const card = $('#lang-card');
+  if (!card) return;
+  const { default: lang } = await api('/api/admin/settings/language');
+  const opt = (v, t, d) => `<label class="check" style="font-size:15px;margin:0"><input type="radio" name="def-lang" value="${v}" ${lang === v ? 'checked' : ''}>
+    <span><b>${t}</b><br><span class="small muted">${d}</span></span></label>`;
+  card.innerHTML = `<div class="card-head"><div><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('globe')}Taal</h2>
+      <div class="small muted">De standaardtaal van alle pagina's: de website, aanmelden, inloggen, het sponsorportaal, de ouders en het beheer.
+      Iedereen kan met de NL/EN-knop rechtsboven zelf wisselen; die keuze onthoudt de browser en gaat vóór deze standaard.</div></div></div>
+    <div style="display:grid;gap:12px">
+      ${opt('nl', 'Nederlands', 'Standaard voor iedereen die nog niet zelf een taal heeft gekozen.')}
+      ${opt('en', 'English', 'Alle pagina\'s openen in het Engels, tenzij iemand zelf Nederlands kiest.')}
+    </div>
+    <p class="small muted" style="margin-top:12px">Chatberichten, namen en verhalen worden niet door deze knop vertaald. Chatberichten vertaalt de chat zelf.</p>`;
+  card.querySelectorAll('input[name="def-lang"]').forEach((r) => { r.onchange = async () => {
+    try {
+      await api('/api/admin/settings/language', { method: 'PUT', body: { default: r.value } });
+      toast(r.value === 'en' ? 'Standaardtaal is nu Engels' : 'Standaardtaal is nu Nederlands');
+    } catch (ex) { toast(ex.message, 'error'); renderLanguageSetting(); }
+  }; });
+}
+
 // ======================================================================= INSTELLINGEN
 async function renderSettings() {
   await loadLookups();
@@ -1217,6 +1240,7 @@ async function renderSettings() {
     ${isAdmin() ? '<div class="card" id="golive-card"></div><div class="card" id="int-card"></div>' : ''}
     ${isAdmin() ? `<div class="card" id="tr-card"><div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">${RF.icon('languages')}Automatisch vertalen</h2>
       ${btn('tr-test', 'Proefvertaling', { icon: 'zap', size: 'sm' })}</div><div id="tr-status"><p class="muted small">Laden…</p></div></div>` : ''}
+    ${isAdmin() ? '<div class="card" id="lang-card"></div>' : ''}
     ${isAdmin() ? '<div class="card" id="imp-card"></div>' : ''}
     <div class="card" id="sponsor-cfg-card"></div>
     <div class="card" id="labels-card"></div>
@@ -1332,7 +1356,7 @@ async function renderSettings() {
     },
   });
   if ($('#new-user')) $('#new-user').onclick = () => userForm();
-  if (isAdmin()) { renderGoLive(); renderIntegrations(); renderImpersonationSetting(); }
+  if (isAdmin()) { renderGoLive(); renderIntegrations(); renderLanguageSetting(); renderImpersonationSetting(); }
   renderLabelsSetting();
   view().querySelectorAll('[data-user]').forEach((b) => b.addEventListener('click', () => userForm(state.users.find((u) => u.id === Number(b.dataset.user)))));
   if ($('#show-audit')) $('#show-audit').onclick = async () => {

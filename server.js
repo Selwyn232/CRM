@@ -92,9 +92,21 @@ function serveFile(req, res, file) {
 // Pagina's: scripts en stylesheets krijgen een versienummer per release, zodat browsers (ook Safari op iPad)
 // na een update nooit oude bestanden blijven gebruiken.
 const ASSET_VERSION = (process.env.RENDER_GIT_COMMIT || String(Date.now())).slice(0, 12);
-function servePage(res, file) {
+// Standaardtaal van de site (Instellingen → Taal). Bezoekers kunnen zelf wisselen met de NL/EN-knop.
+function defaultLanguage(db) {
+  try {
+    const row = db && db.prepare("SELECT value FROM settings WHERE key = 'default_language'").get();
+    return row && row.value === 'en' ? 'en' : 'nl';
+  } catch { return 'nl'; }
+}
+
+function servePage(res, file, db) {
   fs.readFile(file, 'utf8', (err, html) => {
     if (err) return send(res, 404, 'Niet gevonden', { 'Content-Type': 'text/plain; charset=utf-8' });
+    // Taalkeuze als eerste script op elke pagina, zodat Engels er meteen staat.
+    const lang = defaultLanguage(db);
+    html = html.replace(/(<meta charset="utf-8">)/i, `$1\n  <script src="/js/i18n.js" data-default="${lang}"></script>`);
+    if (lang === 'en') html = html.replace('<html lang="nl">', '<html lang="en">');
     const body = html.replace(/((?:src|href)="\/(?:js|css)\/[\w.-]+\.(?:js|css))"/g, `$1?v=${ASSET_VERSION}"`);
     send(res, 200, body, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
   });
@@ -149,7 +161,7 @@ function createServer({ db, uploadDir = UPLOAD_DIR } = {}) {
         return serveFile(req, res, file);
       }
       const page = PAGES[pathname.replace(/\/$/, '') || '/'];
-      if (page) return servePage(res, path.join(PUBLIC_DIR, page));
+      if (page) return servePage(res, path.join(PUBLIC_DIR, page), db);
       const file = page ? path.join(PUBLIC_DIR, page) : safeJoin(PUBLIC_DIR, pathname);
       if (!file) return send(res, 404, 'Niet gevonden');
       return serveFile(req, res, file);

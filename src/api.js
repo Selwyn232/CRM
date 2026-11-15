@@ -1025,6 +1025,16 @@ function buildRoutes({ db, uploadDir }) {
       S.audit(db, ctx.actor, 'bestemming_gewijzigd', 'category', null, cat.key);
     }, admin],
     ['GET', '/api/admin/translation/status', () => require('./translate').status(), admin],
+    // Standaardtaal van alle pagina's (nl of en). Bezoekers kunnen per browser zelf wisselen.
+    ['GET', '/api/admin/settings/language', () => ({ default: setting('default_language') === 'en' ? 'en' : 'nl' }), admin],
+    ['PUT', '/api/admin/settings/language', (ctx) => {
+      const lang = ctx.body.default;
+      if (!['nl', 'en'].includes(lang)) throw new AppError(400, 'Kies Nederlands of Engels');
+      run(db, `INSERT INTO settings (key, value, updated_at) VALUES ('default_language', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, lang);
+      S.audit(db, ctx.actor, 'standaardtaal_gewijzigd', 'settings', null, lang);
+      return { default: lang };
+    }, admin],
     ['GET', '/api/admin/settings/impersonation', () => ({ write: impersonationWrite() }), admin],
     ['PUT', '/api/admin/settings/impersonation', (ctx) => {
       const on = !!ctx.body.write;

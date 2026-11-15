@@ -82,7 +82,7 @@ const childPhoto = (c, cls = '') => (c.photo_url
   ? `<img class="child-photo ${cls}" src="${esc(c.photo_url)}" alt="${esc(c.first_name)}" loading="lazy">`
   : `<div class="child-photo ${cls} ph">${esc((c.first_name || '?').slice(0, 1))}</div>`);
 const childMeta = (c) => [c.age != null ? `${c.age} jaar` : '', c.grade, [c.city, c.province].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
-const monthName = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+const monthName = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString((window.RF_LOCALE || 'nl-NL'), { month: 'long', year: 'numeric' });
 let sponsorConfig = null;
 const getConfig = async () => (sponsorConfig = sponsorConfig || await api('/api/portal/sponsor/config'));
 
@@ -102,7 +102,7 @@ async function renderOverview() {
     <section class="hero">
       <div class="eyebrow">${RF.icon('heart', 'icon-sm')} Jouw sponsorkinderen</div>
       <h1>${greet()}, ${esc(me.first_name || me.full_name)}</h1>
-      <p>${sp.children ? `Dankzij jou ${sp.children === 1 ? 'gaat' : 'gaan'} ${sp.children} ${sp.children === 1 ? 'kind' : 'kinderen'} op de Filipijnen elke dag met een volle buik naar school.`
+      <p>${sp.children ? (sp.children === 1 ? 'Dankzij jou gaat 1 kind op de Filipijnen elke dag met een volle buik naar school.' : `Dankzij jou gaan ${sp.children} kinderen op de Filipijnen elke dag met een volle buik naar school.`)
         : 'Sponsor een kind op de Filipijnen: elke schooldag een maaltijd, schoolgeld en basisverzorging. Je weet precies wie je helpt en ontvangt elke maand een update.'}</p>
       <div class="hero-stats">
         <div><div class="label">Mijn kinderen</div><div class="value">${sp.children}</div></div>

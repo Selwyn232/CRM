@@ -187,7 +187,7 @@ function renderWizard(o, cfg, stepKey) {
     collect();
     const r = await api(`/api/onboarding/${o.id}`, { method: 'PUT', body: { data: d, ...extra } });
     Object.assign(o, r, { data: d });
-    if ($('#saved')) $('#saved').textContent = `Opgeslagen ${new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`;
+    if ($('#saved')) $('#saved').textContent = `Opgeslagen ${new Date().toLocaleTimeString((window.RF_LOCALE || 'nl-NL'), { hour: '2-digit', minute: '2-digit' })}`;
   };
   const goStep = async (i) => {
     try { await save(); } catch (ex) { toast(ex.message, 'error'); return; }
@@ -316,7 +316,7 @@ function renderReview(o, cfg) {
             ${prop('Naam op document', r.name)}${prop('Gecontroleerd door', r.checked_by || r.provider)}${r.reason ? prop('Reden', r.reason) : ''}</dl>` : ''}
           ${o.id_method === 'handmatig' && canReview ? '<p class="small muted">Vergelijk de selfie met de foto op het ID, en de naam en geboortedatum met wat is ingevuld.</p>' : ''}</div>
         <div class="card"><h2>Toestemming</h2>
-          <p>${d.consent.agreed ? `${RF.icon('circle-check', 'icon-sm')} Getekend door <b>${esc(d.consent.signed_by)}</b>${d.consent.signed_at ? ` op ${esc(new Date(d.consent.signed_at).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}` : 'Niet getekend'}</p>
+          <p>${d.consent.agreed ? `${RF.icon('circle-check', 'icon-sm')} Getekend door <b>${esc(d.consent.signed_by)}</b>${d.consent.signed_at ? ` op ${esc(new Date(d.consent.signed_at).toLocaleString((window.RF_LOCALE || 'nl-NL'), { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}` : 'Niet getekend'}</p>
           <p class="small">${d.consent.share_photos ? 'Foto’s mogen met de sponsor worden gedeeld.' : '<b>Geen</b> toestemming om foto’s te delen: kinderen krijgen geen foto in het portaal.'}</p></div>
         ${canReview ? `<form class="card" id="review"><h2>Beoordelen</h2>
           ${own ? `<div class="callout warn">${RF.icon('circle-alert')}<span>Je hebt deze aanmelding zelf gemaakt. Een collega moet hem beoordelen (vier-ogenprincipe).</span></div>` : ''}
