@@ -3,7 +3,7 @@
 'use strict';
 
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
-const monthLabel = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+const monthLabel = (m) => new Date(`${m}-01T12:00:00`).toLocaleDateString((window.RF_LOCALE || 'nl-NL'), { month: 'long', year: 'numeric' });
 const childThumb = (c, name = c.first_name || c.child_name) => (c.photo_url
   ? `<img class="child-thumb" src="${esc(c.photo_url)}" alt="">`
   : `<span class="child-thumb">${esc(String(name || '?').slice(0, 1))}</span>`);
@@ -27,7 +27,7 @@ async function renderSponsorDashboard() {
     months.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`);
   }
   const byMonth = Object.fromEntries(d.monthly.map((r) => [r.month, r.cents]));
-  const todayLabel = now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  const todayLabel = now.toLocaleDateString((window.RF_LOCALE || 'nl-NL'), { weekday: 'long', day: 'numeric', month: 'long' });
   view().innerHTML = `
     ${pageHead(`${greeting()}, ${esc(firstName(state.user.name))}`, {
       sub: `${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)} · zo staat Robin Foundation ervoor`,

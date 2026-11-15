@@ -922,3 +922,30 @@ test('Mollie: geweigerde automatische incasso wordt een taak en is later opnieuw
   assert.equal(get(db, 'SELECT subscription_id FROM sponsorships WHERE id = ?', sid).subscription_id, 'sub_x');
   assert.equal((await fetch(`${base}/api/admin/sponsorships/${sid}/subscription`, { method: 'POST', headers: { ...json, cookie: sc }, body: '{}' })).status, 409);
 });
+
+test('HTTP: standaardtaal (masterswitch) staat op elke pagina, alleen beheerders kunnen hem wijzigen', async (t) => {
+  const db = freshDb();
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'a@rf.org', 'Admin', 'admin', hashPassword('admin123'));
+  run(db, 'INSERT INTO users (email, name, role, password_hash) VALUES (?,?,?,?)', 'm@rf.org', 'Mila', 'medewerker', hashPassword('medewerker123'));
+  const server = createServer({ db, uploadDir: fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')) }).listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const json = { 'Content-Type': 'application/json' };
+  const login = async (email, password) => (await fetch(`${base}/api/staff/login`, { method: 'POST', headers: json, body: JSON.stringify({ email, password }) }))
+    .headers.get('set-cookie').split(';')[0];
+  const pages = ['/', '/login', '/aanmelden', '/portal', '/admin', '/ontvanger', '/leaderboard', '/privacy'];
+  for (const p of pages) {
+    const html = await (await fetch(base + p)).text();
+    assert.match(html, /<script src="\/js\/i18n\.js\?v=\w+" data-default="nl"><\/script>/, p);
+  }
+  const mila = await login('m@rf.org', 'medewerker123');
+  assert.equal((await fetch(`${base}/api/admin/settings/language`, { method: 'PUT', headers: { ...json, cookie: mila }, body: JSON.stringify({ default: 'en' }) })).status, 403);
+  const admin = await login('a@rf.org', 'admin123');
+  assert.equal((await fetch(`${base}/api/admin/settings/language`, { method: 'PUT', headers: { ...json, cookie: admin }, body: JSON.stringify({ default: 'fr' }) })).status, 400);
+  assert.equal((await fetch(`${base}/api/admin/settings/language`, { method: 'PUT', headers: { ...json, cookie: admin }, body: JSON.stringify({ default: 'en' }) })).status, 200);
+  assert.deepEqual(await (await fetch(`${base}/api/admin/settings/language`, { headers: { cookie: admin } })).json(), { default: 'en' });
+  const html = await (await fetch(base + '/portal')).text();
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /data-default="en"/);
+  assert.ok(get(db, "SELECT 1 AS x FROM audit_log WHERE action = 'standaardtaal_gewijzigd'"));
+});

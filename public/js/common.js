@@ -39,25 +39,25 @@ const RF = (() => {
   const markLoggedIn = () => { wasLoggedIn = true; };
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const euroFmt = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
-  const euroShort = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+  const euroFmt = new Intl.NumberFormat((window.RF_LOCALE || 'nl-NL'), { style: 'currency', currency: 'EUR' });
+  const euroShort = new Intl.NumberFormat((window.RF_LOCALE || 'nl-NL'), { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
   const euro = (cents) => euroFmt.format((cents || 0) / 100);
   const euro0 = (cents) => euroShort.format(Math.round((cents || 0) / 100));
-  const num = (n, digits = 0) => new Intl.NumberFormat('nl-NL', { maximumFractionDigits: digits }).format(n || 0);
+  const num = (n, digits = 0) => new Intl.NumberFormat((window.RF_LOCALE || 'nl-NL'), { maximumFractionDigits: digits }).format(n || 0);
   const date = (s) => {
     if (!s) return '';
     const d = new Date(String(s).replace(' ', 'T') + (String(s).length <= 10 ? 'T00:00:00' : ''));
-    return isNaN(d) ? s : d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+    return isNaN(d) ? s : d.toLocaleDateString((window.RF_LOCALE || 'nl-NL'), { day: 'numeric', month: 'short', year: 'numeric' });
   };
   const dateTime = (s) => {
     if (!s) return '';
     const d = new Date(String(s).replace(' ', 'T') + 'Z');
-    return isNaN(d) ? s : d.toLocaleString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return isNaN(d) ? s : d.toLocaleString((window.RF_LOCALE || 'nl-NL'), { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
   const today = () => new Date().toISOString().slice(0, 10);
   const toCents = (v) => Math.round(parseFloat(String(v).replace(/\./g, '').replace(',', '.')) * 100);
   const centsToInput = (c) => ((c || 0) / 100).toFixed(2).replace('.', ',');
-  const monthName = (m) => new Date(2000, Number(m) - 1, 1).toLocaleDateString('nl-NL', { month: 'short' });
+  const monthName = (m) => new Date(2000, Number(m) - 1, 1).toLocaleDateString((window.RF_LOCALE || 'nl-NL'), { month: 'short' });
 
   const LABELS = {
     cell: { wachtend: 'Wachtend', deels_besteed: 'Deels besteed', besteed: 'Besteed', vervallen: 'Vervallen' },
@@ -398,9 +398,9 @@ const RF = (() => {
       lastSig = sig;
       const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
       const bodyHtml = (m) => {
-        if (!m.translation) return `<div class="bubble-body">${esc(m.body)}</div>`;
+        if (!m.translation) return `<div class="bubble-body" translate="no">${esc(m.body)}</div>`;
         const orig = showOriginal.has(m.id);
-        return `<div class="bubble-body">${esc(orig ? m.body : m.translation)}</div>
+        return `<div class="bubble-body" translate="no">${esc(orig ? m.body : m.translation)}</div>
           <button type="button" class="link-btn" data-orig="${m.id}">${orig ? 'Vertaling tonen' : `Vertaald uit ${esc(langName(m.source_lang))} · origineel tonen`}</button>`;
       };
       log.innerHTML = msgs.length ? msgs.map((m) => `<div class="bubble ${m.mine ? 'mine' : 'theirs'} ${m.status !== 'goedgekeurd' ? 'pending' : ''}">
